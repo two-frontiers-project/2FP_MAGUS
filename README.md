@@ -7,16 +7,18 @@ The goal here is to provide already quality-controlled, deep sequencing data fro
 That works out to fourish workflows, all ideally written in python and callable at the command line:
 
 magus taxonomy
-  This gets taxonomy on short read data and computes the domain level composition -- likely this will use a sourmash variant
+  - This gets taxonomy on short read data and computes the domain level composition -- likely this will use a sourmash variant
 
+  - I think I want to run kraken2 and mimic the approach used by phanta (https://github.com/bhattlab/phanta), which implements some nice coverage cutoffs etc. We'll have a "general" database that uses all genomes out there, and we'll also build a coral-specific one.
+  
 magus assemble
-  This assembles everything
+  - This assembles everything with megahit or metaspades
 
 magus resolve genomes
-  This runs binning to separate out the components of the holobiont
+ - This runs binning to separate out the components of the holobiont
 
 magus genelevelanalysis
-  Functional/gene analysis of the bins
+ - Functional/gene analysis of the bins
 
 We might also want to have a "compare" function to look at known vs. unknown holobiont genomes. 
 
