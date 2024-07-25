@@ -7,12 +7,16 @@ The goal here is to provide already quality-controlled, deep sequencing data fro
 That works out to fourish workflows, all ideally written in python and callable at the command line:
 
 magus taxonomy
+  This gets taxonomy on short read data and computes the domain level composition -- likely this will use a sourmash variant
 
 magus assemble
+  This assembles everything
 
-magus bin
+magus resolve genomes
+  This runs binning to separate out the components of the holobiont
 
 magus genelevelanalysis
+  Functional/gene analysis of the bins
 
 We might also want to have a "compare" function to look at known vs. unknown holobiont genomes. 
 
