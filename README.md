@@ -4,7 +4,11 @@
 
 The goal here is to provide already quality-controlled, deep sequencing data from a coral and get out 1) tables of taxonomic abundances from short read alignment 2) Putative coral/bacterial/viral/algal genomes and summary statistics (e.g., likely taxonomy) 3) maybe some functional stuff too
 
-That works out to fourish workflows, all ideally written in python and callable at the command line:
+STRUCTURE
+
+I'd like to model the codebase structure on GTDBTK (https://github.com/Ecogenomics/GTDBTk/tree/master/gtdbtk/external) -- so we'll need to have classes for each of the external tools, like they do in the link. A good place to start is to write these scripts.
+
+I think we can generate four workflows, all ideally written in python and callable at the command line:
 
 magus taxonomy
   - This gets taxonomy on short read data and computes the domain level composition -- likely this will use a sourmash variant
