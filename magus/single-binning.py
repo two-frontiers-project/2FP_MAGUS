@@ -142,11 +142,8 @@ class Binning:
 		L_output = f"{parent_dir}/L.txt"
 		bestmags_txt = f"{parent_dir}/bestmags.txt"
 		good_dir = f"{parent_dir}/good"
-		cmd = f"bestmag {parent_dir}/good.dm {L_output} {worthwhile_stat} {bestmags_txt} SELF"
-		print(f"Running bestmag for {sample_name}")
-		subprocess.run(cmd, shell=True)		
 		# Run bestmag
-		cmd = f"bestmag {parent_dir}/good.dm {L_output} {worthwhile_stat} {bestmags_txt} SELF"
+		cmd = f"bestmag2 {parent_dir}/good.dm {L_output} {worthwhile_stat} {bestmags_txt} SELF S1"
 		print(f"Running bestmag for {sample_name}")
 		print(cmd)
 		subprocess.run(cmd, shell=True)

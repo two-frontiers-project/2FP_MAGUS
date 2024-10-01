@@ -75,7 +75,7 @@ class CoAssemblyBinning:
         """ Run CheckM2 and binning process. """
         OUTF = f"{self.outdir}/{BS}"
         checkm_output = f"{OUTF}/bins/temp"
-        
+
         # Run CheckM2
         db_flag = f"--database_path {self.checkm_db}" if self.checkm_db else ""
         print(f"Running CheckM2 for {BS}")
@@ -101,8 +101,10 @@ class CoAssemblyBinning:
 
         # Generate worthwhile stats
         print(f"Generating worthwhile statistics for {BS}")
-        subprocess.run(f"paste <(cut -f1-3 {OUTF}/worthwhile.tsv | sed 's/\\t/\\tNA\\t/' | sort -k1,1) "
-                       f"<(grep -H -c '^>' {OUTF}/good/*.fa | sed 's/.*\\///' | sed 's/\\.fa:/\\t/' | sort -k1,1 | awk -F'\\t' '{{print $2/10}}') > {OUTF}/worthwhile.stat", shell=True)
+        cmd_process_bins = (
+            f"awk -F'\\t' '{{printf \"%s\\t%s\\t%s\\t%s\\t%.3f\\n\", $1, $4, $2, $3, $12/10}}' {OUTF}/worthwhile.tsv > {OUTF}/worthwhile.stat"
+        )
+        subprocess.run(cmd_process_bins, shell=True)
 
     def run_bestmag(self, BS):
         """ Run bestmag and move the best bins to the final MAG directory. """
@@ -111,18 +113,18 @@ class CoAssemblyBinning:
         
         print(f"Running bestmag for {BS}")
         subprocess.run(f"bestmag2 {OUTF}/good.dm {OUTF}/L.txt {OUTF}/worthwhile.stat {OUTF}/bestmags.txt SELF S1", shell=True)
-
         # Move best bins to MAG directory
         print(f"Moving best bins for {BS}")
         for z in subprocess.run(f"tail -n+2 {bestmags_txt} | cut -f1", shell=True, capture_output=True, text=True).stdout.splitlines():
-            subprocess.run(f"cp -l {OUTF}/bins/{z}.fa {self.magdir}/{BS}_{z}.fa", shell=True)
+            subprocess.run(f"cp -l {OUTF}/good/{z}.fa {self.magdir}/{BS}_{z}.fa", shell=True)
             subprocess.run(f"echo '{self.magdir}/{BS}_{z}.fa' >> {self.magdir}/checks_{os.getenv('NODE')}.txt", shell=True)
 
     def run(self):
         """ Run all steps in sequence. """
         for BS in os.listdir(self.outdir):
-            if os.path.isdir(f"{self.outdir}/{BS}"):
-                #self.run_sorenson_alignment(BS)
+            if os.path.isdir(f"{self.outdir}/{BS}") and BS!='mags':
+                print(BS)
+                self.run_sorenson_alignment(BS)
                 self.merge_coverage_data(BS)
                 self.run_metabat(BS)
                 self.run_checkm_binning(BS)
