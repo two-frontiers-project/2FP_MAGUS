@@ -1,4 +1,4 @@
-# 2FP magus workflow for systematic genomic analysis of the coral holobiont
+# 2FP magus workflow for systematic genomic analysis of the coral holobiont (and other similar ecosystems)
 
 ## Strategy
 
