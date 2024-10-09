@@ -28,8 +28,8 @@ class Binning:
 	def run_sorenson(self, sample_name):
 		out_sample_dir = f"{self.outdir}/{sample_name}"
 		temp0_file = f"{out_sample_dir}/temp0.fa"
-		r1 = f"qc/{sample_name}.R1.fa.gz"
-		r2 = f"qc/{sample_name}.R2.fa.gz"
+		r1 = f"{sample_name}.R1.fa.gz"
+		r2 = f"{sample_name}.R2.fa.gz"
 		cov_file = f"{out_sample_dir}/covs.txt"
 		
 		# Run sorenson-g to generate coverage information
@@ -169,8 +169,8 @@ class Binning:
 		checks_file = f"{mags_dir}/checks_{os.uname().nodename}.txt"
 		cmd_append = f"tail -n+2 {bestmags_txt} | sed 's/^/{sample_name}_/' >> {checks_file}"
 		subprocess.run(cmd_append, shell=True)
-		cmd_cleanup = f"rm -r {parent_dir}/bins/* {parent_dir}/good/* {parent_dir}/temp*.fa {parent_dir}/good.dm"
-		subprocess.run(cmd_cleanup, shell=True)
+		#cmd_cleanup = f"rm -r {parent_dir}/bins/* {parent_dir}/good/* {parent_dir}/temp*.fa {parent_dir}/good.dm"
+		#subprocess.run(cmd_cleanup, shell=True)
 
 	def run_sample(self, sample_name):
 		"""Runs the entire binning pipeline for a single sample."""

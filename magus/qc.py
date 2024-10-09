@@ -5,7 +5,7 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
 class QualityControl:
-    def __init__(self, config, max_workers=1, output="output/qc_config.tsv"):
+    def __init__(self, config, max_workers=1, output="configs/post_qc_config"):
         self.config = self.load_config(config)
         self.qc_dir = "qc"
         self.output = output
@@ -27,7 +27,7 @@ class QualityControl:
         subprocess.run(cmd, shell=True)
         
         self.compress_output(sample_name)
-        self.qc_results.append({'filename': sample_name, 'qc_r1': f"{sample_name}.R1.fa.gz", 'qc_r2': f"{sample_name}.R2.fa.gz"})
+        self.qc_results.append({'filename': sample_name, 'pe1': f"{qc_dir}/{sample_name}.R1.fa.gz", 'pe2': f"{qc_dir}/{sample_name}.R2.fa.gz"})
 
     def compress_output(self, sample_name):
         for file in os.listdir(self.qc_dir):
@@ -42,7 +42,6 @@ class QualityControl:
         os.makedirs(output_dir, exist_ok=True)
         df = pd.DataFrame(self.qc_results)
         df.to_csv(self.output, sep='\t', index=False)
-        print(f"Output configuration written to {self.output}")
 
     def run(self):
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:

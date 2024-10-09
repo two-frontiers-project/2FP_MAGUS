@@ -17,8 +17,8 @@ class Assembly:
 
     def run_megahit(self, sample):
         sample_name = sample['filename']
-        r1 = f"qc/{sample_name}.R1.fa.gz"
-        r2 = f"qc/{sample_name}.R2.fa.gz"
+        r1 = sample['pe1'] #f"{sample_name}.R1.fa.gz"
+        r2 = sample['pe2'] #f"{sample_name}.R2.fa.gz"
         out_sample_dir = f"{self.outdir}/{sample_name}"
 
         # Run megahit assembly
