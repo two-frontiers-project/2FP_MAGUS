@@ -1,10 +1,13 @@
 import subprocess
 import os
+import argparse
+import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil  # Add at the top of your script
 
 class Binning:
 	def __init__(self, config, outdir="asm", magdir="mags", tmpdir="tmp", threads=14, checkm_db=None, test_mode=False, max_workers=4):
-		self.config = config
+		self.config = self.load_config(config)
 		self.outdir = outdir
 		self.magdir = magdir
 		self.tmpdir = tmpdir
@@ -12,11 +15,15 @@ class Binning:
 		self.checkm_db = checkm_db  # Custom CheckM database path
 		self.test_mode = test_mode  # Flag for test mode
 		self.max_workers = max_workers  # Maximum parallel workers
-		
+
 		# Create the output directories if they don't exist
 		os.makedirs(self.outdir, exist_ok=True)
 		os.makedirs(self.magdir, exist_ok=True)
 		os.makedirs(self.tmpdir, exist_ok=True)
+
+	def load_config(self, config_path):
+		config_df = pd.read_csv(config_path, sep='\t')
+		return config_df.to_dict(orient='records')
 
 	def run_sorenson(self, sample_name):
 		out_sample_dir = f"{self.outdir}/{sample_name}"
@@ -30,30 +37,44 @@ class Binning:
 		print(f"Running sorenson-g for {sample_name}")
 		subprocess.run(cmd, shell=True)
 
+
 	def run_metabat(self, sample_name):
 		out_sample_dir = f"{self.outdir}/{sample_name}"
 		temp0_file = f"{out_sample_dir}/temp0.fa"
 		cov_file = f"{out_sample_dir}/covs.txt"
+		bins_dir = f"{out_sample_dir}/bins"
+		
+		# Ensure bins directory exists
+		os.makedirs(bins_dir, exist_ok=True)
 		
 		# Run MetaBAT2 with different seed values
 		for k in [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 30]:
-			bin_output = f"{out_sample_dir}/bins/{k}"
-			cmd = f"metabat2 --seed {k} -i {temp0_file} -a {cov_file} -t {self.threads} -o {bin_output} -m {k*100}"
+			bin_output = f"{bins_dir}/{k}"
+			cmd = f"metabat2 --seed {k} -i {temp0_file} -a {cov_file} -t {self.threads} -o {bin_output} -m 1500"
 			print(f"Running MetaBAT2 with seed {k} for {sample_name}")
 			subprocess.run(cmd, shell=True)
+		
+		# Check if any bins were created
+		bins_found = any(os.path.isfile(os.path.join(bins_dir, file)) for file in os.listdir(bins_dir))
+		
+		# If no bins were found and test_mode is enabled, create a fallback bin
+		if self.test_mode and not bins_found:
+			fallback_bin = os.path.join(bins_dir, "bin0.fa")
+			final_contigs_path = f"{out_sample_dir}/final.contigs.fa"
+			print(f"No bins found for {sample_name}. Copying {final_contigs_path} to {fallback_bin} as fallback bin.")
+			shutil.copy(final_contigs_path, fallback_bin)
+
 
 	def run_checkm(self, sample_name):
 		out_sample_dir = f"{self.outdir}/{sample_name}"
 		bins_dir = f"{out_sample_dir}/bins"
 		checkm_output = f"{bins_dir}/temp"
 		
-		# Use the provided database if available, otherwise default to the standard CheckM database
 		if self.checkm_db:
 			db_flag = f"--database_path {self.checkm_db}"
 		else:
 			db_flag = ""  # Default database path
 
-		# Run CheckM to validate and filter the bins
 		cmd = f"checkm2 predict -x fa -i {bins_dir} -o {checkm_output} --force --remove_intermediates -t {self.threads} --tmpdir {self.tmpdir} {db_flag}"
 		print(f"Running CheckM for {sample_name} with database: {self.checkm_db if self.checkm_db else 'default'}")
 		subprocess.run(cmd, shell=True)
@@ -63,7 +84,6 @@ class Binning:
 		checkm_report = f"{out_sample_dir}/bins/temp/quality_report.tsv"
 		worthwhile_bins = f"{out_sample_dir}/worthwhile.tsv"
 		
-		# Test mode: Loosen completeness and contamination cutoffs
 		if self.test_mode:
 			completeness_cutoff = 0
 			contamination_cutoff = 100
@@ -71,7 +91,6 @@ class Binning:
 			completeness_cutoff = 50
 			contamination_cutoff = 5
 
-		# Filter the CheckM results based on cutoffs
 		cmd = f"awk -F'\\t' '$2 >= {completeness_cutoff} && $3 <= {contamination_cutoff}' {checkm_report} > {worthwhile_bins}"
 		subprocess.run(cmd, shell=True)
 		print(f"Filtered good bins for {sample_name} (completeness >= {completeness_cutoff}%, contamination <= {contamination_cutoff}%)")
@@ -82,38 +101,31 @@ class Binning:
 		bins_dir = f"{out_sample_dir}/bins"
 		good_dir = f"{out_sample_dir}/good"
 		
-		# Create the 'good' directory if it doesn't exist
 		os.makedirs(good_dir, exist_ok=True)
 
-		# Extract the bin files to copy
 		cmd = f"cut -f1 {worthwhile_bins} | sed 's/$/.fa/' | sed 's:^:{bins_dir}/:'"
 		result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 		bin_files = result.stdout.strip().split('\n')
-		
-		# Check if bin_files is empty
+
 		if not bin_files or bin_files == ['']:
 			print(f"No bins to copy for {sample_name}.")
 			return
 
-		# Print the files to be copied
 		print(f"Files to copy for {sample_name}: {bin_files}")
 		
-		# Copy the bins to the 'good' directory
 		for bin_file in bin_files:
 			cmd_copy = f"cp -l {bin_file} {good_dir}/"
 			subprocess.run(cmd_copy, shell=True)
 			print(f"Copied {bin_file} to {good_dir}")
 
-	# Updated lingenome to output one directory up
 	def run_lingenome(self, sample_name):
 		out_sample_dir = f"{self.outdir}/{sample_name}/good"
-		parent_dir = f"{self.outdir}/{sample_name}"  # Directory one level up
-		good_fasta = f"{parent_dir}/good.fasta"  # Place good.fasta one level up
+		parent_dir = f"{self.outdir}/{sample_name}"
+		good_fasta = f"{parent_dir}/good.fasta"
 		cmd = f"lingenome {out_sample_dir} {good_fasta} FILENAME"
 		print(f"Running lingenome for {sample_name}")
 		subprocess.run(cmd, shell=True)
 
-	# Update following paths to reflect new location of good.fasta
 	def run_akmer100b(self, sample_name):
 		parent_dir = f"{self.outdir}/{sample_name}"
 		good_fasta = f"{parent_dir}/good.fasta"
@@ -137,37 +149,28 @@ class Binning:
 		print(f"Processing worthwhile bins for {sample_name}")
 		subprocess.run(cmd_process_bins, shell=True)
 
-
 	def run_bestmag(self, sample_name):
 		parent_dir = f"{self.outdir}/{sample_name}"
 		worthwhile_stat = f"{parent_dir}/worthwhile.stat"
 		L_output = f"{parent_dir}/L.txt"
 		bestmags_txt = f"{parent_dir}/bestmags.txt"
-		good_dir = f"{parent_dir}/good"
-		# Run bestmag
 		cmd = f"bestmag2 {parent_dir}/good.dm {L_output} {worthwhile_stat} {bestmags_txt} SELF S1"
 		print(f"Running bestmag for {sample_name}")
-		print(cmd)
 		subprocess.run(cmd, shell=True)
 
 	def run_final_copy(self, sample_name):
 		parent_dir = f"{self.outdir}/{sample_name}"
 		mags_dir = self.magdir
 		bestmags_txt = f"{parent_dir}/bestmags.txt"
-		# Copy final good bins to MAG directory
 		for z in subprocess.run(f"tail -n+2 {bestmags_txt} | cut -f1", shell=True, capture_output=True, text=True).stdout.splitlines():
 			cmd = f"cp -l {parent_dir}/bins/{z}.fa {mags_dir}/{sample_name}_{z}.fa"
 			subprocess.run(cmd, shell=True)
 			print(f"Copied final bin {z} for {sample_name} to {mags_dir}")
-		# Update the MAGDIR checks file with new bins
 		checks_file = f"{mags_dir}/checks_{os.uname().nodename}.txt"
 		cmd_append = f"tail -n+2 {bestmags_txt} | sed 's/^/{sample_name}_/' >> {checks_file}"
 		subprocess.run(cmd_append, shell=True)
-		print(f"Updated checks file: {checks_file}")
-		# Cleanup: Remove intermediate files from bins and good directories
 		cmd_cleanup = f"rm -r {parent_dir}/bins/* {parent_dir}/good/* {parent_dir}/temp*.fa {parent_dir}/good.dm"
 		subprocess.run(cmd_cleanup, shell=True)
-		print(f"Cleaned up intermediate files for {sample_name}")
 
 	def run_sample(self, sample_name):
 		"""Runs the entire binning pipeline for a single sample."""
@@ -198,19 +201,29 @@ class Binning:
 				except Exception as exc:
 					print(f"Sample {sample_name} generated an exception: {exc}")
 
-# Example usage:
-config = [
-	{'filename': 'sample_1', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_1.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_1.R2.fa.gz'},
-	{'filename': 'sample_2', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_2.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_2.R2.fa.gz'},
-	{'filename': 'sample_3', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_3.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_3.R2.fa.gz'},
-	{'filename': 'sample_4', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_4.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_4.R2.fa.gz'},
-	{'filename': 'sample_5', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_5.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_5.R2.fa.gz'},
-	{'filename': 'sample_6', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_6.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_6.R2.fa.gz'},
-	{'filename': 'sample_7', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_7.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_7.R2.fa.gz'},
-	{'filename': 'sample_8', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_8.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_8.R2.fa.gz'},
-	{'filename': 'sample_9', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_9.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_9.R2.fa.gz'},
-	{'filename': 'sample_10', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_10.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_10.R2.fa.gz'}
-]
+def main():
+	# Set up argument parser
+	parser = argparse.ArgumentParser(description="Run binning pipeline on genomic data.")
+	parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
+	parser.add_argument('--threads', type=int, default=14, help='Number of threads for tools (default: 14)')
+	parser.add_argument('--checkm_db', type=str, default=None, help='Path to custom CheckM database')
+	parser.add_argument('--asmdir', type=str, default="asm", help='Output directory for assembly (default: asm)')
+	parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
+	parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
 
-binning = Binning(config, test_mode=False, max_workers=7) 
-binning.run()
+	# Parse arguments
+	args = parser.parse_args()
+
+	# Initialize and run the Binning instance
+	binning = Binning(
+		config=args.config,
+		threads=args.threads,
+		checkm_db=args.checkm_db,
+		outdir=args.asmdir,
+		max_workers=args.max_workers,
+		test_mode=args.test_mode
+	)
+	binning.run()
+
+if __name__ == '__main__':
+	main()

@@ -44,16 +44,16 @@ class Assembly:
         subprocess.run(cmd, shell=True)
         print(f"Filtered contigs for {sample_name}")
 
-    def run(self, num_workers=None):
+    def run(self, max_workers=None):
         # Run assemblies in parallel using ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             executor.map(self.run_megahit, self.config)
 
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Run assembly with megahit on genomic data.")
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
-    parser.add_argument('--num_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
+    parser.add_argument('--max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
     parser.add_argument('--threads', type=int, default=14, help='Number of threads for megahit (default: 14)')
 
     # Parse arguments
@@ -61,7 +61,7 @@ def main():
 
     # Initialize and run the Assembly instance
     assembly = Assembly(config=args.config, threads=args.threads)
-    assembly.run(num_workers=args.num_workers)
+    assembly.run(max_workers=args.max_workers)
 
 if __name__ == '__main__':
     main()
