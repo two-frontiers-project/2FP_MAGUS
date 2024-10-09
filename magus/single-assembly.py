@@ -5,17 +5,11 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
 class Assembly:
-    def __init__(self, config, outdir="asm", magdir="mags", tmpdir="tmp", threads=14):
+    def __init__(self, config, outdir="asm", threads=14):
         self.config = self.load_config(config)
         self.outdir = outdir
-        self.magdir = magdir
-        self.tmpdir = tmpdir
         self.threads = threads
-
-        # Create the output directories if they don't exist
         os.makedirs(self.outdir, exist_ok=True)
-        os.makedirs(self.magdir, exist_ok=True)
-        os.makedirs(self.tmpdir, exist_ok=True)
 
     def load_config(self, config_path):
         config_df = pd.read_csv(config_path, sep='\t')
