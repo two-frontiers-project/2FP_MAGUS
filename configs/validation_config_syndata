@@ -1,0 +1,11 @@
+filename	pe1	pe2
+sample_1	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_1_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_1_R2.fq
+sample_2	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_2_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_2_R2.fq
+sample_3	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_3_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_3_R2.fq
+sample_4	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_4_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_4_R2.fq
+sample_5	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_5_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_5_R2.fq
+sample_6	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_6_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_6_R2.fq
+sample_7	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_7_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_7_R2.fq
+sample_8	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_8_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_8_R2.fq
+sample_9	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_9_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_9_R2.fq
+sample_10	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_10_R1.fq	/mnt/b/2FP_MAGUS/dev/syndata/synthetic_metagenomes/sample_10_R2.fq

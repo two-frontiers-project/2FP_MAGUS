@@ -1,8 +1,9 @@
 import subprocess
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class Binning:
-	def __init__(self, config, outdir="asm", magdir="mags", tmpdir="tmp", threads=28, checkm_db=None, test_mode=False):
+	def __init__(self, config, outdir="asm", magdir="mags", tmpdir="tmp", threads=14, checkm_db=None, test_mode=False, max_workers=4):
 		self.config = config
 		self.outdir = outdir
 		self.magdir = magdir
@@ -10,6 +11,7 @@ class Binning:
 		self.threads = threads
 		self.checkm_db = checkm_db  # Custom CheckM database path
 		self.test_mode = test_mode  # Flag for test mode
+		self.max_workers = max_workers  # Maximum parallel workers
 		
 		# Create the output directories if they don't exist
 		os.makedirs(self.outdir, exist_ok=True)
@@ -167,10 +169,9 @@ class Binning:
 		subprocess.run(cmd_cleanup, shell=True)
 		print(f"Cleaned up intermediate files for {sample_name}")
 
-
-	def run(self):
-		for sample in self.config:
-			sample_name = sample['filename']
+	def run_sample(self, sample_name):
+		"""Runs the entire binning pipeline for a single sample."""
+		try:
 			self.run_sorenson(sample_name)
 			self.run_metabat(sample_name)
 			self.run_checkm(sample_name)
@@ -181,20 +182,35 @@ class Binning:
 			self.run_spamw(sample_name)
 			self.run_bestmag(sample_name)
 			self.run_final_copy(sample_name)
+			print(f"Completed processing for {sample_name}")
+		except subprocess.CalledProcessError as e:
+			print(f"Error occurred while processing {sample_name}: {e}")
+
+	def run(self):
+		"""Runs the binning pipeline for all samples in parallel."""
+		with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+			futures = {executor.submit(self.run_sample, sample['filename']): sample for sample in self.config}
+			for future in as_completed(futures):
+				sample = futures[future]
+				sample_name = sample['filename']
+				try:
+					future.result()  # Retrieving result or exception
+				except Exception as exc:
+					print(f"Sample {sample_name} generated an exception: {exc}")
 
 # Example usage:
 config = [
-    {
-        'filename': 'SRR15373729', 
-        'pe1': './qc/SRR15373729_1.fa.gz', 
-        'pe2': './qc/SRR15373729_2.fa.gz'
-    },
-    {
-        'filename': 'SRR15373733', 
-        'pe1': './qc/SRR15373733_1.fa.gz', 
-        'pe2': './qc/SRR15373733_2.fa.gz'
-    }
+	{'filename': 'sample_1', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_1.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_1.R2.fa.gz'},
+	{'filename': 'sample_2', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_2.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_2.R2.fa.gz'},
+	{'filename': 'sample_3', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_3.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_3.R2.fa.gz'},
+	{'filename': 'sample_4', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_4.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_4.R2.fa.gz'},
+	{'filename': 'sample_5', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_5.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_5.R2.fa.gz'},
+	{'filename': 'sample_6', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_6.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_6.R2.fa.gz'},
+	{'filename': 'sample_7', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_7.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_7.R2.fa.gz'},
+	{'filename': 'sample_8', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_8.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_8.R2.fa.gz'},
+	{'filename': 'sample_9', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_9.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_9.R2.fa.gz'},
+	{'filename': 'sample_10', 'pe1': '/mnt/b/2FP_MAGUS/dev/qc/sample_10.R1.fa.gz', 'pe2': '/mnt/b/2FP_MAGUS/dev/qc/sample_10.R2.fa.gz'}
 ]
 
-binning = Binning(config, test_mode=False) 
+binning = Binning(config, test_mode=False, max_workers=7) 
 binning.run()
