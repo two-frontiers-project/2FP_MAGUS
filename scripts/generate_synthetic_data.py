@@ -2,6 +2,7 @@ import os
 import subprocess
 import random
 import csv
+import gzip
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil  # New import for removing directories
 
@@ -26,8 +27,8 @@ def generate_coverage(genome_path, sample_dir, genome_basename, coverage, read_l
 
     dwgsim_cmd = [
         'dwgsim',
-        '-e', '0.001',
-        '-E', '0.001',
+        '-e', '0.0001',
+        '-E', '0.0001',
         '-1', str(read_length),
         '-2', str(read_length),
         '-C', str(coverage),
@@ -42,8 +43,8 @@ def generate_coverage(genome_path, sample_dir, genome_basename, coverage, read_l
     with open(os.devnull, 'w') as devnull:
         subprocess.run(dwgsim_cmd, stdout=devnull, stderr=devnull, check=True)
 
-    r1_path = f"{output_prefix}.bwa.read1.fastq"
-    r2_path = f"{output_prefix}.bwa.read2.fastq"
+    r1_path = f"{output_prefix}.bwa.read1.fastq.gz"
+    r2_path = f"{output_prefix}.bwa.read2.fastq.gz"
     return r1_path, r2_path
 
 def assign_genomes_to_samples(genomes, num_samples):
@@ -79,18 +80,20 @@ def generate_sample_reads(sample, sample_idx, output_dir, read_length=150):
     open(sample_r2, 'wb').close()
 
     for genome, coverage in sample:
-        genome_basename = os.path.basename(genome['identifier']).replace('.fna.gz', '')
+        genome_basename = os.path.basename(genome['identifier']).replace('.fna', '').replace('.gz', '')
         genome_r1, genome_r2 = generate_coverage(genome['identifier'], sample_dir, genome_basename, coverage, read_length)
 
-        if genome_r1.endswith('.fastq') and genome_r2.endswith('.fastq'):
-            with open(sample_r1, 'ab') as outfile_r1, open(genome_r1, 'rb') as infile_r1:
-                outfile_r1.write(infile_r1.read())
-            with open(sample_r2, 'ab') as outfile_r2, open(genome_r2, 'rb') as infile_r2:
-                outfile_r2.write(infile_r2.read())
+        # Properly handle gzipped files by decompressing them on the fly
+        if genome_r1.endswith('.fastq.gz') and genome_r2.endswith('.fastq.gz'):
+            with gzip.open(genome_r1, 'rb') as infile_r1, open(sample_r1, 'ab') as outfile_r1:
+                shutil.copyfileobj(infile_r1, outfile_r1)
+            with gzip.open(genome_r2, 'rb') as infile_r2, open(sample_r2, 'ab') as outfile_r2:
+                shutil.copyfileobj(infile_r2, outfile_r2)
 
     # Clean up the entire sample directory after concatenation
     shutil.rmtree(sample_dir)
     print(f"Cleaned up {sample_dir}")
+
 
 def generate_synthetic_reads(sample_compositions, output_dir, read_length=150, max_workers=4):
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -126,3 +129,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args.config_file, args.output_dir, args.num_samples, args.actual_coverage_output, max_workers=args.max_workers)
+
