@@ -27,7 +27,7 @@ class QualityControl:
         subprocess.run(cmd, shell=True)
         
         self.compress_output(sample_name)
-        self.qc_results.append({'filename': sample_name, 'pe1': f"{qc_dir}/{sample_name}.R1.fa.gz", 'pe2': f"{qc_dir}/{sample_name}.R2.fa.gz"})
+        self.qc_results.append({'filename': sample_name, 'pe1': f"{self.qc_dir}/{sample_name}.R1.fa.gz", 'pe2': f"{self.qc_dir}/{sample_name}.R2.fa.gz"})
 
     def compress_output(self, sample_name):
         for file in os.listdir(self.qc_dir):
