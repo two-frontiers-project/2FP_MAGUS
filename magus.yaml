@@ -1,0 +1,26 @@
+name: magus_env
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - sourmash
+  - fastqc
+  - multiqc
+  - kraken2
+  - bracken
+  - checkm-genome
+  - metabat2
+  - prokka
+  - spades
+  - checkm2
+  - megahit
+  - python=3.7.11
+  - pip 
+  - pip:
+      - pandas
+      - numpy
+      - scipy
+      - matplotlib
+      - pyyaml
+      - biopython
+
