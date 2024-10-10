@@ -4,7 +4,7 @@ import argparse
 import pandas as pd
 
 class FinalMAGMerge:
-    def __init__(self, config=None, original_mag_dir="mags", new_coasm_dir="coasm/mags", merged_output="Complete_MAG_masterpiece.fasta", threads=28):
+    def __init__(self, config=None, original_mag_dir="mags", new_coasm_dir="coasm/mags", merged_output="bacterial_mags_merged.fasta", threads=28):
         self.config = self.load_config(config) if config else None
         self.original_mag_dir = original_mag_dir
         self.new_coasm_dir = new_coasm_dir
@@ -82,7 +82,7 @@ class FinalMAGMerge:
         subprocess.run(f"mv {original_fasta} {self.merged_output}", shell=True)
         print(f"Final merged genome set saved as {self.merged_output}")
         
-        self.annotate_bins("MAG_sources.tsv")
+        self.annotate_bins("bacterial_mag_sources.tsv")
 
 def main():
     parser = argparse.ArgumentParser(description="Merge and annotate final MAG files.")

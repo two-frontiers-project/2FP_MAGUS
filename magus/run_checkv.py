@@ -71,8 +71,8 @@ class CheckVRunner:
 
 	def run(self):
 		self.merge_contig_files()
-		self.filter_contigs(filtered_file)
-		self.run_checkv_single(filtered_file)
+		self.filter_contigs(self.filtered_contig_file)
+		self.run_checkv_single(self.filtered_contig_file)
 		self.process_results()
 
 if __name__ == "__main__":
@@ -89,7 +89,7 @@ if __name__ == "__main__":
 	runner = CheckVRunner(
 		coasm_dir=args.coasm_dir,
 		combined_contig_file=args.combined_contig_file,
-		filtered_file=args.filtered_contig_file,
+		filtered_contig_file=args.filtered_contig_file,
 		min_length=args.min_length,
 		max_length=args.max_length,
 		threads=args.threads,
