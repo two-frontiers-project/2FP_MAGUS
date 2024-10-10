@@ -3,4 +3,5 @@ numpy
 scipy
 matplotlib
 pyyaml
+checkv
 biopython

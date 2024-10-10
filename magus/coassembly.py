@@ -59,10 +59,25 @@ class CoAssembly:
                 print(f"Running megahit for {BS}")
                 subprocess.run(megahit_cmd, shell=True)
 
-                mv_cmd = f"mv {OUTF}/intermediate_contigs/k147.contigs.fa {OUTF}/"
-                rm_cmd = f"rm -r {OUTF}/intermediate_contigs/"
-                print(f"Moving contigs and cleaning up for {BS}")
+                # Rename headers in final.contigs.fa with 'coassembly_all'
+                final_contigs_file = f"{OUTF}/final.contigs.fa"
+                renamed_final_contigs_file = f"{OUTF}/final_renamed.contigs.fa"
+                rename_final_cmd = f"sed 's/^>/>{BS}_coassembly_all_/' {final_contigs_file} > {renamed_final_contigs_file}"
+                subprocess.run(rename_final_cmd, shell=True, check=True)
+                subprocess.run(f"mv {renamed_final_contigs_file} {final_contigs_file}", shell=True)
+
+                # Move and rename k147.contigs.fa with 'coassembly_k147'
+                mv_cmd = f"mv {OUTF}/intermediate_contigs/k147.contigs.fa {OUTF}/k147.contigs.fa"
+                print(f"Moving k147 contigs and cleaning up for {BS}")
                 subprocess.run(mv_cmd, shell=True)
+
+                renamed_k147_contigs_file = f"{OUTF}/k147_renamed.contigs.fa"
+                rename_k147_cmd = f"sed 's/^>/>{BS}_coassembly_k147_/' {OUTF}/k147.contigs.fa > {renamed_k147_contigs_file}"
+                subprocess.run(rename_k147_cmd, shell=True, check=True)
+                subprocess.run(f"mv {renamed_k147_contigs_file} {OUTF}/k147.contigs.fa", shell=True)
+
+                # Cleanup intermediate directory
+                rm_cmd = f"rm -r {OUTF}/intermediate_contigs/"
                 subprocess.run(rm_cmd, shell=True)
 
     def run_filtering_binning(self):

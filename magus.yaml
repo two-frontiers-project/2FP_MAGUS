@@ -14,10 +14,12 @@ dependencies:
   - spades
   - checkm2
   - megahit
+  - prodigal-gv=2.11.0
   - python=3.7.11
   - pip 
   - pip:
       - pandas
+      - checkv
       - numpy
       - scipy
       - matplotlib
