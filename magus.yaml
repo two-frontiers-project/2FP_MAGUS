@@ -21,6 +21,7 @@ dependencies:
       - pandas
       - checkv
       - numpy
+      - scikit-learn=0.19.2
       - scipy
       - matplotlib
       - pyyaml
