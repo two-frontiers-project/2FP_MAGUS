@@ -5,14 +5,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import glob
 
 class CheckVRunner:
-	def __init__(self, coasm_dir, combined_contig_file,filtered_contig_file, min_length, max_length, threads, parallel_jobs):
+	def __init__(self, asm_dir, coasm_dir, combined_contig_file, filtered_contig_file, min_length, max_length, threads, quality):
+		self.asm_dir = asm_dir
 		self.coasm_dir = coasm_dir
 		self.combined_contig_file = combined_contig_file
 		self.filtered_contig_file = filtered_contig_file
 		self.min_length = min_length
 		self.max_length = max_length
 		self.threads = threads
-		self.parallel_jobs = parallel_jobs
+		self.quality = set(quality)
 		self.virus_dir = "checkv_output"
 		self.processed_dir = "checkv_output"
 		os.makedirs(self.virus_dir, exist_ok=True)
@@ -21,7 +22,7 @@ class CheckVRunner:
 	def merge_contig_files(self):
 		"""Concatenate all contig files from both coassembly and single assembly into a single merged file using `cat`."""
 		coasm_files = glob.glob(os.path.join(self.coasm_dir, "*/final.contigs.fa"))
-		single_asm_files = glob.glob(os.path.join("asm", "*/final.contigs.fa"))
+		single_asm_files = glob.glob(os.path.join(self.asm_dir, "*/final.contigs.fa"))
 		
 		if not coasm_files and not single_asm_files:
 			print("No final.contigs.fa files found in either coassembly or single assembly directories.")
@@ -31,7 +32,6 @@ class CheckVRunner:
 		cat_command = f"cat {' '.join(all_files)} > {self.combined_contig_file}"
 		subprocess.run(cat_command, shell=True, check=True)
 		print(f"All contigs from coassembly and single assembly merged into {self.combined_contig_file}")
-
 
 	def filter_contigs(self, filtered_file):
 		"""Filter merged contigs by length and save to a new file using `awk`."""
@@ -45,18 +45,28 @@ class CheckVRunner:
 		subprocess.run(awk_command, shell=True, check=True)
 		print(f"Filtered contigs saved to {filtered_file}")
 
-
 	def run_checkv_single(self, filtered_file):
 		"""Run CheckV on a filtered contig file."""
 		output_dir = os.path.join(self.virus_dir, os.path.basename(filtered_file).replace(".fasta", ""))
 		os.makedirs(output_dir, exist_ok=True)
 		cmd = f"checkv end_to_end {filtered_file} {output_dir} -t {self.threads}"
+		print(cmd)
 		subprocess.run(cmd, shell=True)
 		print(f"CheckV analysis completed for {filtered_file}")
 		return output_dir
 
 	def process_results(self):
-		"""Process CheckV output and extract high-quality sequences."""
+		"""Process CheckV output and extract sequences based on specified quality levels."""
+		quality_levels = {
+			'C': "Complete",
+			'H': "High-quality",
+			'M': "Medium-quality",
+			'L': "Low-quality"
+		}
+		
+		selected_qualities = {quality_levels[q] for q in self.quality if q in quality_levels}
+		print(f"Filtering CheckV output for quality levels: {selected_qualities}")
+		
 		binids = []
 		for result_dir in os.listdir(self.virus_dir):
 			result_path = os.path.join(self.virus_dir, result_dir)
@@ -65,18 +75,56 @@ class CheckVRunner:
 				good_file = os.path.join(result_path, "checkv_quality_summary_medium-high-complete.tsv")
 				with open(good_file, "w") as good_out:
 					with open(summary_file) as summary_in:
+						header = summary_in.readline().strip()
+						good_out.write(f"{header}\tRepresentative\n")  # Add new column for Representative
 						for line in summary_in:
-							if line.split("\t")[7] in ["Low-quality","Medium-quality", "High-quality", "Complete"]:
-								good_out.write(line)
-								binids.append(line[0])
-				print(f"Processed CheckV results for {result_dir}")
+							columns = line.strip().split("\t")
+							contig_id, quality = columns[0], columns[7]
+							if quality in selected_qualities:
+								binids.append(contig_id)
+								good_out.write(f"{line.strip()}\tNO\n")  # Initialize as 'NO'
+		print(f"Processed CheckV results and saved filtered summary with selected qualities.")
 		return binids
 
-	def dereplicate_viruses(self, good_file):
-		# subset viruses.fna ( in checkv directory with everything else) based on binids from previous function and write sequence 
-		# run canola command to dereplicate viruses (replace filter with -fitC 0.02 from previous canola5x example)
-		# save dereplicated viruses in root directory
-		# subset good.tsv to contig ids from dereplicated viruses and put in root directory
+	def dereplicate_viruses(self, binids):
+		"""Subset viral contigs, run canolax5 to dereplicate, and update good.tsv with Representative sequences."""
+		viruses_fna = os.path.join(self.virus_dir, "filtered_all_contigs/viruses.fna")
+		tobe_dereplicated_viruses = "tobe_dereplicated_viruses.fasta"
+		good_summary_output = f"{self.virus_dir}/good_dereplicated_viruses.tsv"
+		
+		with open(viruses_fna, 'r') as infile, open(tobe_dereplicated_viruses, 'w') as outfile:
+			write_flag = False
+			for line in infile:
+				if line.startswith('>'):
+					contig_id = line[1:].strip().split()[0]
+					write_flag = contig_id in binids
+				if write_flag:
+					outfile.write(line)
+
+		# Run canolax5 for dereplication
+		canola_cmd = (
+			f"canolax5 -db {tobe_dereplicated_viruses} -q {tobe_dereplicated_viruses} -o {self.virus_dir}/dereplicated_viruses.fasta -k 14 -t {self.threads} -fitC 0.02; rm {tobe_dereplicated_viruses}"
+		)
+		subprocess.run(canola_cmd, shell=True, check=True)
+
+		# Collect dereplicated IDs
+		dereplicated_ids = set()
+		with open(f"{self.virus_dir}/dereplicated_viruses.fasta", 'r') as derep_in:
+			for line in derep_in:
+				if line.startswith('>'):
+					dereplicated_ids.add(line[1:].strip().split()[0])
+
+		# Update good.tsv to mark representative sequences
+		with open(os.path.join(self.virus_dir, "filtered_all_contigs/checkv_quality_summary_medium-high-complete.tsv"), 'r') as good_in, \
+		     open(good_summary_output, 'w') as good_out:
+			for line in good_in:
+				if line.startswith("contig_id"):  # Write header
+					good_out.write(line)
+				else:
+					contig_id = line.split("\t")[0]
+					representative = "YES" if contig_id in dereplicated_ids else "NO"
+					good_out.write(f"{line.strip()}\t{representative}\n")
+		print(f"Updated {good_summary_output} with representative information.")
 
 	def run(self):
 		self.merge_contig_files()
@@ -87,22 +135,24 @@ class CheckVRunner:
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Run CheckV on merged and filtered contigs")
-	parser.add_argument("--coasm_dir", type=str, default = 'coasm', required=False, help="Directory containing coassembly contig files")
-	parser.add_argument("--combined_contig_file", default = 'all_contigs.fasta',type=str, required=False, help="Output path for and name of the merged contigs file")
-	parser.add_argument("--filtered_contig_file", default = 'filtered_all_contigs.fasta',type=str, required=False, help="Output path for and name of the length filtered, merged contigs file")
-	parser.add_argument("--min_length", type=int, default = 500, required=False, help="Minimum length of contigs to include")
-	parser.add_argument("--max_length", type=int, default = 1000000, required=False, help="Maximum length of contigs to include")
-	parser.add_argument("--threads", type=int, default=8, help="Number of threads for CheckV")
-	parser.add_argument("--parallel_jobs", type=int, default=1, help="Number of parallel jobs")
+	parser.add_argument("--asm_dir", type=str, default='asm', help="Directory containing singe assemblies")
+	parser.add_argument("--coasm_dir", type=str, default='coasm', help="Directory containing coassemblies")
+	parser.add_argument("--combined_contig_file", type=str, default='all_contigs.fasta', help="Path for merged contigs file")
+	parser.add_argument("--filtered_contig_file", type=str, default='filtered_all_contigs.fasta', help="Path for length-filtered merged contigs file")
+	parser.add_argument("--min_length", type=int, default=500, help="Minimum length of contigs to include")
+	parser.add_argument("--max_length", type=int, default=1000000, help="Maximum length of contigs to include")
+	parser.add_argument("--threads", type=int, default=28, help="Number of threads for CheckV")
+	parser.add_argument("--quality", type=str, default="CHML", help="Viral contig levels to include (C [Complete], H [High], M [Medium], L [Low])")
 	args = parser.parse_args()
 
 	runner = CheckVRunner(
+		asm_dir=args.asm_dir,
 		coasm_dir=args.coasm_dir,
 		combined_contig_file=args.combined_contig_file,
 		filtered_contig_file=args.filtered_contig_file,
 		min_length=args.min_length,
 		max_length=args.max_length,
 		threads=args.threads,
-		parallel_jobs=args.parallel_jobs
+		quality=args.quality
 	)
 	runner.run()
