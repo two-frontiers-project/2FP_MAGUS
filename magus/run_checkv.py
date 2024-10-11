@@ -57,6 +57,7 @@ class CheckVRunner:
 
 	def process_results(self):
 		"""Process CheckV output and extract high-quality sequences."""
+		binids = []
 		for result_dir in os.listdir(self.virus_dir):
 			result_path = os.path.join(self.virus_dir, result_dir)
 			summary_file = os.path.join(result_path, "quality_summary.tsv")
@@ -65,15 +66,24 @@ class CheckVRunner:
 				with open(good_file, "w") as good_out:
 					with open(summary_file) as summary_in:
 						for line in summary_in:
-							if line.split("\t")[7] in ["Medium-quality", "High-quality", "Complete"]:
+							if line.split("\t")[7] in ["Low-quality","Medium-quality", "High-quality", "Complete"]:
 								good_out.write(line)
+								binids.append(line[0])
 				print(f"Processed CheckV results for {result_dir}")
+		return binids
+
+	def dereplicate_viruses(self, good_file):
+		# subset viruses.fna ( in checkv directory with everything else) based on binids from previous function and write sequence 
+		# run canola command to dereplicate viruses (replace filter with -fitC 0.02 from previous canola5x example)
+		# save dereplicated viruses in root directory
+		# subset good.tsv to contig ids from dereplicated viruses and put in root directory
 
 	def run(self):
 		self.merge_contig_files()
 		self.filter_contigs(self.filtered_contig_file)
 		self.run_checkv_single(self.filtered_contig_file)
-		self.process_results()
+		binids = self.process_results()
+		self.dereplicate_viruses(binids)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Run CheckV on merged and filtered contigs")

@@ -28,12 +28,13 @@ class Binning:
 	def run_sorenson(self, sample_name):
 		out_sample_dir = f"{self.outdir}/{sample_name}"
 		temp0_file = f"{out_sample_dir}/temp0.fa"
-		r1 = f"{sample_name}.R1.fa.gz"
-		r2 = f"{sample_name}.R2.fa.gz"
+		r1 = self.config[0]["pe1"]
+		r2 = self.config[0]["pe2"]
 		cov_file = f"{out_sample_dir}/covs.txt"
 		
 		# Run sorenson-g to generate coverage information
 		cmd = f"sorenson-g -db {temp0_file} -qc -r1 {r1} -r2 {r2} -t {self.threads} -e 0.01 -o {cov_file}"
+		print(cmd)
 		print(f"Running sorenson-g for {sample_name}")
 		subprocess.run(cmd, shell=True)
 
