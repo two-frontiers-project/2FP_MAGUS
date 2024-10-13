@@ -6,13 +6,13 @@ import glob
 import pandas as pd
 
 class EukRepRunner:
-    def __init__(self, coasm_dir,skip_eukrep,eukrepenv,skip_eukcc, asm_dir, size_threshold, eukrep_output, dblocs, max_workers=4, threads=8):
+    def __init__(self, coasm_dir,skip_eukrep,eukrepenv,skip_eukcc, asm_dir, size_threshold, euk_binning_outputdir, dblocs, max_workers=4, threads=8):
         self.coasm_dir = coasm_dir
         self.asm_dir = asm_dir
         self.skip_eukrep = skip_eukrep
         self.skip_eukcc = skip_eukcc
         self.size_threshold = size_threshold
-        self.eukrep_output = eukrep_output
+        self.euk_binning_outputdir = euk_binning_outputdir
         self.eukcc_db = self.get_db_location(dblocs, 'eukccdb')
         self.max_workers = max_workers
         self.threads = threads
@@ -64,10 +64,10 @@ class EukRepRunner:
                 sample = parts[-3]
                 bin_name = os.path.basename(bin_path).split(".")[0]
 
-                os.makedirs(os.path.join(self.eukrep_output,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
+                os.makedirs(os.path.join(self.euk_binning_outputdir,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
                 
                 output_file = os.path.join(
-                    self.eukrep_output,
+                    self.euk_binning_outputdir,
                     f"{assembly_type}_{sample}_{bin_name}/EUKREP_{assembly_type}_{sample}_{bin_name}_eukrepcontigs.fa"
                 )
 
@@ -91,10 +91,10 @@ class EukRepRunner:
                 sample = parts[-3]
                 bin_name = os.path.basename(bin_path).split(".")[0]
 
-                os.makedirs(os.path.join(self.eukrep_output,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
+                os.makedirs(os.path.join(self.euk_binning_outputdir,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
 
                 output_dir = os.path.join(
-                    self.eukrep_output,
+                    self.euk_binning_outputdir,
                     f"{assembly_type}_{sample}_{bin_name}/eukcc"
                 )
 
@@ -110,7 +110,7 @@ class EukRepRunner:
         summary_data = []
         contigs_found = False  # Track if there are any eukrep results with contigs
 
-        sample_dirs = glob.glob(os.path.join(self.eukrep_output, '*/eukcc'))
+        sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*/eukcc'))
 
         for sample_dir in sample_dirs:
             # Extract path parts
@@ -125,7 +125,7 @@ class EukRepRunner:
             # Define file paths
             eukcc_file = os.path.join(sample_dir, 'eukcc.csv')
             contig_file = os.path.join(
-                self.eukrep_output,
+                self.euk_binning_outputdir,
                 assembly_sample_bin,
                 f"EUKREP_{assembly_type}_{sample_id}_{bin_id}_eukrepcontigs.fa"
             )
@@ -169,7 +169,7 @@ class EukRepRunner:
                 summary_df = summary_df.drop(columns=['contigs_present'], errors='ignore')
             
             # Save to CSV
-            output_file = os.path.join(self.eukrep_output, 'eukaryotic_summary_table.csv')
+            output_file = os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv')
             summary_df.to_csv(output_file, index=False)
             print(f"Summary table saved to {output_file}")
         else:
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--coasm_dir", default='coasm', type=str, help="Directory containing coassembly bins")
     parser.add_argument("--asm_dir", default='asm', type=str, help="Directory containing single assembly bins")
     parser.add_argument("--size_threshold", type=int, default=10000000, help="Size threshold for bins in base pairs (default: 10,000,000)")
-    parser.add_argument("--eukrep_output", default='eukrep_output', type=str, help="Directory to save EukRep and EukCC outputs")
+    parser.add_argument("--euk_binning_outputdir", default='eukbin_output', type=str, help="Directory to save EukRep and EukCC outputs")
     parser.add_argument("--dblocs", type=str, required=True, help="Path to the dblocs configuration file")
     parser.add_argument("--max_workers", type=int, default=1, help="Maximum number of parallel jobs for EukRep and EukCC")
     parser.add_argument("--threads", type=str, default=8, help="Number of threads per EukCC job")
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         coasm_dir=args.coasm_dir,
         asm_dir=args.asm_dir,
         size_threshold=args.size_threshold,
-        eukrep_output=args.eukrep_output,
+        euk_binning_outputdir=args.euk_binning_outputdir,
         dblocs=args.dblocs,
         max_workers=args.max_workers,
         threads=args.threads,
