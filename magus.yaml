@@ -8,7 +8,6 @@ dependencies:
   - multiqc
   - kraken2
   - bracken
-  - checkm-genome
   - metabat2
   - prokka
   - spades
@@ -21,7 +20,7 @@ dependencies:
       - pandas
       - checkv
       - numpy
-      - scikit-learn=0.19.2
+      - scikit-learn
       - scipy
       - matplotlib
       - pyyaml

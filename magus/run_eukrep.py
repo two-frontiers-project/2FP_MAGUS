@@ -106,7 +106,7 @@ class EukRepRunner:
                 future.result()
         print("EukCC processing completed for all bins.")
 
-    def parse_euk_output(self):
+    def process_euk_output(self):
         summary_data = []
         contigs_found = False  # Track if there are any eukrep results with contigs
 
@@ -177,12 +177,12 @@ class EukRepRunner:
 
 
     def run(self):
-        #self.find_bins()
+        self.find_bins()
         if not self.skip_eukrep:
             self.run_eukrep()
         if not self.skip_eukcc:
             self.run_eukcc()
-        self.parse_euk_output()
+        self.process_euk_output()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run EukRep and EukCC on bins from coassembly and single assembly")
