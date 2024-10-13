@@ -17,7 +17,7 @@ class EukRepRunner:
         self.max_workers = max_workers
         self.threads = threads
         self.eukrepenv = eukrepenv
-        self.input_bins_dir = os.path.join(eukrep_output, "input_bins")
+        self.input_bins_dir = os.path.join(euk_binning_outputdir, "input_bins")
         os.makedirs(self.input_bins_dir, exist_ok=True)
 
     def get_db_location(self, dblocs, db_name):
@@ -110,8 +110,7 @@ class EukRepRunner:
         summary_data = []
         contigs_found = False  # Track if there are any eukrep results with contigs
 
-        sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*/eukcc'))
-
+        sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*assembly*bin*'))
         for sample_dir in sample_dirs:
             # Extract path parts
             parts = sample_dir.split(os.sep)
@@ -123,7 +122,8 @@ class EukRepRunner:
             bin_id = f"bin{bin_id}"
             
             # Define file paths
-            eukcc_file = os.path.join(sample_dir, 'eukcc.csv')
+            eukcc_file = os.path.join(sample_dir, 'eukcc/eukcc.csv')
+
             contig_file = os.path.join(
                 self.euk_binning_outputdir,
                 assembly_sample_bin,
@@ -135,13 +135,13 @@ class EukRepRunner:
             
             # Parse eukcc file if it exists
             if os.path.exists(eukcc_file) and os.path.getsize(eukcc_file) > 0:
-                eukcc_data = pd.read_csv(eukcc_file)
+                eukcc_data = pd.read_csv(eukcc_file,sep='\t')
                 if 'completeness' in eukcc_data.columns:
                     completeness = eukcc_data['completeness'].iloc[0]
                 if 'contamination' in eukcc_data.columns:
                     contamination = eukcc_data['contamination'].iloc[0]
-            else:
-                print(f"Warning: {eukcc_file} is missing or empty, populating with NA for completeness and contamination.")
+          #  else:
+                #print(f"Warning: {eukcc_file} is missing or empty, populating with NA for completeness and contamination.")
             
             # Prepare the row dictionary with basic data from eukcc
             row = {
@@ -155,18 +155,18 @@ class EukRepRunner:
             # Check for contigs only if eukrep output is present
             if os.path.exists(contig_file):
                 contigs_exist = os.path.getsize(contig_file) > 0
-                row['contigs_present'] = 'yes' if contigs_exist else 'no'
+                row['eukrep_contigs_present'] = 'yes' if contigs_exist else 'no'
                 contigs_found = True  # Flag that we have contig information to add
 
             summary_data.append(row)
         
-        # Convert to DataFrame and optionally drop contigs_present if no contigs were found
+        # Convert to DataFrame and optionally drop eukrep_contigs_present if no contigs were found
         if summary_data:
             summary_df = pd.DataFrame(summary_data)
             
-            # Drop 'contigs_present' column if no contigs were actually found
+            # Drop 'eukrep_contigs_present' column if no contigs were actually found
             if not contigs_found:
-                summary_df = summary_df.drop(columns=['contigs_present'], errors='ignore')
+                summary_df = summary_df.drop(columns=['eukrep_contigs_present'], errors='ignore')
             
             # Save to CSV
             output_file = os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv')
@@ -177,7 +177,7 @@ class EukRepRunner:
 
 
     def run(self):
-        self.find_bins()
+        #self.find_bins()
         if not self.skip_eukrep:
             self.run_eukrep()
         if not self.skip_eukcc:
