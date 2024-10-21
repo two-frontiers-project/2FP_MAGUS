@@ -3,22 +3,21 @@ import os
 import argparse
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import shutil  # Add at the top of your script
+import shutil
 
 class Binning:
-	def __init__(self, config, outdir="asm", magdir="mags", tmpdir="tmp", threads=14, checkm_db=None, test_mode=False, max_workers=4):
+	def __init__(self, config,tmp_dir, asmdir, magdir="mags", threads=14, checkm_db=None, test_mode=False, max_workers=4):
 		self.config = self.load_config(config)
-		self.outdir = outdir
-		self.magdir = magdir
-		self.tmpdir = tmpdir
+		self.asmdir = asmdir
+		self.magdir = asmdir+"/"+magdir
+		self.tmpdir = tmp_dir
 		self.threads = threads
 		self.checkm_db = checkm_db  # Custom CheckM database path
 		self.test_mode = test_mode  # Flag for test mode
 		self.max_workers = max_workers  # Maximum parallel workers
 
 		# Create the output directories if they don't exist
-		os.makedirs(self.outdir, exist_ok=True)
-		os.makedirs(self.magdir, exist_ok=True)
+		os.makedirs(f"{self.magdir}", exist_ok=True)
 		os.makedirs(self.tmpdir, exist_ok=True)
 
 	def load_config(self, config_path):
@@ -26,8 +25,9 @@ class Binning:
 		return config_df.to_dict(orient='records')
 
 	def run_sorenson(self, sample_name):
-		out_sample_dir = f"{self.outdir}/{sample_name}"
-		temp0_file = f"{out_sample_dir}/temp0.fa"
+		out_sample_dir = f"{self.tmpdir}/{sample_name}"
+		os.makedirs(out_sample_dir, exist_ok=True)
+		temp0_file = f"{self.asmdir}/{sample_name}/temp0.fa"
 		r1 = self.config[0]["pe1"]
 		r2 = self.config[0]["pe2"]
 		cov_file = f"{out_sample_dir}/covs.txt"
@@ -38,10 +38,9 @@ class Binning:
 		print(f"Running sorenson-g for {sample_name}")
 		subprocess.run(cmd, shell=True)
 
-
 	def run_metabat(self, sample_name):
-		out_sample_dir = f"{self.outdir}/{sample_name}"
-		temp0_file = f"{out_sample_dir}/temp0.fa"
+		out_sample_dir = f"{self.tmpdir}/{sample_name}"
+		temp0_file = f"{self.asmdir}/{sample_name}/temp0.fa"
 		cov_file = f"{out_sample_dir}/covs.txt"
 		bins_dir = f"{out_sample_dir}/bins"
 		
@@ -61,15 +60,14 @@ class Binning:
 		# If no bins were found and test_mode is enabled, create a fallback bin
 		if self.test_mode and not bins_found:
 			fallback_bin = os.path.join(bins_dir, "bin0.fa")
-			final_contigs_path = f"{out_sample_dir}/final.contigs.fa"
-			print(f"No bins found for {sample_name}. Copying {final_contigs_path} to {fallback_bin} as fallback bin.")
+			final_contigs_path = f"{self.asmdir}/{sample_name}/final.contigs.fa"
+			print(f"IN TEST MODE, GENERATING SYNTHETIC BIN. Copying {final_contigs_path} to {fallback_bin} as fallback bin.")
 			shutil.copy(final_contigs_path, fallback_bin)
 
-
 	def run_checkm(self, sample_name):
-		out_sample_dir = f"{self.outdir}/{sample_name}"
+		out_sample_dir = f"{self.tmpdir}/{sample_name}"
 		bins_dir = f"{out_sample_dir}/bins"
-		checkm_output = f"{bins_dir}/temp"
+		checkm_output = f"{bins_dir}/checkm"
 		
 		if self.checkm_db:
 			db_flag = f"--database_path {self.checkm_db}"
@@ -81,8 +79,8 @@ class Binning:
 		subprocess.run(cmd, shell=True)
 
 	def filter_good_bins(self, sample_name):
-		out_sample_dir = f"{self.outdir}/{sample_name}"
-		checkm_report = f"{out_sample_dir}/bins/temp/quality_report.tsv"
+		out_sample_dir = f"{self.tmpdir}/{sample_name}"
+		checkm_report = f"{out_sample_dir}/bins/checkm/quality_report.tsv"
 		worthwhile_bins = f"{out_sample_dir}/worthwhile.tsv"
 		
 		if self.test_mode:
@@ -97,7 +95,7 @@ class Binning:
 		print(f"Filtered good bins for {sample_name} (completeness >= {completeness_cutoff}%, contamination <= {contamination_cutoff}%)")
 
 	def copy_good_bins(self, sample_name):
-		out_sample_dir = f"{self.outdir}/{sample_name}"
+		out_sample_dir = f"{self.tmpdir}/{sample_name}"
 		worthwhile_bins = f"{out_sample_dir}/worthwhile.tsv"
 		bins_dir = f"{out_sample_dir}/bins"
 		good_dir = f"{out_sample_dir}/good"
@@ -120,15 +118,15 @@ class Binning:
 			print(f"Copied {bin_file} to {good_dir}")
 
 	def run_lingenome(self, sample_name):
-		out_sample_dir = f"{self.outdir}/{sample_name}/good"
-		parent_dir = f"{self.outdir}/{sample_name}"
+		out_sample_dir = f"{self.tmpdir}/{sample_name}/good"
+		parent_dir = f"{self.tmpdir}/{sample_name}"
 		good_fasta = f"{parent_dir}/good.fasta"
 		cmd = f"lingenome {out_sample_dir} {good_fasta} FILENAME"
 		print(f"Running lingenome for {sample_name}")
 		subprocess.run(cmd, shell=True)
 
 	def run_akmer100b(self, sample_name):
-		parent_dir = f"{self.outdir}/{sample_name}"
+		parent_dir = f"{self.tmpdir}/{sample_name}"
 		good_fasta = f"{parent_dir}/good.fasta"
 		good_dm = f"{parent_dir}/good.dm"
 		cmd = f"OMP_NUM_THREADS={self.threads} akmer100b {good_fasta} {good_dm} 13 ANI CHANCE GC LOCAL RC"
@@ -136,7 +134,7 @@ class Binning:
 		subprocess.run(cmd, shell=True)
 
 	def run_spamw(self, sample_name):
-		parent_dir = f"{self.outdir}/{sample_name}"
+		parent_dir = f"{self.tmpdir}/{sample_name}"
 		good_dm = f"{parent_dir}/good.dm"
 		L_output = f"{parent_dir}/L"
 		cmd = f"spamw2 {good_dm} {L_output} 0 {self.threads} D2"
@@ -151,7 +149,7 @@ class Binning:
 		subprocess.run(cmd_process_bins, shell=True)
 
 	def run_bestmag(self, sample_name):
-		parent_dir = f"{self.outdir}/{sample_name}"
+		parent_dir = f"{self.tmpdir}/{sample_name}"
 		worthwhile_stat = f"{parent_dir}/worthwhile.stat"
 		L_output = f"{parent_dir}/L.txt"
 		bestmags_txt = f"{parent_dir}/bestmags.txt"
@@ -160,18 +158,17 @@ class Binning:
 		subprocess.run(cmd, shell=True)
 
 	def run_final_copy(self, sample_name):
-		parent_dir = f"{self.outdir}/{sample_name}"
+		parent_dir = f"{self.tmpdir}/{sample_name}"
 		mags_dir = self.magdir
 		bestmags_txt = f"{parent_dir}/bestmags.txt"
 		for z in subprocess.run(f"tail -n+2 {bestmags_txt} | cut -f1", shell=True, capture_output=True, text=True).stdout.splitlines():
+			print(z)
 			cmd = f"cp -l {parent_dir}/bins/{z}.fa {mags_dir}/{sample_name}_{z}.fa"
 			subprocess.run(cmd, shell=True)
 			print(f"Copied final bin {z} for {sample_name} to {mags_dir}")
-		checks_file = f"{mags_dir}/checks_{os.uname().nodename}.txt"
+		checks_file = f"{mags_dir}/checks_single_assembly.txt"
 		cmd_append = f"tail -n+2 {bestmags_txt} | sed 's/^/{sample_name}_/' >> {checks_file}"
 		subprocess.run(cmd_append, shell=True)
-		#cmd_cleanup = f"rm -r {parent_dir}/bins/* {parent_dir}/good/* {parent_dir}/temp*.fa {parent_dir}/good.dm"
-		#subprocess.run(cmd_cleanup, shell=True)
 
 	def run_sample(self, sample_name):
 		"""Runs the entire binning pipeline for a single sample."""
@@ -179,14 +176,14 @@ class Binning:
 			self.run_sorenson(sample_name)
 			self.run_metabat(sample_name)
 			self.run_checkm(sample_name)
-	#		self.filter_good_bins(sample_name)
-	#		self.copy_good_bins(sample_name)
-	#		self.run_lingenome(sample_name)
-	#		self.run_akmer100b(sample_name)
-	#		self.run_spamw(sample_name)
-	#		self.run_bestmag(sample_name)
-	#		self.run_final_copy(sample_name)
-	#		print(f"Completed processing for {sample_name}")
+			self.filter_good_bins(sample_name)
+			self.copy_good_bins(sample_name)
+			self.run_lingenome(sample_name)
+			self.run_akmer100b(sample_name)
+			self.run_spamw(sample_name)
+			self.run_bestmag(sample_name)
+			self.run_final_copy(sample_name)
+			print(f"Completed processing for {sample_name}")
 		except subprocess.CalledProcessError as e:
 			print(f"Error occurred while processing {sample_name}: {e}")
 
@@ -210,6 +207,7 @@ def main():
 	parser.add_argument('--checkm_db', type=str, default=None, help='Path to custom CheckM database')
 	parser.add_argument('--asmdir', type=str, default="asm", help='Output directory for assembly (default: asm)')
 	parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
+	parser.add_argument('--tmp_dir', type=str, default='tmp/single-binning', help='Temp directory. Default tmp/single-binning.')
 	parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
 
 	# Parse arguments
@@ -220,7 +218,8 @@ def main():
 		config=args.config,
 		threads=args.threads,
 		checkm_db=args.checkm_db,
-		outdir=args.asmdir,
+		asmdir=args.asmdir,
+		tmp_dir=args.tmp_dir,
 		max_workers=args.max_workers,
 		test_mode=args.test_mode
 	)
