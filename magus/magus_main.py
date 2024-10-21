@@ -13,12 +13,12 @@ def main():
     # Mapping commands to scripts
     command_map = {
         'qc': 'magus/qc.py',
-        'cluster_contigs': 'magus/cluster_contigs.py',
+        'cluster-contigs': 'magus/cluster-contigs.py',
         'coassembly': 'magus/coassembly.py',
-        'coassembly_binning': 'magus/coassembly_binning.py',
-        'run_checkv': 'magus/run_checkv.py',
-        'run_eukrep': 'magus/run_eukrep.py',
-        'select_final_bins': 'magus/select_final_bins.py',
+        'coassembly-binning': 'magus/coassembly-binning.py',
+        'find-viruses': 'magus/find-viruses.py',
+        'find-euks': 'magus/find-euks.py',
+        'finalize-bacterial-mags': 'magus/finalize-bacterial-mags.py',
         'single-assembly': 'magus/single-assembly.py',
         'single-binning': 'magus/single-binning.py'
     }
