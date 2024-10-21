@@ -3,9 +3,10 @@ import subprocess
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import glob
+import pandas as pd
 
 class CheckVRunner:
-    def __init__(self, asm_dir, coasm_dir, combined_contig_file, filtered_contig_file, min_length, max_length, threads, quality, tmp_dir="tmp/run_checkv"):
+    def __init__(self, asm_dir, coasm_dir,dblocs,combined_contig_file, filtered_contig_file, min_length, max_length, threads, quality, tmp_dir="tmp/run_checkv"):
         self.asm_dir = asm_dir
         self.coasm_dir = coasm_dir
         self.combined_contig_file = os.path.join(tmp_dir, combined_contig_file)
@@ -16,8 +17,14 @@ class CheckVRunner:
         self.tmp_dir = tmp_dir
         self.quality = set(quality)
         self.virus_dir = os.path.join("magus_viruses")
+        self.checkv_db = self.get_db_location(dblocs, 'checkv')
         os.makedirs(self.virus_dir, exist_ok=True)
         os.makedirs(tmp_dir, exist_ok=True)
+
+    def get_db_location(self, dblocs, db_name):
+        """Retrieve the path of the specified database from the dblocs configuration file."""
+        db_df = pd.read_csv(dblocs, header=None, index_col=0)
+        return db_df.loc[db_name, 1]
 
     def merge_contig_files(self):
         """Concatenate all contig files from both coassembly and single assembly into a single merged file using `cat`."""
@@ -47,16 +54,14 @@ class CheckVRunner:
 
     def run_checkv_single(self, filtered_file):
         """Run CheckV on a filtered contig file."""
-        output_dir = os.path.join(self.virus_dir, os.path.basename(filtered_file).replace(".fasta", ""))
+        output_dir = os.path.join(self.virus_dir, 'checkv_output')
         os.makedirs(output_dir, exist_ok=True)
-        cmd = f"checkv end_to_end {filtered_file} {output_dir} -t {self.threads}"
-        print(cmd)
+        cmd = f"checkv end_to_end {filtered_file} {output_dir} -d {self.checkv_db} -t {self.threads}"
         subprocess.run(cmd, shell=True)
         print(f"CheckV analysis completed for {filtered_file}")
         return output_dir
 
     def process_results(self):
-        """Process CheckV output and extract sequences based on specified quality levels."""
         quality_levels = {
             'C': "Complete",
             'H': "High-quality",
@@ -127,9 +132,9 @@ class CheckVRunner:
         print(f"Updated {good_summary_output} with representative information.")
 
     def run(self):
-        self.merge_contig_files()
-        self.filter_contigs(self.filtered_contig_file)
-        #self.run_checkv_single(self.filtered_contig_file)
+        #self.merge_contig_files()
+        #self.filter_contigs(self.filtered_contig_file)
+        self.run_checkv_single(self.filtered_contig_file)
         #binids = self.process_results()
         #self.dereplicate_viruses(binids)
 
@@ -144,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--threads", type=int, default=28, help="Number of threads for CheckV")
     parser.add_argument("--quality", type=str, default="CHML", help="Viral contig levels to include (C [Complete], H [High], M [Medium], L [Low])")
     parser.add_argument("--tmp_dir", type=str, default="tmp/run_checkv", help="Temporary directory for storing intermediate files")
+    parser.add_argument("--dblocs", type=str, required=True,default = 'configs/db_locs', help="Path to the dblocs configuration file")
     args = parser.parse_args()
 
     runner = CheckVRunner(
@@ -152,6 +158,7 @@ if __name__ == "__main__":
         combined_contig_file=args.combined_contig_file,
         filtered_contig_file=args.filtered_contig_file,
         min_length=args.min_length,
+        dblocs=args.dblocs,
         max_length=args.max_length,
         threads=args.threads,
         quality=args.quality,
