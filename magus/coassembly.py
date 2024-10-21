@@ -5,13 +5,14 @@ import pandas as pd
 import shutil
 
 class CoAssembly:
-    def __init__(self, config, outdir="coasm", magdir=None, tmpdir=None, threads=48, test_mode=False):
+    def __init__(self, config, tmpdir, coasm_todo,outdir="coasm", threads=48, test_mode=False):
         self.config = self.load_config(config)
         self.outdir = outdir
-        self.magdir = magdir if magdir else f"{self.outdir}/mags"
-        self.tmpdir = tmpdir if tmpdir else os.path.expanduser("~/partmp")
+        self.magdir = f"{self.outdir}/mags"
+        self.tmpdir = tmpdir
         self.threads = threads
         self.test_mode = test_mode  # Added test_mode flag
+        self.coasm_todo = coasm_todo
 
         # Create necessary directories
         os.makedirs(self.outdir, exist_ok=True)
@@ -23,7 +24,7 @@ class CoAssembly:
         return config_df.to_dict(orient='records')
 
     def run_coassembly(self):
-        coasm_todo = "coasm.todo"
+        coasm_todo = self.coasm_todo
         
         with open(coasm_todo) as f:
             for line in f:
@@ -129,9 +130,9 @@ class CoAssembly:
 def main():
     parser = argparse.ArgumentParser(description="Run co-assembly pipeline on genomic data.")
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
+    parser.add_argument('--coasm_todo', type=str, required=True, help='Path to output of cluster_contigs, the coasm_todo file')
     parser.add_argument('--outdir', type=str, default="coasm", help='Output directory for co-assembly (default: coasm)')
-    parser.add_argument('--magdir', type=str, help='Directory for storing bins; defaults to a "mags" folder within the output directory')
-    parser.add_argument('--tmpdir', type=str, help='Temporary directory (default: ~/partmp)')
+    parser.add_argument('--tmp_dir', type=str,default = 'tmp/coasm', help='Temporary directory (default: ~/partmp)')
     parser.add_argument('--threads', type=int, default=48, help='Number of threads for tools (default: 48)')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
 
@@ -140,8 +141,8 @@ def main():
     coassembly = CoAssembly(
         config=args.config,
         outdir=args.outdir,
-        magdir=args.magdir,
-        tmpdir=args.tmpdir,
+        tmpdir=args.tmp_dir,
+        coasm_todo=args.coasm_todo,
         threads=args.threads,
         test_mode=args.test_mode
     )
