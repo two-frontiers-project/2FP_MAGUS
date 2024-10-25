@@ -77,7 +77,7 @@ class CheckVRunner:
             result_path = os.path.join(self.virus_dir, result_dir)
             summary_file = os.path.join(result_path, "quality_summary.tsv")
             if os.path.exists(summary_file):
-                good_file = os.path.join(result_path, "checkv_quality_summary_medium-high-complete.tsv")
+                good_file = os.path.join(result_path, "checkv_quality_summary_filtered.tsv")
                 with open(good_file, "w") as good_out:
                     with open(summary_file) as summary_in:
                         header = summary_in.readline().strip()
@@ -93,7 +93,7 @@ class CheckVRunner:
 
     def dereplicate_viruses(self, binids):
         """Subset viral contigs, run canolax5 to dereplicate, and update good.tsv with Representative sequences."""
-        viruses_fna = os.path.join(self.virus_dir, "filtered_all_contigs/viruses.fna")
+        viruses_fna = os.path.join(self.virus_dir, "checkv_output/viruses.fna")
         tobe_dereplicated_viruses = os.path.join(self.virus_dir, "tobe_dereplicated_viruses.fasta")
         good_summary_output = os.path.join(self.virus_dir, "good_dereplicated_viruses.tsv")
         
@@ -120,7 +120,7 @@ class CheckVRunner:
                     dereplicated_ids.add(line[1:].strip().split()[0])
 
         # Update good.tsv to mark representative sequences
-        with open(os.path.join(self.virus_dir, "filtered_all_contigs/checkv_quality_summary_medium-high-complete.tsv"), 'r') as good_in, \
+        with open(os.path.join(self.virus_dir, "checkv_output/checkv_quality_summary_filtered.tsv"), 'r') as good_in, \
              open(good_summary_output, 'w') as good_out:
             for line in good_in:
                 if line.startswith("contig_id"):  # Write header
@@ -135,8 +135,8 @@ class CheckVRunner:
         self.merge_contig_files()
         self.filter_contigs(self.filtered_contig_file)
         self.run_checkv_single(self.filtered_contig_file)
-        #binids = self.process_results()
-        #self.dereplicate_viruses(binids)
+        binids = self.process_results()
+        self.dereplicate_viruses(binids)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run CheckV on merged and filtered contigs")

@@ -5,12 +5,14 @@ import pandas as pd
 
 class FinalMAGMerge:
     def __init__(self, tmp_dir,singleassembly_mag_dir, coasm_mag_dir, outdir, threads=28):
-        self.original_mag_dir = original_mag_dir
-        self.new_coasm_dir = new_coasm_dir
+        self.original_mag_dir = singleassembly_mag_dir
+        self.new_coasm_dir = coasm_mag_dir
         self.outdir = outdir
-        self.merged_output = outdir + 'magus_consolidated_bac_arc_mags.fasta'
+        self.merged_output = outdir + '/magus_consolidated_bac_arc_mags.fasta'
         self.threads = threads
-        self.tmpdir = tmpdir
+        self.tmpdir = tmp_dir
+        os.makedirs(self.tmpdir, exist_ok=True)
+        os.makedirs(self.outdir, exist_ok=True)
 
     def load_config(self, config_path):
         config_df = pd.read_csv(config_path, sep='\t')
@@ -89,18 +91,17 @@ def main():
     parser = argparse.ArgumentParser(description="Merge and annotate final MAG files.")
     parser.add_argument('--singleassembly_mag_dir', type=str, default="asm/mags", help='Original MAGs directory (default: mags)')
     parser.add_argument('--coasm_mag_dir', type=str, default="coasm/mags", help='New co-assembled MAGs directory (default: coasm/mags)')
-    parser.add_argument('--outdir', type=str, default="magus_output/bacteria_archaea", help='Merged output file (default: magus_output/bacteria_archaea/)')
+    parser.add_argument('--outdir', type=str, default="magus_output/magus_bacteria_archaea", help='Merged output file (default: magus_output/magus_bacteria_archaea/)')
     parser.add_argument('--threads', type=int, default=28, help='Number of threads (default: 28)')
     parser.add_argument('--tmp_dir', default = 'tmp/finalize-bacterial-mags',type=str, help='Temporary directory (default: tmp/finalize-bacterial-mags)')
 
     args = parser.parse_args()
 
     final_merge = FinalMAGMerge(
-        config=args.config,
         singleassembly_mag_dir=args.singleassembly_mag_dir,
         coasm_mag_dir=args.coasm_mag_dir,
-        merged_output=args.merged_output,
-        tmpdir=args.tmp_dir,
+        outdir=args.outdir,
+        tmp_dir=args.tmp_dir,
         threads=args.threads
     )
     final_merge.run()

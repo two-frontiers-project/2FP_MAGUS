@@ -189,7 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--coasm_dir", default='coasm', type=str, help="Directory containing coassembly bins")
     parser.add_argument("--asm_dir", default='asm', type=str, help="Directory containing single assembly bins")
     parser.add_argument("--size_threshold", type=int, default=10000000, help="Size threshold for bins in base pairs (default: 10,000,000)")
-    parser.add_argument("--euk_binning_outputdir", default='magus_output/euks', type=str, help="Directory to save EukRep and EukCC outputs")
+    parser.add_argument("--euk_binning_outputdir", default='magus_output/magus_euks', type=str, help="Directory to save EukRep and EukCC outputs")
     parser.add_argument("--dblocs", type=str, required=True, help="Path to the dblocs configuration file")
     parser.add_argument("--max_workers", type=int, default=1, help="Maximum number of parallel jobs for EukRep and EukCC")
     parser.add_argument("--threads", type=str, default=8, help="Number of threads per EukCC job")
@@ -198,8 +198,8 @@ if __name__ == "__main__":
     parser.add_argument("--skip_eukcc", type=str, default=False, help="True or False, skip eukcc step")
     args = parser.parse_args()
 
-    skip_eukrep = args.skip_eukrep.lower() == 'true'
-    skip_eukcc = args.skip_eukcc.lower() == 'true'
+    skip_eukrep = args.skip_eukrep == 'true'
+    skip_eukcc = args.skip_eukcc == 'true'
 
     runner = EukRepRunner(
         coasm_dir=args.coasm_dir,

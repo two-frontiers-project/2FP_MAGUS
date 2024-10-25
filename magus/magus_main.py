@@ -1,6 +1,6 @@
-# magus_main.py
 import sys
 import subprocess
+import os
 
 def main():
     if len(sys.argv) < 2:
@@ -12,15 +12,15 @@ def main():
 
     # Mapping commands to scripts
     command_map = {
-        'qc': 'magus/qc.py',
-        'cluster-contigs': 'magus/cluster-contigs.py',
-        'coassembly': 'magus/coassembly.py',
-        'coassembly-binning': 'magus/coassembly-binning.py',
-        'find-viruses': 'magus/find-viruses.py',
-        'find-euks': 'magus/find-euks.py',
-        'finalize-bacterial-mags': 'magus/finalize-bacterial-mags.py',
-        'single-assembly': 'magus/single-assembly.py',
-        'single-binning': 'magus/single-binning.py'
+        'qc': 'qc.py',
+        'cluster-contigs': 'cluster-contigs.py',
+        'coassembly': 'coassembly.py',
+        'coassembly-binning': 'coassembly-binning.py',
+        'find-viruses': 'find-viruses.py',
+        'find-euks': 'find-euks.py',
+        'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
+        'single-assembly': 'single-assembly.py',
+        'single-binning': 'single-binning.py'
     }
 
     # Check for valid command
@@ -29,9 +29,12 @@ def main():
         print("Available commands:", ", ".join(command_map.keys()))
         sys.exit(1)
 
-    # Run the appropriate script
+    # Get the absolute path to the script inside the package
     script = command_map[command]
-    subprocess.run(['python', script] + args)
+    script_path = os.path.join(os.path.dirname(__file__), script)
+
+    # Run the appropriate script
+    subprocess.run(['python', script_path] + args)
 
 if __name__ == '__main__':
     main()

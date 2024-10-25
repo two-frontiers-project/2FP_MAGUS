@@ -3,15 +3,15 @@ from setuptools import setup, find_packages
 setup(
     name='magus',
     version='0.1.0',
-    packages=find_packages(),  # This will include 'magus' and all sub-packages
+    packages=find_packages(),
+    include_package_data=True,
     entry_points={
         'console_scripts': [
-            'magus=magus.magus_main:main',  # Ensure the entry point specifies the package path
+            'magus=magus.magus_main:main',
         ],
     },
-    include_package_data=True,
     install_requires=[
-        # List any required dependencies for Python here, or leave it empty if using Conda exclusively
+        # List any required dependencies
     ],
 )
 
