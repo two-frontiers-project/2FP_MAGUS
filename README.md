@@ -18,7 +18,7 @@ MAGUS takes a multi-pass, single then co-assembly approach to identify putative 
 
 ## Installation
 
-MAGUS is designed to be run on [XXX].
+MAGUS was built and runs quite happily on [Fedora Linux 40 (Workstation Edition)]. 
 
 ```bash
 git clone https://github.com/two-frontiers-project/2FP_MAGUS.git   
