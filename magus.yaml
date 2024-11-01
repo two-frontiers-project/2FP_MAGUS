@@ -235,7 +235,6 @@ dependencies:
       - appdirs==1.4.4
       - biopython==1.81
       - checkv==1.0.3
-      - eukrep==0.6.6
       - future==1.0.0
       - kcounter==0.1.1
       - kpal==2.1.1
