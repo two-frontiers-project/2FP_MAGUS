@@ -18,7 +18,7 @@ MAGUS takes a multi-pass, single then co-assembly approach to identify putative 
 
 ## Installation
 
-MAGUS was built and runs quite happily on [Fedora Linux 40 (Workstation Edition)]. 
+MAGUS was built and runs quite happily on Fedora Linux 40 (Workstation Edition). 
 
 ```bash
 git clone https://github.com/two-frontiers-project/2FP_MAGUS.git   
@@ -136,10 +136,11 @@ In the near future we'll release our gene catalog modules that enable functional
 |                          | `--threads`               | Number of threads assigned per job                             |
 |                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
 
+## Conda and python dependencies 
 
-## Additional software requirements
+## Other software requirements
 
-The external software that we use (e.g., our version of MegaHIT, etc) is all found in the bin/ directory. This should be added to the path on installation. A brief description of each tool is here:
+The external software that we use (e.g., tools not found in conda, like our version of MegaHIT) is all found in the bin/ directory. This should be added to the path on installation. A brief description of each tool is here:
 
 | Software       | Description                                                                                                  |
 |----------------|--------------------------------------------------------------------------------------------------------------|
@@ -155,7 +156,16 @@ The external software that we use (e.g., our version of MegaHIT, etc) is all fou
 | **bestmag2** | Selects the "best" MAGs based on quality metrics and coverage information.                          |
 | **spamw2**     | Clusters genomes based on pairwise jaccard distances.                                                        |
 
+## License
 
+MAGUS is licensed under the Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0) license. This means it is free for academic and non-commercial use. For commercial use, please contact us to discuss licensing terms.
 
+## Authors
 
+Gabe Al-Ghalith ```(gabe at two frontiers dot org)```
+Braden Tierney ```(braden at two frontiers dot org)```
+
+## Contact
+
+If you have questions, reach out to ```info at two frontiers dot org```
 
