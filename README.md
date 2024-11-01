@@ -1,7 +1,5 @@
 # MAGUS: Pan-domain, holobiont characterization via co-assembly binning emphasizing low abundance organisms
 
-note from BT -- this probably won't install correctly yet, I haven't updated yml 
-
 ## Background
 
 The term "holobiont" refers to the assemblage of all organisms that make up a single meta-organism. This could be humans and their resident microbes, corals and their native viruses and algae, or any other number of metagenomic ecosystems. Given the complex interplay between microbes and their hosts, studying the macroscale holobiont instead of individual systems in isolation is critical for understanding ecosystem dynamics on a biologically meaningful scale. 
