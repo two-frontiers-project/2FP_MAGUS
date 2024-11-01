@@ -42,6 +42,22 @@ Additionally, we parameterize the different functions based on config files (loc
 
 So, before running MAGUS **be sure that you update the raw_config and db_locs config files with the appopropriate paths to raw data and databases on your system.**
 
+## Input and output
+
+In its maximal form, when you run MAGUS you'll end up with a single directory that contains:
+
+1. Bacterial MAGS
+2. Viral Genomes
+3. Putative Eukaryotic MAGS
+4. Taxonomic information on every MAG
+5. Summarized quality statistics for each MAG
+
+You'll also end up, of course, with all your assemblies, and in the near future you'll have gene catalogs, functional annotations, and phylogenies.
+
+## A note on runtimes
+
+This is a memory intensive piece of software. Single assemblies are easy enough, but co-assemblies can easily require 3+ terabytes of RAM. It can take weeks to work through only a few hundred samples, even if they're sub 100M PE reads. We're working on some methods for clever downsampling to speed things up in the coassembly step without losing critical information, but in the meantime we recommend leveraging HPC systems, cloud credits, and leveraging spot instances. If you have specific challenges, please feel free to reach out to ```info at two frontiers dot org.```
+
 ## Commands and arguments
 
 The sequence of commands to run the full pipeline is as follows:
