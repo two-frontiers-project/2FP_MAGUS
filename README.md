@@ -1,4 +1,4 @@
-# MAGUS: Pan-domain holobiont characterization via co-assembly binning emphasizing low abundance organisms
+# MAGUS: Pan-domain, holobiont characterization via co-assembly binning emphasizing low abundance organisms
 
 ## Background
 
@@ -12,4 +12,5 @@ Here, we provide MAGUS -- a pipeline designed for pan-domain analysis of the hol
 
 ![Alt text](images/magus_workflow.png)
 
-MAGUS takes a multi-pass, single then co-assembly approach to identify putative metagenomic bins. For assembly, we use a modified megahit implementation that [GABE DESCRIBE]. We first 
+MAGUS takes a multi-pass, single then co-assembly approach to identify putative metagenomic bins. For assembly, we use a modified megahit implementation that [GABE DESCRIBE]. Following single sample assembly, we run MetaBAT2 in order to identify putative bins. Samples are then selected for coassembly based on jaccard distance between assembled contigs, with the hypothesis being that samples with a certain degree of similarity will be more likely to assemble low abundance bins that were missed in single assembly. Following coassembly, binning is attempted both with aggregated coverage (i.e.,, without alignment to compute individual coverages) as well as distributed coverage (using alignment). We use CheckM2 to identify putative bacteria/archaea, CheckV to get viruses, and two Eukaryotic binners (EukCC and EukRep) to identify putative eukaryotic bins. Viral genomes are dereplicated at the 90% identity level. Identical bacterial/archael genomes are consolidated between coassembled and single assembled samples. Eukaryotic genomes are not dereplicated. 
+
