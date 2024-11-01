@@ -1,5 +1,7 @@
 # MAGUS: Pan-domain, holobiont characterization via co-assembly binning emphasizing low abundance organisms
 
+note from BT -- this probably won't install correctly yet, I haven't updated yml 
+
 ## Background
 
 The term "holobiont" refers to the assemblage of all organisms that make up a single meta-organism. This could be humans and their resident microbes, corals and their native viruses and algae, or any other number of metagenomic ecosystems. Given the complex interplay between microbes and their hosts, studying the macroscale holobiont instead of individual systems in isolation is critical for understanding ecosystem dynamics on a biologically meaningful scale. 
@@ -18,10 +20,19 @@ MAGUS takes a multi-pass, single then co-assembly approach to identify putative 
 
 MAGUS is designed to be run on [XXX].
 
+```bash
 git clone https://github.com/two-frontiers-project/2FP_MAGUS.git   
 cd 2FP_MAGUS
 conda create -n magus -f magus.yml
+conda activate magus
 pip install .
+```
+
+You'll also need to install some databases. Use this function:
+
+```
+magus install_db --path /path/to/dbfiles
+```
 
 ## Additional software requirements
 
@@ -40,5 +51,19 @@ The external software that we use (e.g., our version of MegaHIT, etc) is all fou
 | **akmer100b**  | Calculates k-mer frequencies and distances for genome comparisons.                                           |
 | **bestmag2** | Selects the "best" MAGs based on quality metrics and coverage information.                          |
 | **spamw2**     | Clusters genomes based on pairwise jaccard distances.                                                        |
+
+## Deployment
+
+You'll notice MAGUS is designed to not be run in a single click (we have no end-to-end implmentation) -- this is intentional, as not all users will need to run it fully, and the co-assembly steps are extraordinarily memory intensive. 
+
+Additionally, we parameterize the different functions based on config files (located by default in the config directory). These provide paths to the sequencing files you want to process, as well as the raw database locations (this is to avoid muddying up your paths and prevent having to manually specify database locations in each steps). 
+
+So, before running MAGUS **be sure that you update the raw_config and db_locs config files with the appopropriate paths to raw data and databases on your system.**
+
+
+
+
+
+
 
 
