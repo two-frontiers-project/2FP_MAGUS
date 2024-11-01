@@ -18,6 +18,8 @@ MAGUS takes a multi-pass, single then co-assembly approach to identify putative 
 
 MAGUS was built and runs quite happily on Fedora Linux 40 (Workstation Edition). 
 
+When we preprint the paper, we'll have a docker container you can just pull.
+
 ```bash
 git clone https://github.com/two-frontiers-project/2FP_MAGUS.git   
 cd 2FP_MAGUS
