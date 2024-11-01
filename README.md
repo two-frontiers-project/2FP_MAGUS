@@ -165,5 +165,5 @@ Braden Tierney ```(braden at two frontiers dot org)```
 
 ## Contact
 
-If you have questions, reach out to ```info at two frontiers dot org```
+If you have questions, reach out to the authors and/or ```info at two frontiers dot org```, which will reach more of us at 2FP.
 
