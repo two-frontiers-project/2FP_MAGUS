@@ -11,3 +11,5 @@ Here, we provide MAGUS -- a pipeline designed for pan-domain analysis of the hol
 ## Approach
 
 ![Alt text](images/magus_workflow.png)
+
+MAGUS takes a multi-pass, single then co-assembly approach to identify putative metagenomic bins. For assembly, we use a modified megahit implementation that [GABE DESCRIBE]. We first 
