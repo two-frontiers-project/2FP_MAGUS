@@ -244,4 +244,3 @@ dependencies:
       - psutil==6.0.0
       - scikit-learn==1.0.2
       - semantic-version==2.10.0
-prefix: /mnt/win/braden/.conda/envs/mamba/envs/magus
