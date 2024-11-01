@@ -34,6 +34,93 @@ You'll also need to install some databases. Use this function:
 magus install_db --path /path/to/dbfiles
 ```
 
+## Database and config setup
+
+You'll notice MAGUS is designed to not be run in a single click (we have no end-to-end implmentation) -- this is intentional, as not all users will need to run it fully, and the co-assembly steps are extraordinarily memory intensive. 
+
+Additionally, we parameterize the different functions based on config files (located by default in the config directory). These provide paths to the sequencing files you want to process, as well as the raw database locations (this is to avoid muddying up your paths and prevent having to manually specify database locations in each steps). 
+
+So, before running MAGUS **be sure that you update the raw_config and db_locs config files with the appopropriate paths to raw data and databases on your system.**
+
+## Commands and arguments
+
+The sequence of commands to run the full pipeline is as follows:
+
+| Command       | Description                                                                                                  |
+|----------------|--------------------------------------------------------------------------------------------------------------|
+| magus qc |   Read quality control and compression    |
+| magus single-assembly |    Assemble samples one at a time        |
+| magus single-binning |  Bin genomes with MetaBAT2  and run CheckM2  |
+| magus cluster-contigs |   Identify samples for potential co-assembly  |
+| magus coassembly |  Co-assemble samples|
+| magus coassembly-binning |    Run MetaBAT2 and CheckM2 on coassembled bins    |
+| magus finalize-bacterial-mags |  Filter redundant bacterial/archaeal MAGS identified in both single and coassembly binning.  |
+| magus find-viruses | Identify viral contigs with CheckV |
+| magus find-euks | Identify putative eukaryotic bins with EukRep and EukCC   |
+
+In the near future we'll release our gene catalog modules that enable functional comparison of various genomes and construction of phylogenetic trees.
+
+## Command arguments
+
+| Command                  | Argument                   | Description                                                    |
+|--------------------------|----------------------------|----------------------------------------------------------------|
+| **qc**      | `--config`                | Location of the configuration file containing the raw reads                            |
+|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
+|                          | `--threads`               | Number of threads assigned per job                             |
+| **single-assembly**      | `--config`                | Location of the configuration file containing the qc'd reads                            |
+|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
+|                          | `--threads`               | Number of threads assigned per job                             |
+| **single-binning**       | `--config`                | Location of the configuration file containing the qc'd reads                             |
+|                          | `--threads`               | Number of threads assigned per job                             |
+|                          | `--asmdir`                | Directory for the assembly output                              |
+|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
+|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
+|                          | `--test_mode`             | Enables test mode for debugging                                |
+| **cluster-contigs**      | `--config`                | Location of the configuration file containing the qc'd reads                              |
+|                          | `--threads`               | Number of threads assigned per job                             |
+|                          | `--contig_dir`            | Directory containing contigs for clustering                    |
+|                          | `--combined_output`       | File to store combined contig output                           |
+|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
+| **coassembly**           | `--config`                | Location of the configuration file containing the qc'd reads                              |
+|                          | `--coasm_todo`            | To-do list or specification file for co-assembly tasks         |
+|                          | `--outdir`                | Output directory for co-assembly results                       |
+|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
+|                          | `--threads`               | Number of threads assigned per job                             |
+|                          | `--test_mode`             | Enables test mode for debugging                                |
+| **coassembly-binning**   | `--config`                | Location of the configuration file containing the qc'd reads                              |
+|                          | `--coasm_outdir`          | Directory to store co-assembly output                          |
+|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
+|                          | `--threads`               | Number of threads assigned per job                             |
+|                          | `--checkm_db`             | Path to CheckM database for quality assessment                 |
+|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
+|                          | `--test_mode`             | Enables test mode for debugging                                |
+| **find-viruses**         | `--asm_dir`               | Directory for single-assembly files                            |
+|                          | `--coasm_dir`             | Directory for co-assembly files                                |
+|                          | `--combined_contig_file`  | File containing combined contigs for analysis                  |
+|                          | `--filtered_contig_file`  | File containing filtered contigs based on length and quality   |
+|                          | `--min_length`            | Minimum length cutoff for viral contigs                        |
+|                          | `--max_length`            | Maximum length cutoff for viral contigs                        |
+|                          | `--threads`               | Number of threads assigned per job                             |
+|                          | `--quality`               | Quality threshold for viral identification                     |
+|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
+|                          | `--dblocs`                | Database locations for viral identification                    |
+| **find-euks**            | `--coasm_dir`             | Directory for co-assembly files                                |
+|                          | `--asm_dir`               | Directory for single-assembly files                            |
+|                          | `--size_threshold`        | Size threshold for eukaryotic genome detection                 |
+|                          | `--euk_binning_outputdir` | Output directory for eukaryotic binning results                |
+|                          | `--dblocs`                | Database locations for eukaryotic genome identification        |
+|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
+|                          | `--threads`               | Number of threads assigned per job                             |
+|                          | `--skip_eukrep`           | Option to skip EukRep-based filtering                          |
+|                          | `--eukrep_env`            | Conda environment for running EukRep                           |
+|                          | `--skip_eukcc`            | Option to skip EukCC-based filtering                           |
+| **finalize-bacterial-mags** | `--singleassembly_mag_dir` | Directory for single-assembly MAGs                          |
+|                          | `--coasm_mag_dir`         | Directory for co-assembly MAGs                                 |
+|                          | `--outdir`                | Output directory for finalized bacterial MAGs                  |
+|                          | `--threads`               | Number of threads assigned per job                             |
+|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
+
+
 ## Additional software requirements
 
 The external software that we use (e.g., our version of MegaHIT, etc) is all found in the bin/ directory. This should be added to the path on installation. A brief description of each tool is here:
@@ -51,17 +138,6 @@ The external software that we use (e.g., our version of MegaHIT, etc) is all fou
 | **akmer100b**  | Calculates k-mer frequencies and distances for genome comparisons.                                           |
 | **bestmag2** | Selects the "best" MAGs based on quality metrics and coverage information.                          |
 | **spamw2**     | Clusters genomes based on pairwise jaccard distances.                                                        |
-
-## Deployment
-
-You'll notice MAGUS is designed to not be run in a single click (we have no end-to-end implmentation) -- this is intentional, as not all users will need to run it fully, and the co-assembly steps are extraordinarily memory intensive. 
-
-Additionally, we parameterize the different functions based on config files (located by default in the config directory). These provide paths to the sequencing files you want to process, as well as the raw database locations (this is to avoid muddying up your paths and prevent having to manually specify database locations in each steps). 
-
-So, before running MAGUS **be sure that you update the raw_config and db_locs config files with the appopropriate paths to raw data and databases on your system.**
-
-
-
 
 
 
