@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run quality control with shi7_trimmer on genomic data.")
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
     parser.add_argument('--max_workers', type=int, default=1, help='Max number of workers (default: 1)')
-    parser.add_argument('--output', type=str, default="output/qc_config.tsv", help='Output file path for the new QC config file (default: output/qc_config.tsv)')
+    parser.add_argument('--output', type=str, default="configs/qc_config", help='Output file path for the new QC config file (default: output/qc_config.tsv)')
 
     # Parse arguments
     args = parser.parse_args()
