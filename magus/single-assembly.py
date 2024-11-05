@@ -52,7 +52,7 @@ class Assembly:
 					f"sbatch -p {self.slurm_config['queue']} "
 					f"-t {self.slurm_config['time']} "
 					f"--cpus-per-task={self.threads} "
-					f"magus_assembly_slurm_helper.sh {batch_file} {self.threads}\n"
+					f"bash magus_assembly_slurm_helper.sh {batch_file} {self.threads}\n"
 				)
 				f.write(sbatch_cmd)
 
