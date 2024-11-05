@@ -12,6 +12,7 @@ setup(
     },
     data_files=[
         ('bin', [
+            'bin/magus_assembly_helper.sh', 
             'bin/sorenson-g',
             'bin/shi7_trimmer',
             'bin/minigzip',
