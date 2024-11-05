@@ -10,8 +10,19 @@ setup(
             'magus=magus.magus_main:main',
         ],
     },
-    install_requires=[
-        # List any required dependencies
+    data_files=[
+        ('bin', [
+            'bin/sorenson-g',
+            'bin/shi7_trimmer',
+            'bin/minigzip',
+            'bin/akmer100b',
+            'bin/lingenome',
+            'bin/fac',
+            'bin/bestmag2',
+            'bin/spamw2',
+            'bin/megahit-g',
+            'bin/canolax5',
+        ]),
     ],
 )
 
