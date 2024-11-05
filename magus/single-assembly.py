@@ -47,12 +47,12 @@ class Assembly:
 			f.write("#!/bin/bash\n\n")
 			
 			for batch_file in batch_files:
-				# Adjusted sbatch command to call magus_assembly_slurm_helper.sh with arguments
+				# Adjusted sbatch command to call magus_assembly_helper.sh with arguments
 				sbatch_cmd = (
 					f"sbatch -p {self.slurm_config['queue']} "
 					f"-t {self.slurm_config['time']} "
 					f"--cpus-per-task={self.threads} "
-					f"bash magus_assembly_slurm_helper.sh {batch_file} {self.threads}\n"
+					f"bash magus_assembly_helper.sh {batch_file} {self.threads}\n"
 				)
 				f.write(sbatch_cmd)
 
