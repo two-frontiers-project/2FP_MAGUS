@@ -1,7 +1,5 @@
 # MAGUS: Pan-domain, holobiont characterization via co-assembly binning emphasizing low abundance organisms
 
-note from BT -- this probably won't install correctly yet, I haven't updated yml 
-
 ## Background
 
 The term "holobiont" refers to the assemblage of all organisms that make up a single meta-organism. This could be humans and their resident microbes, corals and their native viruses and algae, or any other number of metagenomic ecosystems. Given the complex interplay between microbes and their hosts, studying the macroscale holobiont instead of individual systems in isolation is critical for understanding ecosystem dynamics on a biologically meaningful scale. 
@@ -20,6 +18,8 @@ MAGUS takes a multi-pass, single then co-assembly approach to identify putative 
 
 MAGUS was built and runs quite happily on Fedora Linux 40 (Workstation Edition). 
 
+When we preprint the paper, we'll have a docker container you can just pull.
+
 ```bash
 git clone https://github.com/two-frontiers-project/2FP_MAGUS.git   
 cd 2FP_MAGUS
@@ -32,6 +32,18 @@ You'll also need to install some databases. Use this function:
 
 ```
 magus install_db --path /path/to/dbfiles
+```
+
+Now, if you want to run EukRep, you will have to run it into its own conda environment. The models it uses for genome prediction were trained with an older version of ```scikit-learn``` than is required by CheckM2, which is a more critical tool for MAGUS overall. We have forked EukRep's repo and are playing around with updating the dependency versioning, but for the time being it's easier to install EukRep in a conda environment (eukrep-env is what MAGUS looks for by default, you can update this in the config files). In the find-euks step, MAGUS will activate then deactivate this environment as needed.
+
+Here's the link to EukRep:
+
+```https://github.com/patrickwest/EukRep```
+
+To install:
+
+```
+conda create -y -n eukrep-env -c bioconda scikit-learn==0.19.2 eukrep
 ```
 
 ## Database and config setup
@@ -54,9 +66,9 @@ In its maximal form, when you run MAGUS you'll end up with a single directory th
 
 You'll also end up, of course, with all your assemblies, and in the near future you'll have gene catalogs, functional annotations, and phylogenies.
 
-## A note on runtimes
+## A note on runtimes and memory usage
 
-This is a memory intensive piece of software. Single assemblies are easy enough, but co-assemblies can easily require 3+ terabytes of RAM. It can take weeks to work through only a few hundred samples, even if they're sub 100M PE reads. We're working on some methods for clever downsampling to speed things up in the coassembly step without losing critical information, but in the meantime we recommend leveraging HPC systems, cloud credits, and leveraging spot instances. If you have specific challenges, please feel free to reach out to ```info at two frontiers dot org.```
+This is a **wildly** memory intensive piece of software. It is not meant to be run on personal machines. Single assemblies are easy enough, but co-assemblies can easily require 3+ terabytes of RAM. It can take weeks to work through only a few hundred samples, even if they're sub 100M PE reads. We're working on some methods for clever downsampling to speed things up in the coassembly step without losing critical information, but in the meantime we recommend leveraging HPC systems, cloud credits, and leveraging spot instances. If you have specific challenges, please feel free to reach out to ```info at two frontiers dot org.```
 
 ## Commands and arguments
 
@@ -167,5 +179,5 @@ Braden Tierney ```(braden at two frontiers dot org)```
 
 ## Contact
 
-If you have questions, reach out to ```info at two frontiers dot org```
+If you have questions, reach out to the authors and/or ```info at two frontiers dot org```, which will reach more of us at 2FP.
 
