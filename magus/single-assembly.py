@@ -67,7 +67,7 @@ class Assembly:
 		out_sample_dir = f"{self.outdir}/{sample_name}"
 
 		# Run megahit assembly
-		cmd = (f"megahit --k-min 75 --k-max 333 --k-step 6 --cleaning-rounds 1 "
+		cmd = (f"megahit-g --k-min 75 --k-max 333 --k-step 6 --cleaning-rounds 1 "
 			   f"--merge-level 100,.999 --min-count 1 --min-contig-len 1000 "
 			   f"--continue -t {self.threads} -1 {r1} -2 {r2} -o {out_sample_dir}")
 

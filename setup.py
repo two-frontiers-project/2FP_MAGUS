@@ -23,6 +23,7 @@ setup(
             'bin/spamw2',
             'bin/megahit-g',
             'bin/canolax5',
+            'bin/megahit_core',
         ]),
     ],
 )
