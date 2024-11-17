@@ -27,6 +27,12 @@ class QualityControl:
         slurm_config_dict = dict(zip(slurm_config_df[0], slurm_config_df[1]))
         return slurm_config_dict
 
+    def run_slurm_mode(self):
+        batch_files = self.split_config()
+        self.write_deploy_script(batch_files)
+        print("Setup complete. Run 'deploy_qc.sh' to submit jobs to Slurm.")
+
+
     def split_config(self):
         # Split the original config into smaller batch config files based on max_workers
         config_df = pd.read_csv(self.config_path, sep='\t')
@@ -62,30 +68,40 @@ class QualityControl:
         
         print(f"SLURM deployment script written to {deploy_script_path}.")
 
-    def run_local_mode(self):
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            executor.map(self.run_qc, self.config)
-
-    def run_slurm_mode(self):
-        batch_files = self.split_config()
-        self.write_deploy_script(batch_files)
-        print("Setup complete. Run 'deploy_qc.sh' to submit jobs to Slurm.")
-
-    def run_qc(self, sample_config):
-        # Implement the actual quality control steps here.
-        sample_name = sample_config['sample_name']
-        fastq_file = sample_config['fastq_path']
+    def run_shi7_trimmer(self, sample):
+        sample_name = sample['filename']
+        r1 = sample['pe1']
+        r2 = sample['pe2']
+      
+        cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP ADAP2 CTGTCTCTTATACA R2 {r2} OUTFASTA"
+        print(f"Running shi7_trimmer on {sample_name}")
+        subprocess.run(cmd, shell=True)
         
-        # Example of running a fastp quality control command
-        qc_cmd = f"fastp -i {fastq_file} -o {os.path.join(self.qc_dir, sample_name + '_qc.fastq')}"
-        subprocess.run(qc_cmd, shell=True, check=True)
-        print(f"Quality control complete for {sample_name}.")
+        self.compress_output(sample_name)
+        self.qc_results.append({'filename': sample_name, 'pe1': f"{self.qc_dir}/{sample_name}.R1.fa.gz", 'pe2': f"{self.qc_dir}/{sample_name}.R2.fa.gz"})
+
+    def compress_output(self, sample_name):
+        for file in os.listdir(self.qc_dir):
+            if file.startswith(sample_name):
+                file_path = os.path.join(self.qc_dir, file)
+                cmd = f"minigzip -4 {file_path}"
+                print(f"Compressing {file_path}")
+                subprocess.run(cmd, shell=True)
+
+    def write_output_config(self):
+        output_dir = os.path.dirname(self.output)
+        os.makedirs(output_dir, exist_ok=True)
+        df = pd.DataFrame(self.qc_results)
+        df.to_csv(self.output, sep='\t', index=False)
+
 
     def run(self):
         if self.mode == "slurm":
             self.run_slurm_mode()
         else:
-            self.run_local_mode()
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                executor.map(self.run_shi7_trimmer, self.config)
+            self.write_output_config()
 
 def main():
     parser = argparse.ArgumentParser(description="Perform quality control on sequencing data.")
