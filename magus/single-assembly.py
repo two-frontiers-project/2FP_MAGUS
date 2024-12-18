@@ -50,6 +50,7 @@ class Assembly:
 				# Adjusted sbatch command to call magus_assembly_helper.sh with arguments
 				sbatch_cmd = (
 					f"sbatch -p {self.slurm_config['queue']} "
+					f"--mem={self.slurm_config['mem']} "
 					f"-t {self.slurm_config['time']} "
 					f"--cpus-per-task={self.threads} "
 					f"magus_assembly_helper.sh {batch_file} {self.threads}\n"
