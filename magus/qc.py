@@ -60,7 +60,7 @@ class QualityControl:
                 sbatch_cmd = (
                     f"sbatch -p {self.slurm_config['queue']} "
                     f"-t {self.slurm_config['time']} "
-                    f"--mem={self.slurm_config['memory']} "
+                    f"--mem={self.slurm_config['mem']} "
                     f"-c {self.slurm_config['cpus_per_task']} "
                     f"magus_qc_helper.sh {batch_file}"
                 )

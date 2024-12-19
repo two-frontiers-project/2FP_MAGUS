@@ -33,6 +33,7 @@ class Assembly:
 		
 		for i in range(self.max_workers):
 			batch_df = config_df.iloc[i * batch_size: (i + 1) * batch_size]
+			batch_df.columns = ['filename','pe1','pe2']
 			batch_file = os.path.join(os.path.dirname(self.config_path), f"batchconfig_{i+1}.tsv")
 			batch_df.to_csv(batch_file, sep='\t', index=False)
 			batch_files.append(batch_file)
