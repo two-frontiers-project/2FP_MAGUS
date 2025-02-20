@@ -12,6 +12,7 @@ class ContigClustering:
 		self.combined_output = self.tmp_dir + '/' + combined_output
 		# Create the directory for storing the contigs
 		os.makedirs(self.tmp_dir, exist_ok=True)
+		os.system('rm -rf %s'%self.contig_dir)
 		os.makedirs(self.contig_dir, exist_ok=True)
 
 	def load_config(self, config_path):
@@ -19,15 +20,16 @@ class ContigClustering:
 		return config_df.to_dict(orient='records')
 
 	def collect_filtered_contigs(self):
-		# CHECK IF THESE SHOULD BE FILTERED CONTIGS OR NOT
 		for sample in self.config:
 			sample_name = sample['filename']
 			final_contig_path = os.path.abspath(f"asm/{sample_name}/final.contigs.fa")  # Absolute path to the final contigs file
 			output_contig_file = os.path.abspath(f"{self.contig_dir}/{sample_name}.contigs.fa") 
-			# Add the sample prefix to each contig
-			#cmd = f"sed 's/^>/>{sample_name}-/' {final_contig_path} > {output_contig_file}"
-			cmd = f"ln -s {final_contig_path} {output_contig_file}"
-			subprocess.run(cmd, shell=True)
+			
+			# Check if the file exists and is non-empty
+			if os.path.exists(final_contig_path) and os.path.getsize(final_contig_path) > 0:
+				cmd = f"ln -s {final_contig_path} {output_contig_file}"
+				subprocess.run(cmd, shell=True)
+
 
 	def run_lingenome(self):
 		# Run lingenome to combine all contigs into a single file

@@ -1,3 +1,4 @@
+MANIFEST.in
 README.md
 setup.py
 bin/akmer100b
@@ -14,6 +15,7 @@ bin/shi7_trimmer
 bin/sorenson-g
 bin/spamw2
 magus/__init__.py
+magus/classify-bins.py
 magus/cluster-contigs.py
 magus/coassembly-binning.py
 magus/coassembly.py
