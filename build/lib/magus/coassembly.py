@@ -45,19 +45,34 @@ class CoAssembly:
                     sample_config = next((item for item in self.config if item['filename'] == s), None)
                     if sample_config:
                         r1_cat = f"cat {sample_config['pe1']} >> {R1}"
-                        r2_cat = f"cat {sample_config['pe2']} >> {R2}"
-                        print(f"Concatenating {sample_config['pe1']} to {R1}")
                         subprocess.run(r1_cat, shell=True)
-                        print(f"Concatenating {sample_config['pe2']} to {R2}")
-                        subprocess.run(r2_cat, shell=True)
+                        print(f"Concatenating {sample_config['pe1']} to {R1}")
+                        
+                        r2 = sample_config.get('pe2', None)
+                        if pd.isna(r2) or r2 is None:
+                            R2 = None
+                        else:
+                            r2_cat = f"cat {r2} >> {R2}"
+                            subprocess.run(r2_cat, shell=True)
+                            print(f"Concatenating {r2} to {R2}")
 
-                megahit_cmd = (
-                    f"megahit -f --k-min 75 --k-max 333 --k-step 6 "
-                    f"--cleaning-rounds 1 --merge-level 100,.999 "
-                    f"--min-count 1 --min-contig-len 1000 --continue "
-                    f"-t {self.threads} -1 {R1} -2 {R2} -o {OUTF}"
-                )
-                print(f"Running megahit for {BS}")
+                if R2 is None:
+                    megahit_cmd = (
+                        f"megahit -f --k-min 75 --k-max 333 --k-step 6 "
+                        f"--cleaning-rounds 1 --merge-level 100,.999 "
+                        f"--min-count 1 --min-contig-len 1000 --continue "
+                        f"-t {self.threads} -r {R1} -o {OUTF}"
+                    )
+                    print(f"Running megahit in single-end mode for {BS}")
+                else:
+                    megahit_cmd = (
+                        f"megahit -f --k-min 75 --k-max 333 --k-step 6 "
+                        f"--cleaning-rounds 1 --merge-level 100,.999 "
+                        f"--min-count 1 --min-contig-len 1000 --continue "
+                        f"-t {self.threads} -1 {R1} -2 {R2} -o {OUTF}"
+                    )
+                    print(f"Running megahit in paired-end mode for {BS}")
+                
                 subprocess.run(megahit_cmd, shell=True)
 
                 # Rename headers in final.contigs.fa with 'coassembly_all'
@@ -83,24 +98,31 @@ class CoAssembly:
 
     def run_filtering_binning(self):
         coasm_dirs = [d for d in os.listdir(self.outdir) if os.path.isdir(f"{self.outdir}/{d}")]
-        
+        coasm_dirs = [d for d in coasm_dirs if d!="mags"]
+
         for BS in coasm_dirs:
             OUTF = f"{self.outdir}/{BS}"
             R1 = f"{OUTF}/{BS}.merged.R1.gz"
             R2 = f"{OUTF}/{BS}.merged.R2.gz"
             bins_dir = f"{OUTF}/bins"
 
-            if not (os.path.exists(R1) and os.path.exists(R2)):
+            if not os.path.exists(R1):
                 print(f"Merged reads for {BS} not found. Skipping...")
                 continue
-
+            
             os.makedirs(bins_dir, exist_ok=True)
 
             print(f"Running stronger filtering for {BS}")
             subprocess.run(f"rm -rf {bins_dir}/*", shell=True)
             subprocess.run(f"grep -A1 --no-group-separator 'multi=[2-9]\\|multi=[0-9][0-9]' {OUTF}/final.contigs.fa | "
                            f"awk '{{if (0==(NR % 2) && length >= 1000) {{print x; print $0}}; x=$0}}' > {OUTF}/temp0.fa", shell=True)
-            subprocess.run(f"sorenson-g -db {OUTF}/temp0.fa -qc -r1 {R1} -r2 {R2} -t {self.threads} -e 0.01 -o {OUTF}/covs.txt", shell=True)
+            
+            if os.path.exists(R2):
+                sorenson_cmd = f"sorenson-g -db {OUTF}/temp0.fa -qc -r1 {R1} -r2 {R2} -t {self.threads} -e 0.01 -o {OUTF}/covs.txt"
+            else:
+                sorenson_cmd = f"sorenson-g -db {OUTF}/temp0.fa -qc -r1 {R1} -t {self.threads} -e 0.01 -o {OUTF}/covs.txt"
+            
+            subprocess.run(sorenson_cmd, shell=True)
 
             print(f"Running metabat2 for binning {BS}")
             for k in range(15, 31):
@@ -117,14 +139,21 @@ class CoAssembly:
             print(f"Running lighter filtering for shorter contigs for {BS}")
             subprocess.run(f"grep -A1 --no-group-separator 'multi=[2-9]\\|multi=[0-9][0-9]' {OUTF}/k147.contigs.fa | "
                            f"awk '{{if (0==(NR % 2) && length >= 500) {{print x; print $0}}; x=$0}}' > {OUTF}/temp1.fa", shell=True)
-            subprocess.run(f"sorenson-g -db {OUTF}/temp1.fa -qc -r1 {R1} -r2 {R2} -t {self.threads} -e 0.01 -o {OUTF}/covs1.txt", shell=True)
+            
+            if os.path.exists(R2):
+                sorenson_cmd2 = f"sorenson-g -db {OUTF}/temp1.fa -qc -r1 {R1} -r2 {R2} -t {self.threads} -e 0.01 -o {OUTF}/covs1.txt"
+            else:
+                sorenson_cmd2 = f"sorenson-g -db {OUTF}/temp1.fa -qc -r1 {R1} -t {self.threads} -e 0.01 -o {OUTF}/covs1.txt"
+            
+            subprocess.run(sorenson_cmd2, shell=True)
 
             print(f"Running second metabat2 pass for {BS}")
             for k in range(15, 31):
                 subprocess.run(f"metabat2 --seed {k+100} -i {OUTF}/temp1.fa -a {OUTF}/covs1.txt -t {self.threads} -o {bins_dir}/{k}CX0b -m {k*100}", shell=True)
 
+
     def run(self):
-        self.run_coassembly()
+        #self.run_coassembly()
         self.run_filtering_binning()
 
 def main():
