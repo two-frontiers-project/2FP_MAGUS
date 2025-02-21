@@ -19,6 +19,7 @@ magus/classify-bins.py
 magus/cluster-contigs.py
 magus/coassembly-binning.py
 magus/coassembly.py
+magus/filter_host.py
 magus/finalize-bacterial-mags.py
 magus/find-euks.py
 magus/find-viruses.py

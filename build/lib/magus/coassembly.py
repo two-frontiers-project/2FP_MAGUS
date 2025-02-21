@@ -153,7 +153,7 @@ class CoAssembly:
 
 
     def run(self):
-        #self.run_coassembly()
+        self.run_coassembly()
         self.run_filtering_binning()
 
 def main():

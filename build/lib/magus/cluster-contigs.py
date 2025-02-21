@@ -4,10 +4,12 @@ import argparse
 import pandas as pd
 
 class ContigClustering:
-	def __init__(self, config, tmp_dir,contig_dir="contigs", combined_output="Contigs.fasta", threads=28):
+	def __init__(self, config, asmdir, magdir,tmp_dir,contig_dir="contigs", combined_output="Contigs.fasta", threads=28):
 		self.config = self.load_config(config)
 		self.threads = threads
 		self.tmp_dir = tmp_dir
+		self.asmdir = asmdir
+		self.magdir = magdir
 		self.contig_dir = self.tmp_dir + '/' + contig_dir
 		self.combined_output = self.tmp_dir + '/' + combined_output
 		# Create the directory for storing the contigs
@@ -20,16 +22,68 @@ class ContigClustering:
 		return config_df.to_dict(orient='records')
 
 	def collect_filtered_contigs(self):
+		MAX_BASES = 1_000_000_000  
+		large_mag_contigs = {}  # Dictionary to store large MAG contigs
+		print('Getting genome bin sizes')
+		# Step 1: Scan self.magdir for large MAGs and store contigs in dictionary
+		for mag_file in os.listdir(self.magdir):
+			mag_path = os.path.join(self.magdir, mag_file)
+
+			# Use Bash to count bases in the MAG
+			count_cmd = f"grep -v '^>' {mag_path} | tr -d '\\n' | wc -c"
+			base_count = int(subprocess.check_output(count_cmd, shell=True).strip())
+
+			if base_count > MAX_BASES:
+				# Extract the sample name (everything including & after the last underscore in the filename)
+				sample_name = mag_file.rsplit("_", 1)[-1].rsplit(".", 1)[0]  # Removes file extension too
+
+				# Extract contig IDs from the MAG
+				contig_ids_cmd = f"grep '^>' {mag_path} | sed 's/^>//'"
+				contig_ids = set(subprocess.check_output(contig_ids_cmd, shell=True).decode().splitlines())
+
+				# Store in dictionary
+				if sample_name not in large_mag_contigs:
+					large_mag_contigs[sample_name] = set()
+				large_mag_contigs[sample_name].update(contig_ids)
+
+		# Step 2: Process each sample's final contigs
 		for sample in self.config:
 			sample_name = sample['filename']
-			final_contig_path = os.path.abspath(f"asm/{sample_name}/final.contigs.fa")  # Absolute path to the final contigs file
-			output_contig_file = os.path.abspath(f"{self.contig_dir}/{sample_name}.contigs.fa") 
-			
-			# Check if the file exists and is non-empty
+			final_contig_path = os.path.abspath(f"{self.asmdir}/{sample_name}/final.contigs.fa")  
+			output_contig_file = os.path.abspath(f"{self.contig_dir}/{sample_name}.contigs.fa")
+
 			if os.path.exists(final_contig_path) and os.path.getsize(final_contig_path) > 0:
+				# Create symlink first
 				cmd = f"ln -s {final_contig_path} {output_contig_file}"
 				subprocess.run(cmd, shell=True)
+				# Step 3: Filter out contigs from large MAGs before applying base limit filter
+				if sample_name in large_mag_contigs:
+					print(f"Filtering out large MAG contigs from {sample_name}...")
+					filtered_output = f"{output_contig_file}.filtered"
 
+					# Write contig IDs to a temp file for grep exclusion
+					temp_contig_list = f"{output_contig_file}.contigs_to_remove.txt"
+					with open(temp_contig_list, "w") as f:
+						f.write("\n".join(large_mag_contigs[sample_name]) + "\n")
+
+					# Use Bash to remove the identified contigs from the sample
+					filter_cmd = f"awk 'BEGIN{{while((getline k < \"{temp_contig_list}\")>0) c[k]=1}} /^>/ {{print ($1 in c)?\"\":$0; next}} 1' {final_contig_path} > {filtered_output}"
+					subprocess.run(filter_cmd, shell=True)
+
+					os.replace(filtered_output, output_contig_file)  # Replace symlink with filtered file
+
+				# Step 4: Check if the total base count exceeds the limit
+				count_cmd = f"grep -v '^>' {output_contig_file} | tr -d '\\n' | wc -c"
+				base_count = int(subprocess.check_output(count_cmd, shell=True).strip())
+
+				if base_count > MAX_BASES:
+					print(f"File {output_contig_file} exceeds 1 gigabase ({base_count} bases). Trimming...")
+
+					temp_output = f"{output_contig_file}.trimmed"
+					trim_cmd = f"awk 'BEGIN {{bases=0}} !/^>/ {{bases += length($0); if (bases > {MAX_BASES}) exit}} {{print}}' {output_contig_file} > {temp_output}"
+					subprocess.run(trim_cmd, shell=True)
+
+					os.replace(temp_output, output_contig_file)  # Replace symlinked file with trimmed file
 
 	def run_lingenome(self):
 		# Run lingenome to combine all contigs into a single file
@@ -80,7 +134,9 @@ def main():
 	parser.add_argument('--threads', type=int, default=28, help='Number of threads for tools (default: 28)')
 	parser.add_argument('--contig_dir', type=str, default="contigs", help='Directory for storing contigs (default: contigs)')
 	parser.add_argument('--combined_output', type=str, default="Contigs.fasta", help='Output file for combined contigs (default: Contigs.fasta)')
-	parser.add_argument('--tmp_dir', type=str, default='tmp/cluster-contigs', help='Temp directory. Default tmp/single-binning.')
+	parser.add_argument('--asmdir', type=str, default='asm/', help='Directory with assemblies. Default is ./asm')
+	parser.add_argument('--magdir', type=str, default='asm/mags/', help='Directory with single assembled MAGs. Default is ./asm/mags')
+	parser.add_argument('--tmp_dir', type=str, default='tmp/cluster-contigs', help='Temp directory. Default tmp/cluster-contigs.')
 
 	# Parse arguments
 	args = parser.parse_args()
@@ -89,6 +145,8 @@ def main():
 	clustering = ContigClustering(
 		config=args.config,
 		contig_dir=args.contig_dir,
+		asmdir=args.asmdir,
+		magdir = args.magdir,
 		combined_output=args.combined_output,
 		threads=args.threads,
 		tmp_dir=args.tmp_dir
