@@ -25,6 +25,8 @@ setup(
             'bin/megahit-g',
             'bin/canolax5',
             'bin/megahit_core',
+            'bin/hmmsearch',
+            'bin/prodigal'
         ]),
     ],
 )
