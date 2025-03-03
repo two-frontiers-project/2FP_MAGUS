@@ -20,7 +20,9 @@ def main():
         'find-euks': 'find-euks.py',
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
         'single-assembly': 'single-assembly.py',
-        'single-binning': 'single-binning.py'
+        'single-binning': 'single-binning.py',
+        'find-genes':'find_genes.py',
+        'assemble-hosts':'assemble-host.py'
     }
 
     # Check for valid command
