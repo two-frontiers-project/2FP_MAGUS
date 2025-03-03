@@ -1,3 +1,0 @@
-Sample	Contig_ID	Gene_ID	Top_Annotation	E-value_1	Second_Annotation	E-value_2	Third_Annotation	E-value_3
-sample_2	sample_2_singleassembly_k201_11_1	sample_2_singleassembly_k201_11_1+881+1537+-1+ID=1_1;partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.536	DUF7023	7.5	NA	NA	NA	NA
-sample_2	sample_2_singleassembly_k201_9_1	sample_2_singleassembly_k201_9_1+3+116+1+ID=3_1;partial=10;start_type=Edge;rbs_motif=None;rbs_spacer=None;gc_cont=0.474	TNFR_ELAPOR1_6th	14.9	NA	NA	NA	NA
