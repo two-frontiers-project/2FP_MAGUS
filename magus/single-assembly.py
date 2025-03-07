@@ -28,6 +28,38 @@ class Assembly:
         slurm_config_dict = dict(zip(slurm_config_df[0], slurm_config_df[1]))
         return slurm_config_dict
 
+    def split_config(self):
+        config_df = pd.read_csv(self.config_path, sep='\t')
+        batch_size = math.ceil(len(config_df) / self.max_workers)
+        batch_files = []
+        
+        for i in range(self.max_workers):
+            batch_df = config_df.iloc[i * batch_size: (i + 1) * batch_size]
+            batch_file = os.path.join(os.path.dirname(self.config_path), f"batchconfig_{i+1}.tsv")
+            batch_df.to_csv(batch_file, sep='\t', index=False)
+            batch_files.append(batch_file)
+            print(f"Created batch configuration file: {batch_file}")
+
+        return batch_files
+
+    def write_deploy_script(self, batch_files):
+        deploy_script_path = "deploy_assembly.sh"
+        
+        with open(deploy_script_path, 'w') as f:
+            f.write("#!/bin/bash\n\n")
+            
+            for batch_file in batch_files:
+                sbatch_cmd = (
+                    f"sbatch -p {self.slurm_config['queue']} "
+                    f"-t {self.slurm_config['time']} "
+                    f"--cpus-per-task={self.threads} "
+                    f"magus_assembly_helper.sh {batch_file} {self.threads}\n"
+                )
+                f.write(sbatch_cmd)
+
+        os.chmod(deploy_script_path, 0o755)
+        print(f"Deploy script created: {deploy_script_path}")
+
     def run_megahit(self, sample):
         sample_name = sample['filename']
         r1 = sample['pe1']
@@ -61,7 +93,7 @@ class Assembly:
         subprocess.run(mv_cmd, shell=True, check=True)
 
         filter_cmd = (
-            f"grep -A1 --no-group-separator 'multi=1\\.[5-9]\\|multi=[2-9]\\|multi=[0-9][0-9]' {contig_file} "
+            f"grep -A1 --no-group-separator 'multi=1\.[5-9]\|multi=[2-9]\|multi=[0-9][0-9]' {contig_file} "
             f"| awk '{{if (0==(NR % 2) && length >= 1000) {{print x; print $0}}; x=$0}}' > {filtered_contig_file}"
         )
         subprocess.run(filter_cmd, shell=True, check=True)
@@ -71,11 +103,17 @@ class Assembly:
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             executor.map(self.run_megahit, self.config)
 
+    def run_slurm_mode(self):
+        batch_files = self.split_config()
+        self.write_deploy_script(batch_files)
+        print("Setup complete. Run 'deploy_assembly.sh' to submit jobs to Slurm.")
+
     def run(self):
         if self.mode == "slurm":
-            print("Slurm mode is not modified for single-end support.")
+            self.run_slurm_mode()
         else:
             self.run_local_mode()
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run assembly with megahit on genomic data.")
