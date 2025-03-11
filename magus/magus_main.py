@@ -22,7 +22,8 @@ def main():
         'single-assembly': 'single-assembly.py',
         'single-binning': 'single-binning.py',
         'find-genes':'find_genes.py',
-        'assemble-hosts':'assemble-host.py'
+        'assemble-hosts':'assemble-host.py',
+        'subsample-reads':'subsample-reads.py'
     }
 
     # Check for valid command

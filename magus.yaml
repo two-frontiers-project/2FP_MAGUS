@@ -25,7 +25,7 @@ dependencies:
   - bwa=0.7.18=he4a0461_1
   - bzip2=1.0.8=h5eee18b_6
   - c-ares=1.19.1=h5eee18b_0
-  - ca-certificates=2024.9.24=h06a4308_0
+  - ca-certificates=2025.2.25=h06a4308_0
   - cachetools=5.5.0=pyhd8ed1ab_0
   - certifi=2024.8.30=pyhd8ed1ab_0
   - cffi=1.15.1=py37h74dc2b5_0
@@ -192,6 +192,7 @@ dependencies:
   - ruamel.yaml.clib=0.2.6=py37h5eee18b_1
   - samtools=1.14=hb421002_0
   - scipy=1.7.3=py37h6c91a56_2
+  - seqtk=1.4=he4a0461_2
   - setuptools=65.6.3=py37h06a4308_0
   - sip=4.18.1=py37hf484d3e_1000
   - six=1.16.0=pyhd3eb1b0_1
@@ -235,9 +236,11 @@ dependencies:
       - appdirs==1.4.4
       - biopython==1.81
       - checkv==1.0.3
+      - eukrep==0.6.6
       - future==1.0.0
       - kcounter==0.1.1
       - kpal==2.1.1
+      - magus==0.1.0
       - ncbi-genome-download==0.3.3
       - psutil==6.0.0
       - scikit-learn==1.0.2

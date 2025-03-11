@@ -32,6 +32,7 @@ magus/magus_main.py
 magus/qc.py
 magus/single-assembly.py
 magus/single-binning.py
+magus/subsample-reads.py
 magus/taxonomy.py
 magus.egg-info/PKG-INFO
 magus.egg-info/SOURCES.txt
