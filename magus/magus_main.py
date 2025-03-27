@@ -13,18 +13,20 @@ def main():
     # Mapping commands to scripts
     command_map = {
         'qc': 'qc.py',
+        'assemble-hosts':'assemble-host.py',
+        'subsample-reads':'subsample-reads.py',
+        'taxonomy': 'taxonomy.py',
+        'cluster-contigs': 'cluster-contigs.py',
+        'single-assembly': 'single-assembly.py',
+        'single-binning': 'single-binning.py',
         'cluster-contigs': 'cluster-contigs.py',
         'coassembly': 'coassembly.py',
         'coassembly-binning': 'coassembly-binning.py',
         'find-viruses': 'find-viruses.py',
         'find-euks': 'find-euks.py',
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
-        'single-assembly': 'single-assembly.py',
-        'single-binning': 'single-binning.py',
-        'find-genes':'find_genes.py',
-        'assemble-hosts':'assemble-host.py',
-        'subsample-reads':'subsample-reads.py'
-    }
+        'find-genes':'find_genes.py'
+  }
 
     # Check for valid command
     if command not in command_map:
@@ -41,4 +43,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
