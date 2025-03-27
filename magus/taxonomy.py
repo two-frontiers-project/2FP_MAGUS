@@ -1,172 +1,133 @@
 import os
 import subprocess
-import sys
 import pandas as pd
+import argparse
+from concurrent.futures import ThreadPoolExecutor
 
-class SequencingFileLoader:
-    """Class to handle loading of sequencing files."""
-    
-    def __init__(self, seq_type, filepath1, filepath2=None):
-        self.seq_type = seq_type  # 'single' or 'paired'
-        self.filepath1 = filepath1
-        self.filepath2 = filepath2
-    
-    def load(self):
-        if not os.path.exists(self.filepath1):
-            raise FileNotFoundError(f"Sequencing file {self.filepath1} not found.")
-        
-        if self.seq_type == 'paired':
-            if not self.filepath2 or not os.path.exists(self.filepath2):
-                raise FileNotFoundError(f"Paired-end file {self.filepath2} not found.")
-            print(f"Loading paired-end sequencing files: {self.filepath1}, {self.filepath2}")
-            return [self.filepath1, self.filepath2]
-        else:
-            print(f"Loading single-end sequencing file: {self.filepath1}")
-            return self.filepath1
+class Sample:
+    def __init__(self, name, pe1, pe2=None):
+        self.name = name
+        self.pe1 = pe1
+        self.pe2 = pe2
 
-class KrakenTaxonomy:
-    """Class to run Kraken taxonomy analysis."""
-    
-    def __init__(self, input_files, output_dir, taxonomic_level, config_file='config/kraken_config'):
-        self.input_files = input_files  # single file or list of paired-end files
-        self.output_dir = output_dir
-        self.taxonomic_level = taxonomic_level  # e.g., 'phylum', 'species', 'genus'
-        self.config = self._load_config(config_file)
-        self.taxonomy_map = {
-            'kingdom': 'K',
-            'phylum': 'P',
-            'class': 'C',
-            'order': 'O',
-            'family': 'F',
-            'genus': 'G',
-            'species': 'S'
-        }
-    
-    def _load_config(self, config_file):
-        config = {}
-        with open(config_file, 'r') as f:
-            for line in f:
-                if not line.startswith("#") and line.strip():
-                    key, value = line.strip().split('\t')
-                    config[key] = value
-        return config
-    
+    def is_paired(self):
+        return bool(self.pe2)
+
+class XTreeRunner:
+    def __init__(self, sample, output_dir, db_path, threads):
+        self.sample = sample
+        self.output_dir_base = output_dir
+        self.output_dir = self.output_dir_base + '/raw_alignments'
+        self.db_path = db_path
+        self.threads = threads
+
     def run(self):
+        if not os.path.exists(self.sample.pe1):
+            raise FileNotFoundError(f"File not found: {self.sample.pe1}")
+        if self.sample.is_paired() and not os.path.exists(self.sample.pe2):
+            raise FileNotFoundError(f"File not found: {self.sample.pe2}")
+
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-        kraken_db = self.config.get('kraken_database', 'default_db')
-        confidence = self.config.get('kraken_confidence', 0.1)
+        cov_out = os.path.join(self.output_dir, f"{self.sample.name}.cov")
+        perq_out = os.path.join(self.output_dir, f"{self.sample.name}.perq")
 
-        print(f"Running Kraken on {self.input_files} with confidence {confidence} using database {kraken_db}")
-        
-        output_file = os.path.join(self.output_dir, f"kraken_output.txt")
-        report_file = os.path.join(self.output_dir, f"kraken_report.txt")
+        # Determine command based on file compression
+        def decompress_cmd(filepath):
+            return f"zcat {filepath}" if filepath.endswith(".gz") else f"cat {filepath}"
 
-        command = [
-            "kraken2",
-            "--db", kraken_db,
-            "--confidence", str(confidence),
-            "--report", report_file,
-            "--output", output_file,
-            "--report-minimizer-data"
-        ]
-
-        # Add paired-end or single-end files
-        if isinstance(self.input_files, list):
-            command.extend(["--paired", self.input_files[0], self.input_files[1]])
+        if self.sample.is_paired():
+            cmd = f"{decompress_cmd(self.sample.pe1)} && {decompress_cmd(self.sample.pe2)}"
+            cmd = f"cat <({decompress_cmd(self.sample.pe1)}) <({decompress_cmd(self.sample.pe2)})"
         else:
-            command.append(self.input_files)
+            cmd = decompress_cmd(self.sample.pe1)
 
-        # Run Kraken
-        print("Executing Kraken2 command: " + " ".join(command))
-        subprocess.run(command, check=True)
+        cmd += f" | xtree ALIGN --seqs - --cov-out {cov_out} --db {self.db_path} --perq-out {perq_out} --threads {self.threads} --redistribute --doforage"
 
-        # Process the report file to aggregate counts at the requested taxonomic level
-        return self._filter_report_by_taxonomic_level(report_file)
-    
-    def _filter_report_by_taxonomic_level(self, report_file):
-        # Get the Kraken2 code for the requested taxonomic level (e.g., 'P' for Phylum)
-        tax_level_code = self.taxonomy_map.get(self.taxonomic_level.lower())
-        if tax_level_code is None:
-            raise ValueError(f"Unsupported taxonomic level: {self.taxonomic_level}")
+        print(f"Running xtree for sample {self.sample.name}:")
+        print(cmd)
+        subprocess.run(cmd, shell=True, executable="/bin/bash", check=True)
 
-        # Data structure to hold counts for the taxonomic level
-        tax_counts = {}
+def merge_abundance_matrix(output_dir, tax_file=None, coverage_cutoff=0.05):
+    import glob
 
-        # Open the Kraken2 report file
-        with open(report_file, 'r') as report:
-            for line in report:
-                fields = line.strip().split('\t')
-                
-                # Ensure the line has at least 6 fields (matching the example you provided)
-                if len(fields) < 6:
-                    continue
+    alignment_dir = os.path.join(output_dir, "raw_alignments")
+    cov_files = glob.glob(os.path.join(alignment_dir, "*.cov"))
 
-                # Column 5 is the taxonomic rank, column 4 is the count
-                taxonomic_rank = fields[5]
-                
-                # Only proceed if the current line matches the requested taxonomic rank
-                if taxonomic_rank == tax_level_code:
-                    read_count = int(fields[3])  # Column 4 contains the counts
-                    
-                    # Extract the taxon name by splitting the line after the NCBI taxid (column 6)
-                    taxon_name = " ".join(fields[6:]).strip().split(' ')[-1]  # All remaining text after the taxid
+    if not cov_files:
+        print("No .cov files found for merging.")
+        return
 
-                    # Store the counts in a dictionary keyed by the taxon name
-                    if taxon_name not in tax_counts:
-                        tax_counts[taxon_name] = read_count
-                    else:
-                        tax_counts[taxon_name] += read_count
+    dfs = []
+    for file in cov_files:
+        df = pd.read_csv(file, sep='\t')
+        if df.empty:
+            continue
+        sample_name = os.path.splitext(os.path.basename(file))[0]
+        df['sample'] = sample_name
+        df['min_coverage'] = df[[
+            'Adamantium_covered',
+            'Unique_proportion_covered',
+            'Proportion_covered']].min(axis=1)
+        df['RA'] = df['Coverage_est'] / df['Coverage_est'].sum()
+        dfs.append(df)
 
-        # Convert the counts into a DataFrame for wide format output
-        tax_df = pd.DataFrame(list(tax_counts.items()), columns=['Taxon', 'Count'])
-        tax_df.set_index('Taxon', inplace=True)
+    if not dfs:
+        print("All .cov files were empty after filtering.")
+        return
 
-        # Save the wide-form matrix to a CSV file
-        filtered_report = os.path.join(self.output_dir, f"kraken_report_{self.taxonomic_level}.csv")
-        tax_df.to_csv(filtered_report)
+    merged_df = pd.concat(dfs, ignore_index=True)
+    merged_df = merged_df[merged_df['min_coverage'] >= coverage_cutoff]
 
-        return filtered_report
+    if tax_file:
+        taxonomy_df = pd.read_csv(tax_file, sep='\t', header=None, names=['Reference', 'taxonomy'])
+        taxonomy_df['Reference'] = taxonomy_df['Reference'].str.replace('RS_', '', regex=False).str.replace('GB_', '', regex=False)
+        merged_df = pd.merge(merged_df, taxonomy_df, on='Reference', how='inner')
 
-class TaxonomyPipeline:
-    """Main class to run the taxonomy pipeline."""
-    
-    def __init__(self, seq_type, output_dir, taxonomic_level, config_file, seq_file1, seq_file2=None):
-        self.seq_type = seq_type  # 'single' or 'paired'
-        self.output_dir = output_dir
-        self.taxonomic_level = taxonomic_level
-        self.config_file = config_file
-        self.seq_file1 = seq_file1
-        self.seq_file2 = seq_file2
-    
-    def run(self):
-        loader = SequencingFileLoader(self.seq_type, self.seq_file1, self.seq_file2)
-        input_file = loader.load()
+    abundance_matrix = merged_df.pivot_table(index='Reference', columns='sample', values='RA', fill_value=0)
+    abundance_matrix.to_csv(os.path.join(output_dir, "merged_xtree.csv"))
+    print("Merged abundance matrix written to merged_xtree.csv")
 
-        taxonomy = KrakenTaxonomy(input_file, self.output_dir, self.taxonomic_level, self.config_file)
+def load_samples(config_path):
+    df = pd.read_csv(config_path, sep='\t')
+    samples = []
+    for _, row in df.iterrows():
+        filename = str(row['filename'])
+        pe1 = str(row['pe1'])
+        pe2 = str(row['pe2']) if pd.notna(row['pe2']) and row['pe2'].strip() else None
+        samples.append(Sample(filename, pe1, pe2))
+    return samples
 
-        result_files = taxonomy.run()
-        print(f"Taxonomy results saved to: {result_files}")
-        return result_files
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run XTree to get taxonomic classification on SE/PE reads using parallel processing.")
+    parser.add_argument("--config", required=True, help="Path to TSV config file with columns: filename, pe1, pe2 (pe2 can just be empty for se files)")
+    parser.add_argument("--output", default='magus/xtree_output', help="Directory to store output files (default magus/xtree_output)")
+    parser.add_argument("--db", required=True, help="Path to relevant xtree database")
+    parser.add_argument("--threads", type=int, default=4, help="Number of threads to use for each xtree run (default 4)")
+    parser.add_argument("--max_workers", type=int, default=1, help="Max number of samples to process in parallel (default 1)")
+    parser.add_argument("--taxmap", help="Path to GTDB taxonomy file; if not provided, taxonomy names will not be merged")
+    parser.add_argument("--coverage-cutoff", type=float, default=0.05, help="Coverage cutoff for filtering alignments (default 0.05)")
+    return parser.parse_args()
 
+def main():
+    args = parse_args()
+
+    samples = load_samples(args.config)
+
+    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+        futures = []
+        for sample in samples:
+            runner = XTreeRunner(sample, args.output, args.db, args.threads)
+            futures.append(executor.submit(runner.run))
+
+        for future in futures:
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Error processing sample: {e}")
+
+    merge_abundance_matrix(args.output, tax_file=args.taxmap, coverage_cutoff=args.coverage_cutoff)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 6:
-        print("Usage: taxonomy.py <sequencing_type> <output_directory> <taxonomic_level> <config_file> <sequencing_file1> [<sequencing_file2>]")
-        sys.exit(1)
-    
-    sequencing_type = sys.argv[1].lower()
-    output_directory = sys.argv[2]
-    taxonomic_level = sys.argv[3]
-    config_file = sys.argv[4]
-    sequencing_file1 = sys.argv[5]
-    sequencing_file2 = sys.argv[6] if len(sys.argv) > 6 else None
-
-    if sequencing_type not in ['single', 'paired']:
-        print("Error: sequencing_type must be either 'single' or 'paired'")
-        sys.exit(1)
-
-    # Run the pipeline
-    pipeline = TaxonomyPipeline(sequencing_type, output_directory, taxonomic_level, config_file, sequencing_file1, sequencing_file2)
-    pipeline.run()
+    main()
