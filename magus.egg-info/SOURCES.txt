@@ -1,4 +1,3 @@
-MANIFEST.in
 README.md
 setup.py
 bin/akmer100b

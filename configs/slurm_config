@@ -1,4 +1,4 @@
-queue,short
-time,0-11:11
-mem,12G
-cpus_per_task,4
+queue,medium
+time,4-11:11
+mem,64G
+cpus_per_task,14
