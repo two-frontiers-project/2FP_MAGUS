@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 
 class Binning:
-    def __init__(self, config,tmp_dir, asmdir, magdir="mags", threads=14, checkm_db=None, test_mode=False, max_workers=4):
+    def __init__(self, config,tmp_dir, asmdir, magdir="mags", threads=14, checkm_db=None, test_mode=False, max_workers=4,skipcm = False):
         self.config = self.load_config(config)
         self.asmdir = asmdir
         self.magdir = asmdir+"/"+magdir
@@ -15,6 +15,7 @@ class Binning:
         self.checkm_db = checkm_db  # Custom CheckM database path
         self.test_mode = test_mode  # Flag for test mode
         self.max_workers = max_workers  # Maximum parallel workers
+        self.skip_checkm = skipcm
 
         # Create the output directories if they don't exist
         os.makedirs(f"{self.magdir}", exist_ok=True)
@@ -182,6 +183,8 @@ class Binning:
         try:
             self.run_sorenson(sample_name)
             self.run_metabat(sample_name)
+            if self.skip_checkm:
+                return 'Stopping after binning.'
             self.run_checkm(sample_name)
             self.filter_good_bins(sample_name)
             self.copy_good_bins(sample_name)
@@ -216,6 +219,7 @@ def main():
     parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
     parser.add_argument('--tmp_dir', type=str, default='tmp/single-binning', help='Temp directory. Default tmp/single-binning.')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
+    parser.add_argument('--skipcheckm',action = 'store_true', help='Skips checkm and downstream steps (so stops immediately after binning)')
 
     # Parse arguments
     args = parser.parse_args()
@@ -229,6 +233,7 @@ def main():
         tmp_dir=args.tmp_dir,
         max_workers=args.max_workers,
         test_mode=args.test_mode
+        skipcm=args.skipcheckm
     )
     binning.run()
 
