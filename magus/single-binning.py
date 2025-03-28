@@ -232,7 +232,7 @@ def main():
         asmdir=args.asmdir,
         tmp_dir=args.tmp_dir,
         max_workers=args.max_workers,
-        test_mode=args.test_mode
+        test_mode=args.test_mode,
         skipcm=args.skipcheckm
     )
     binning.run()

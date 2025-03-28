@@ -40,10 +40,5 @@ magus.egg-info/SOURCES.txt
 magus.egg-info/dependency_links.txt
 magus.egg-info/entry_points.txt
 magus.egg-info/top_level.txt
-tests/test_assemble.py
-tests/test_genelevel.py
-tests/test_helpers.py
-tests/test_resolvegenomes.py
-tests/test_taxonomy.py
 utils/__init__.py
 utils/helpers.py
