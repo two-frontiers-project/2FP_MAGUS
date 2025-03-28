@@ -19,6 +19,7 @@ setup(
             'bin/minigzip',
             'bin/akmer100b',
             'bin/lingenome',
+            'bin/metabat2',
             'bin/fac',
             'bin/bestmag2',
             'bin/spamw2',
