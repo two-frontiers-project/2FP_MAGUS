@@ -1,4 +1,3 @@
-MANIFEST.in
 README.md
 setup.py
 bin/akmer100b
@@ -11,6 +10,7 @@ bin/magus_assembly_helper.sh
 bin/magus_qc_helper.sh
 bin/megahit-g
 bin/megahit_core
+bin/metabat2
 bin/minigzip
 bin/prodigal
 bin/shi7_trimmer
