@@ -57,12 +57,13 @@ class EukRepRunner:
     def run_eukrep(self):
         """Run EukRep on all symlinked bin files in the input_bins directory."""
         futures = []
+        print('Running EukRep...')
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             for bin_path in glob.glob(os.path.join(self.input_bins_dir, "*/*/bins/*")):
                 parts = bin_path.split(os.sep)
                 assembly_type = 'coassembly' if 'coasm' in parts else 'singleassembly'
                 sample = parts[-3]
-                bin_name = os.path.basename(bin_path).split(".")[0]
+                bin_name = os.path.basename(bin_path)#.split(".")[0]
 
                 os.makedirs(os.path.join(self.euk_binning_outputdir,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
                 
@@ -73,7 +74,7 @@ class EukRepRunner:
 
                 # Run EukRep within the specified conda environment
                 cmd = f"bash -c 'source activate {self.eukrepenv} && EukRep -i {bin_path} -o {output_file}'"
-                print(f"Running EukRep: {cmd}")
+                #print(f"Running EukRep: {cmd}")
                 futures.append(executor.submit(subprocess.run, cmd, shell=True))
 
             for future in as_completed(futures):
@@ -89,7 +90,7 @@ class EukRepRunner:
                 parts = bin_path.split(os.sep)
                 assembly_type = 'coassembly' if 'coasm' in parts else 'singleassembly'
                 sample = parts[-3]
-                bin_name = os.path.basename(bin_path).split(".")[0]
+                bin_name = os.path.basename(bin_path)#.split(".")[0]
 
                 os.makedirs(os.path.join(self.euk_binning_outputdir,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
 
