@@ -1,0 +1,46 @@
+name: eukrep-env
+channels:
+  - bioconda
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1=main
+  - _openmp_mutex=5.1=1_gnu
+  - biopython=1.78=py37h7f8727e_0
+  - blas=1.0=mkl
+  - ca-certificates=2024.9.24=h06a4308_0
+  - certifi=2022.12.7=py37h06a4308_0
+  - eukrep=0.6.7=pyh5e36f6f_2
+  - future=0.18.3=py37h06a4308_0
+  - h5py=2.10.0=py37hd6299e0_1
+  - hdf5=1.10.6=hb1b8bf9_0
+  - intel-openmp=2023.1.0=hdb19cb5_46306
+  - kpal=2.1.1=pyh864c0ab_3
+  - ld_impl_linux-64=2.40=h12ee557_0
+  - libffi=3.4.4=h6a678d5_1
+  - libgcc-ng=11.2.0=h1234567_1
+  - libgfortran-ng=7.5.0=ha8ba4b0_17
+  - libgfortran4=7.5.0=ha8ba4b0_17
+  - libgomp=11.2.0=h1234567_1
+  - libstdcxx-ng=11.2.0=h1234567_1
+  - mkl=2018.0.3=1
+  - mkl_fft=1.0.6=py37h7dd41cf_0
+  - mkl_random=1.0.1=py37h4414c95_1
+  - ncurses=6.4=h6a678d5_0
+  - numpy=1.15.4=py37h1d66e8a_0
+  - numpy-base=1.15.4=py37h81de0dd_0
+  - openssl=1.1.1w=h7f8727e_0
+  - pip=22.3.1=py37h06a4308_0
+  - python=3.7.16=h7a1cb2a_0
+  - readline=8.2=h5eee18b_0
+  - scikit-learn=0.19.2=py37h4989274_0
+  - scipy=1.1.0=py37hfa4b5c9_1
+  - semantic_version=2.8.5=pyhd3eb1b0_0
+  - setuptools=65.6.3=py37h06a4308_0
+  - six=1.16.0=pyhd3eb1b0_1
+  - sqlite=3.45.3=h5eee18b_0
+  - tbb=2021.8.0=hdb19cb5_0
+  - tbb4py=2021.7.0=py37hdb19cb5_0
+  - tk=8.6.14=h39e8969_0
+  - wheel=0.38.4=py37h06a4308_0
+  - xz=5.4.6=h5eee18b_1
+  - zlib=1.2.13=h5eee18b_1

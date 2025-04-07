@@ -17,7 +17,7 @@ setup(
             'bin/magus_qc_helper.sh', 
             'bin/shi7_trimmer',
             'bin/minigzip',
-            'bin/akmer100b',
+            'bin/akmer102',
             'bin/lingenome',
             'bin/metabat2',
             'bin/fac',
