@@ -111,7 +111,7 @@ class EukRepRunner:
         summary_data = []
         contigs_found = False  # Track if there are any eukrep results with contigs
 
-        sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*assembly*bin*'))
+        sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*assembly*'))
         for sample_dir in sample_dirs:
             # Extract path parts
             parts = sample_dir.split(os.sep)
