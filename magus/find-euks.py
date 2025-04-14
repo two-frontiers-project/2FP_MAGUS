@@ -177,11 +177,7 @@ class EukRepRunner:
                 'assembly_type': assembly_type,
                 'sample_id': sample_id,
                 'bin_id': bin_id,
-<<<<<<< HEAD
-                'bin_size': bin_size,
-=======
                 'bin_size': self.bin_sizes.get(f"{bin_id}.fa", float('nan')),
->>>>>>> bfcf09849178123e2e58ba08091fe6249a43c0ce
                 'completeness': completeness,
                 'contamination': contamination,
                 'bin_contig_count': bin_contig_count,
@@ -208,10 +204,6 @@ class EukRepRunner:
         else:
             print("No data found for summary table.")
 
-<<<<<<< HEAD
-
-=======
->>>>>>> bfcf09849178123e2e58ba08091fe6249a43c0ce
     def run(self):
 #        self.find_bins()
 #        if not self.skip_eukrep:
