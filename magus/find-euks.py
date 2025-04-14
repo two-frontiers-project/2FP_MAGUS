@@ -107,6 +107,7 @@ class EukRepRunner:
                 future.result()
         print("EukCC processing completed for all bins.")
 
+
     def process_euk_output(self):
         summary_data = []
         contigs_found = False  # Track if there are any eukrep results with contigs
@@ -114,11 +115,11 @@ class EukRepRunner:
         sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*assembly*'))
         for sample_dir in sample_dirs:
             parts = sample_dir.split(os.sep)
-            assembly_sample_bin = parts[1]
+            assembly_sample_bin = parts[-1]
 
             assembly_type, sample_id_and_bin = assembly_sample_bin.split('_', 1)
-            sample_id, bin_id = sample_id_and_bin.rsplit('_bin', 1)
-            bin_id = f"bin{bin_id}"
+            sample_id, bin_id = sample_id_and_bin.rsplit('_', 1)
+            bin_id = f"bin{bin_id}".replace('.fa','')
 
             eukcc_file = os.path.join(sample_dir, 'eukcc/eukcc.csv')
 
@@ -128,7 +129,6 @@ class EukRepRunner:
                 f"EUKREP_{assembly_type}_{sample_id}_{bin_id}_eukrepcontigs.fa"
             )
 
-            # original bin input file
             input_bin_file = os.path.join(
                 self.input_bins_dir,
                 'coasm' if assembly_type == 'coassembly' else 'asm',
@@ -146,13 +146,16 @@ class EukRepRunner:
                 if 'contamination' in eukcc_data.columns:
                     contamination = eukcc_data['contamination'].iloc[0]
 
-            # Count contigs in input bin
             bin_contig_count = 0
+            bin_size = 0
             if os.path.exists(input_bin_file):
                 with open(input_bin_file, 'r') as f:
-                    bin_contig_count = sum(1 for line in f if line.startswith('>'))
+                    for line in f:
+                        if line.startswith('>'):
+                            bin_contig_count += 1
+                        else:
+                            bin_size += len(line.strip())
 
-            # Count contigs in eukrep output
             eukrep_contig_count = 0
             if os.path.exists(contig_file):
                 with open(contig_file, 'r') as f:
@@ -164,6 +167,7 @@ class EukRepRunner:
                 'assembly_type': assembly_type,
                 'sample_id': sample_id,
                 'bin_id': bin_id,
+                'bin_size': bin_size,
                 'completeness': completeness,
                 'contamination': contamination,
                 'bin_contig_count': bin_contig_count,
@@ -191,13 +195,12 @@ class EukRepRunner:
             print("No data found for summary table.")
 
 
-
     def run(self):
-        self.find_bins()
-        if not self.skip_eukrep:
-            self.run_eukrep()
-        if not self.skip_eukcc:
-            self.run_eukcc()
+#        self.find_bins()
+#        if not self.skip_eukrep:
+#            self.run_eukrep()
+#        if not self.skip_eukcc:
+#            self.run_eukcc()
         self.process_euk_output()
 
 if __name__ == "__main__":

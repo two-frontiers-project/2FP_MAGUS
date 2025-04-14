@@ -57,12 +57,13 @@ class EukRepRunner:
     def run_eukrep(self):
         """Run EukRep on all symlinked bin files in the input_bins directory."""
         futures = []
+        print('Running EukRep...')
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             for bin_path in glob.glob(os.path.join(self.input_bins_dir, "*/*/bins/*")):
                 parts = bin_path.split(os.sep)
                 assembly_type = 'coassembly' if 'coasm' in parts else 'singleassembly'
                 sample = parts[-3]
-                bin_name = os.path.basename(bin_path).split(".")[0]
+                bin_name = os.path.basename(bin_path)#.split(".")[0]
 
                 os.makedirs(os.path.join(self.euk_binning_outputdir,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
                 
@@ -73,7 +74,7 @@ class EukRepRunner:
 
                 # Run EukRep within the specified conda environment
                 cmd = f"bash -c 'source activate {self.eukrepenv} && EukRep -i {bin_path} -o {output_file}'"
-                print(f"Running EukRep: {cmd}")
+                #print(f"Running EukRep: {cmd}")
                 futures.append(executor.submit(subprocess.run, cmd, shell=True))
 
             for future in as_completed(futures):
@@ -89,7 +90,7 @@ class EukRepRunner:
                 parts = bin_path.split(os.sep)
                 assembly_type = 'coassembly' if 'coasm' in parts else 'singleassembly'
                 sample = parts[-3]
-                bin_name = os.path.basename(bin_path).split(".")[0]
+                bin_name = os.path.basename(bin_path)#.split(".")[0]
 
                 os.makedirs(os.path.join(self.euk_binning_outputdir,f"{assembly_type}_{sample}_{bin_name}"), exist_ok=True)
 
@@ -110,18 +111,15 @@ class EukRepRunner:
         summary_data = []
         contigs_found = False  # Track if there are any eukrep results with contigs
 
-        sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*assembly*bin*'))
+        sample_dirs = glob.glob(os.path.join(self.euk_binning_outputdir, '*assembly*'))
         for sample_dir in sample_dirs:
-            # Extract path parts
             parts = sample_dir.split(os.sep)
             assembly_sample_bin = parts[1]
-            
-            # Use split with maxsplit to dynamically parse assembly_type and bin_id
+
             assembly_type, sample_id_and_bin = assembly_sample_bin.split('_', 1)
             sample_id, bin_id = sample_id_and_bin.rsplit('_bin', 1)
             bin_id = f"bin{bin_id}"
-            
-            # Define file paths
+
             eukcc_file = os.path.join(sample_dir, 'eukcc/eukcc.csv')
 
             contig_file = os.path.join(
@@ -129,51 +127,69 @@ class EukRepRunner:
                 assembly_sample_bin,
                 f"EUKREP_{assembly_type}_{sample_id}_{bin_id}_eukrepcontigs.fa"
             )
-            
-            # Initialize completeness and contamination with NaN as default
+
+            # original bin input file
+            input_bin_file = os.path.join(
+                self.input_bins_dir,
+                'coasm' if assembly_type == 'coassembly' else 'asm',
+                sample_id,
+                'bins',
+                f"{bin_id}.fa"
+            )
+
             completeness = contamination = float('nan')
             
-            # Parse eukcc file if it exists
             if os.path.exists(eukcc_file) and os.path.getsize(eukcc_file) > 0:
-                eukcc_data = pd.read_csv(eukcc_file,sep='\t')
+                eukcc_data = pd.read_csv(eukcc_file, sep='\t')
                 if 'completeness' in eukcc_data.columns:
                     completeness = eukcc_data['completeness'].iloc[0]
                 if 'contamination' in eukcc_data.columns:
                     contamination = eukcc_data['contamination'].iloc[0]
-          #  else:
-                #print(f"Warning: {eukcc_file} is missing or empty, populating with NA for completeness and contamination.")
-            
-            # Prepare the row dictionary with basic data from eukcc
+
+            # Count contigs in input bin
+            bin_contig_count = 0
+            if os.path.exists(input_bin_file):
+                with open(input_bin_file, 'r') as f:
+                    bin_contig_count = sum(1 for line in f if line.startswith('>'))
+
+            # Count contigs in eukrep output
+            eukrep_contig_count = 0
+            if os.path.exists(contig_file):
+                with open(contig_file, 'r') as f:
+                    eukrep_contig_count = sum(1 for line in f if line.startswith('>'))
+
+            eukrep_contig_perc = (eukrep_contig_count / bin_contig_count) * 100 if bin_contig_count > 0 else float('nan')
+
             row = {
                 'assembly_type': assembly_type,
                 'sample_id': sample_id,
                 'bin_id': bin_id,
                 'completeness': completeness,
-                'contamination': contamination
+                'contamination': contamination,
+                'bin_contig_count': bin_contig_count,
+                'eukrep_contig_count': eukrep_contig_count,
+                'eukrep_contig_perc': eukrep_contig_perc
             }
-            
-            # Check for contigs only if eukrep output is present
+
             if os.path.exists(contig_file):
                 contigs_exist = os.path.getsize(contig_file) > 0
                 row['eukrep_contigs_present'] = 'yes' if contigs_exist else 'no'
-                contigs_found = True  # Flag that we have contig information to add
+                contigs_found = True
 
             summary_data.append(row)
-        
-        # Convert to DataFrame and optionally drop eukrep_contigs_present if no contigs were found
+
         if summary_data:
             summary_df = pd.DataFrame(summary_data)
-            
-            # Drop 'eukrep_contigs_present' column if no contigs were actually found
+
             if not contigs_found:
                 summary_df = summary_df.drop(columns=['eukrep_contigs_present'], errors='ignore')
-            
-            # Save to CSV
+
             output_file = os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv')
             summary_df.to_csv(output_file, index=False)
             print(f"Summary table saved to {output_file}")
         else:
             print("No data found for summary table.")
+
 
 
     def run(self):

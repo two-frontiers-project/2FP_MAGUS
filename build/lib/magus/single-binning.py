@@ -175,7 +175,7 @@ class Binning:
             subprocess.run(cmd, shell=True)
             print(f"Copied final bin {z} for {sample_name} to {mags_dir}")
         checks_file = f"{mags_dir}/checks_single_assembly.txt"
-        cmd_append = f"tail -n+2 {bestmags_txt} | sed 's/^/{sample_name}_/' >> {checks_file}"
+        cmd_append = f"tail -n+2 {bestmags_txt} | sed 's/^/{sample_name}_/' >> {checks_file}; mv {self.tmpdir}/{sample_name}/* {self.asmdir}/{sample_name}"
         subprocess.run(cmd_append, shell=True)
 
     def run_sample(self, sample_name):
