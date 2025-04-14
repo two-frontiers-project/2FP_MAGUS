@@ -20,7 +20,6 @@ magus/__init__.py
 magus/assemble-host.py
 magus/classify-bins.py
 magus/cluster-contigs.py
-magus/cluster-reads.py
 magus/coassembly-binning.py
 magus/coassembly.py
 magus/filter_host.py
