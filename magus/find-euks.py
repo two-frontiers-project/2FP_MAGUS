@@ -16,6 +16,7 @@ class EukRepRunner:
         self.eukcc_db = self.get_db_location(dblocs, 'eukccdb')
         self.max_workers = max_workers
         self.threads = threads
+        self.bin_sizes = {} 
         self.eukrepenv = eukrepenv
         self.input_bins_dir = os.path.join(euk_binning_outputdir, "input_bins")
         os.makedirs(self.input_bins_dir, exist_ok=True)
@@ -27,7 +28,6 @@ class EukRepRunner:
 
     def find_bins(self):
         """Locate all bins in the asm and coasm directories, symlink them, and store bin sizes."""
-        self.bin_sizes = {}  # bin_name : bin_size
 
         bin_paths = glob.glob(os.path.join(self.coasm_dir, "*/bins/*fa")) + glob.glob(os.path.join(self.asm_dir, "*/bins/*fa"))
         good_paths = glob.glob(os.path.join(self.coasm_dir, "*/good/*fa")) + glob.glob(os.path.join(self.asm_dir, "*/good/*fa"))
@@ -205,7 +205,8 @@ class EukRepRunner:
             print("No data found for summary table.")
 
     def run(self):
-#        self.find_bins()
+        self.find_bins()
+        print(self.bin_sizes)
 #        if not self.skip_eukrep:
 #            self.run_eukrep()
 #        if not self.skip_eukcc:
