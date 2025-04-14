@@ -129,7 +129,7 @@ class EukRepRunner:
 
             assembly_type, sample_id_and_bin = assembly_sample_bin.split('_', 1)
             sample_id, bin_id = sample_id_and_bin.rsplit('_', 1)
-            bin_id = f"bin{bin_id}".replace('.fa','')
+            bin_id = f"{bin_id}".replace('.fa','')
 
             eukcc_file = os.path.join(sample_dir, 'eukcc/eukcc.csv')
 
