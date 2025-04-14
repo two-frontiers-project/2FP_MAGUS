@@ -26,7 +26,9 @@ class EukRepRunner:
         return db_df.loc[db_name, 1]
 
     def find_bins(self):
-        """Locate all bins in the asm and coasm directories and symlink appropriate bins for EukRep."""
+        """Locate all bins in the asm and coasm directories, symlink them, and store bin sizes."""
+        self.bin_sizes = {}  # bin_name : bin_size
+
         bin_paths = glob.glob(os.path.join(self.coasm_dir, "*/bins/*fa")) + glob.glob(os.path.join(self.asm_dir, "*/bins/*fa"))
         good_paths = glob.glob(os.path.join(self.coasm_dir, "*/good/*fa")) + glob.glob(os.path.join(self.asm_dir, "*/good/*fa"))
         good_bin_names = {os.path.basename(path) for path in good_paths}
@@ -41,18 +43,26 @@ class EukRepRunner:
             os.makedirs(sample_output_dir, exist_ok=True)
 
             bin_name = os.path.basename(bin_path)
-            if bin_name not in good_bin_names or self.is_bin_large(bin_path):
+            is_large, bin_size = self.is_bin_large(bin_path)
+            self.bin_sizes[bin_name] = bin_size  # store for output
+
+            if bin_name not in good_bin_names or is_large:
                 symlink_source = os.path.abspath(bin_path)
                 symlink_dest = os.path.join(sample_output_dir, bin_name)
                 if not os.path.exists(symlink_dest):
                     os.symlink(symlink_source, symlink_dest)
                     print(f"Symlinked {symlink_source} to {symlink_dest}")
 
+
     def is_bin_large(self, bin_path):
-        """Check if the bin is larger than the size threshold."""
-        size_check_cmd = f"awk '{{if(/^>/) {{if(seqlen >= {self.size_threshold}) print seq}}; seqlen=0; seq=\"\"}} !/^>/ {{seqlen+=length($0); seq=seq$0}} END {{if(seqlen >= {self.size_threshold}) print seq}}' {bin_path}"
-        size_check_result = subprocess.run(size_check_cmd, shell=True, capture_output=True, text=True)
-        return bool(size_check_result.stdout.strip())
+        """Check bin size and return (is_large, size_in_bp)."""
+        bin_size = 0
+        with open(bin_path, 'r') as f:
+            for line in f:
+                if not line.startswith('>'):
+                    bin_size += len(line.strip())
+        is_large = bin_size >= self.size_threshold
+        return is_large, bin_size
 
     def run_eukrep(self):
         """Run EukRep on all symlinked bin files in the input_bins directory."""
@@ -167,7 +177,11 @@ class EukRepRunner:
                 'assembly_type': assembly_type,
                 'sample_id': sample_id,
                 'bin_id': bin_id,
+<<<<<<< HEAD
                 'bin_size': bin_size,
+=======
+                'bin_size': self.bin_sizes.get(f"{bin_id}.fa", float('nan')),
+>>>>>>> bfcf09849178123e2e58ba08091fe6249a43c0ce
                 'completeness': completeness,
                 'contamination': contamination,
                 'bin_contig_count': bin_contig_count,
@@ -194,7 +208,10 @@ class EukRepRunner:
         else:
             print("No data found for summary table.")
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> bfcf09849178123e2e58ba08091fe6249a43c0ce
     def run(self):
 #        self.find_bins()
 #        if not self.skip_eukrep:
