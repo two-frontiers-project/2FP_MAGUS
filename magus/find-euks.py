@@ -17,6 +17,7 @@ class EukRepRunner:
         self.max_workers = max_workers
         self.threads = threads
         self.bin_sizes = {} 
+        self.bin_contigs = {}  
         self.eukrepenv = eukrepenv
         self.input_bins_dir = os.path.join(euk_binning_outputdir, "input_bins")
         os.makedirs(self.input_bins_dir, exist_ok=True)
@@ -27,12 +28,12 @@ class EukRepRunner:
         return db_df.loc[db_name, 1]
 
     def find_bins(self):
-        """Locate all bins in the asm and coasm directories, symlink them, and store bin sizes."""
-
+        """Locate all bins in the asm and coasm directories, symlink them, and store bin sizes and contig counts."""
+    
         bin_paths = glob.glob(os.path.join(self.coasm_dir, "*/bins/*fa")) + glob.glob(os.path.join(self.asm_dir, "*/bins/*fa"))
         good_paths = glob.glob(os.path.join(self.coasm_dir, "*/good/*fa")) + glob.glob(os.path.join(self.asm_dir, "*/good/*fa"))
         good_bin_names = {os.path.basename(path) for path in good_paths}
-
+    
         for bin_path in bin_paths:
             if self.coasm_dir in bin_path:
                 sample_base = os.path.relpath(bin_path, self.coasm_dir)
@@ -40,12 +41,17 @@ class EukRepRunner:
             else:
                 sample_base = os.path.relpath(bin_path, self.asm_dir)
                 sample_output_dir = os.path.join(self.input_bins_dir, "asm", os.path.dirname(sample_base))
+    
             os.makedirs(sample_output_dir, exist_ok=True)
+    
             sample_name = sample_base.split('/')[0]
             bin_name = os.path.basename(bin_path)
-            is_large, bin_size = self.is_bin_large(bin_path)
-            self.bin_sizes[sample_name +'-'+bin_name] = bin_size  # store for output
-
+            key = f"{sample_name}-{bin_name}"
+    
+            is_large, bin_size, contig_count = self.is_bin_large(bin_path)
+            self.bin_sizes[key] = bin_size
+            self.bin_contigs[key] = contig_count
+    
             if bin_name not in good_bin_names or is_large:
                 symlink_source = os.path.abspath(bin_path)
                 symlink_dest = os.path.join(sample_output_dir, bin_name)
@@ -53,16 +59,18 @@ class EukRepRunner:
                     os.symlink(symlink_source, symlink_dest)
                     print(f"Symlinked {symlink_source} to {symlink_dest}")
 
-
     def is_bin_large(self, bin_path):
-        """Check bin size and return (is_large, size_in_bp)."""
+        """Return (is_large, base_count, contig_count) from a fasta file."""
         bin_size = 0
+        contig_count = 0
         with open(bin_path, 'r') as f:
             for line in f:
-                if not line.startswith('>'):
+                if line.startswith('>'):
+                    contig_count += 1
+                else:
                     bin_size += len(line.strip())
         is_large = bin_size >= self.size_threshold
-        return is_large, bin_size
+        return is_large, bin_size, contig_count
 
     def run_eukrep(self):
         """Run EukRep on all symlinked bin files in the input_bins directory."""
@@ -117,7 +125,6 @@ class EukRepRunner:
                 future.result()
         print("EukCC processing completed for all bins.")
 
-
     def process_euk_output(self):
         summary_data = []
         contigs_found = False  # Track if there are any eukrep results with contigs
@@ -129,16 +136,16 @@ class EukRepRunner:
 
             assembly_type, sample_id_and_bin = assembly_sample_bin.split('_', 1)
             sample_id, bin_id = sample_id_and_bin.rsplit('_', 1)
-            bin_id = f"{sample_id}-{bin_id}".replace('.fa','')
+            bin_id = f"{bin_id}".replace('.fa','')
 
             eukcc_file = os.path.join(sample_dir, 'eukcc/eukcc.csv')
 
             contig_file = os.path.join(
                 self.euk_binning_outputdir,
                 assembly_sample_bin,
-                f"EUKREP_{assembly_sample_bin}_eukrepcontigs.fa"
+                f"EUKREP_{assembly_type}_{sample_id}_{bin_id}_eukrepcontigs.fa"
             )
-            print(contig_file)
+
             input_bin_file = os.path.join(
                 self.input_bins_dir,
                 'coasm' if assembly_type == 'coassembly' else 'asm',
@@ -171,18 +178,15 @@ class EukRepRunner:
                 with open(contig_file, 'r') as f:
                     eukrep_contig_count = sum(1 for line in f if line.startswith('>'))
 
-            eukrep_contig_perc = (eukrep_contig_count / bin_contig_count) * 100 if bin_contig_count > 0 else float('nan')
-
             row = {
                 'assembly_type': assembly_type,
                 'sample_id': sample_id,
                 'bin_id': bin_id,
                 'bin_size': self.bin_sizes.get(f"{bin_id}.fa", float('nan')),
+                'bin_contig_count': self.bin_contigs.get(f"{bin_id}.fa", float('nan')),
                 'completeness': completeness,
                 'contamination': contamination,
-                'bin_contig_count': bin_contig_count,
-                'eukrep_contig_count': eukrep_contig_count,
-                'eukrep_contig_perc': eukrep_contig_perc
+                'eukrep_contig_count': eukrep_contig_count
             }
 
             if os.path.exists(contig_file):
@@ -205,8 +209,7 @@ class EukRepRunner:
             print("No data found for summary table.")
 
     def run(self):
-#        self.find_bins()
-#        print(self.bin_sizes)
+        self.find_bins()
 #        if not self.skip_eukrep:
 #            self.run_eukrep()
 #        if not self.skip_eukcc:
