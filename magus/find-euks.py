@@ -46,9 +46,12 @@ class EukRepRunner:
     
             sample_name = sample_base.split('/')[0]
             bin_name = os.path.basename(bin_path)
-            key = f"{sample_name}-{bin_name}"
+            key = f"{sample_name}-{bin_name}".replace('.fa','')
     
             is_large, bin_size, contig_count = self.is_bin_large(bin_path)
+            print(key)
+            print(bin_size)
+            print(contig_count)
             self.bin_sizes[key] = bin_size
             self.bin_contigs[key] = contig_count
     
@@ -143,7 +146,7 @@ class EukRepRunner:
             contig_file = os.path.join(
                 self.euk_binning_outputdir,
                 assembly_sample_bin,
-                f"EUKREP_{assembly_type}_{sample_id}_{bin_id}_eukrepcontigs.fa"
+                f"EUKREP_{assembly_sample_bin}_eukrepcontigs.fa"
             )
 
             input_bin_file = os.path.join(
@@ -182,8 +185,8 @@ class EukRepRunner:
                 'assembly_type': assembly_type,
                 'sample_id': sample_id,
                 'bin_id': bin_id,
-                'bin_size': self.bin_sizes.get(f"{bin_id}.fa", float('nan')),
-                'bin_contig_count': self.bin_contigs.get(f"{bin_id}.fa", float('nan')),
+                'bin_size': self.bin_sizes.get(f"{sample_id}-{bin_id}", float('nan')),
+                'bin_contig_count': self.bin_contigs.get(f"{sample_id}-{bin_id}", float('nan')),
                 'completeness': completeness,
                 'contamination': contamination,
                 'eukrep_contig_count': eukrep_contig_count
@@ -210,11 +213,11 @@ class EukRepRunner:
 
     def run(self):
         self.find_bins()
-#        if not self.skip_eukrep:
-#            self.run_eukrep()
-#        if not self.skip_eukcc:
-#            self.run_eukcc()
-        self.process_euk_output()
+        if not self.skip_eukrep:
+            self.run_eukrep()
+        if not self.skip_eukcc:
+            self.run_eukcc()
+       self.process_euk_output()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run EukRep and EukCC on bins from coassembly and single assembly")
