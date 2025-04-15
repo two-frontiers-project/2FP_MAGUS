@@ -41,10 +41,10 @@ class EukRepRunner:
                 sample_base = os.path.relpath(bin_path, self.asm_dir)
                 sample_output_dir = os.path.join(self.input_bins_dir, "asm", os.path.dirname(sample_base))
             os.makedirs(sample_output_dir, exist_ok=True)
-
+            sample_name = sample_base.split('/')[0]
             bin_name = os.path.basename(bin_path)
             is_large, bin_size = self.is_bin_large(bin_path)
-            self.bin_sizes[bin_name] = bin_size  # store for output
+            self.bin_sizes[sample_name +'-'+bin_name] = bin_size  # store for output
 
             if bin_name not in good_bin_names or is_large:
                 symlink_source = os.path.abspath(bin_path)
@@ -129,16 +129,16 @@ class EukRepRunner:
 
             assembly_type, sample_id_and_bin = assembly_sample_bin.split('_', 1)
             sample_id, bin_id = sample_id_and_bin.rsplit('_', 1)
-            bin_id = f"{bin_id}".replace('.fa','')
+            bin_id = f"{sample_id}-{bin_id}".replace('.fa','')
 
             eukcc_file = os.path.join(sample_dir, 'eukcc/eukcc.csv')
 
             contig_file = os.path.join(
                 self.euk_binning_outputdir,
                 assembly_sample_bin,
-                f"EUKREP_{assembly_type}_{sample_id}_{bin_id}_eukrepcontigs.fa"
+                f"EUKREP_{assembly_sample_bin}_eukrepcontigs.fa"
             )
-
+            print(contig_file)
             input_bin_file = os.path.join(
                 self.input_bins_dir,
                 'coasm' if assembly_type == 'coassembly' else 'asm',
@@ -205,8 +205,8 @@ class EukRepRunner:
             print("No data found for summary table.")
 
     def run(self):
-        self.find_bins()
-        print(self.bin_sizes)
+#        self.find_bins()
+#        print(self.bin_sizes)
 #        if not self.skip_eukrep:
 #            self.run_eukrep()
 #        if not self.skip_eukcc:
