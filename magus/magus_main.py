@@ -22,6 +22,7 @@ def main():
         'cluster-contigs': 'cluster-contigs.py',
         'coassembly': 'coassembly.py',
         'coassembly-binning': 'coassembly-binning.py',
+        'dereplicate': 'dereplicate-genomes.py',
         'find-viruses': 'find-viruses.py',
         'find-euks': 'find-euks.py',
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
