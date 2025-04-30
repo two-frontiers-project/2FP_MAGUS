@@ -22,11 +22,14 @@ def main():
         'cluster-contigs': 'cluster-contigs.py',
         'coassembly': 'coassembly.py',
         'coassembly-binning': 'coassembly-binning.py',
+        'dereplicate': 'dereplicate-genomes.py',
+        'aggregate':'aggregate_genomes.py',
+        'get_genome_sizes.py':'genome-sizes',
         'find-viruses': 'find-viruses.py',
         'find-euks': 'find-euks.py',
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
-        'find-genes':'find_genes.py'
-  }
+        'find-genes':'find_genes.py'  
+    }
 
     # Check for valid command
     if command not in command_map:

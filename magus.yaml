@@ -242,5 +242,5 @@ dependencies:
       - kpal==2.1.1
       - ncbi-genome-download==0.3.3
       - psutil==6.0.0
-      - scikit-learn==1.0.2
+      - scikit-learn==0.23.2
       - semantic-version==2.10.0
