@@ -18,6 +18,7 @@ bin/shi7_trimmer
 bin/sorenson-g
 bin/spamw2
 magus/__init__.py
+magus/aggregate_genomes.py
 magus/assemble-host.py
 magus/classify-bins.py
 magus/cluster-contigs.py
@@ -30,6 +31,7 @@ magus/find-euks.py
 magus/find-genes.py
 magus/find-viruses.py
 magus/find_genes.py
+magus/get_genome_sizes.py
 magus/magus_main.py
 magus/qc.py
 magus/single-assembly.py
