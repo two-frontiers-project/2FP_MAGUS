@@ -1,3 +1,4 @@
+MANIFEST.in
 README.md
 setup.py
 bin/akmer102
@@ -20,9 +21,9 @@ magus/__init__.py
 magus/assemble-host.py
 magus/classify-bins.py
 magus/cluster-contigs.py
-magus/cluster-reads.py
 magus/coassembly-binning.py
 magus/coassembly.py
+magus/dereplicate-genomes.py
 magus/filter_host.py
 magus/finalize-bacterial-mags.py
 magus/find-euks.py
