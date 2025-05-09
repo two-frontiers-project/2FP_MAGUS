@@ -124,10 +124,10 @@ class EukRepRunner:
 
     def run(self):
         self.find_bins()
-        #if not self.skip_eukrep:
-        #    self.run_eukrep()
-        #if not self.skip_eukcc:
-        #    self.run_eukcc()
+        if not self.skip_eukrep:
+            self.run_eukrep()
+        if not self.skip_eukcc:
+            self.run_eukcc()
         self.process_output()
 
 if __name__ == "__main__":
