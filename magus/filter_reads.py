@@ -81,13 +81,19 @@ class ReadFilter:
 
     def load_perq_files(self):
         """Load all perq files and store reads to filter."""
-        for perq_file in os.listdir(self.perq_dir):
-            if perq_file.endswith('.perq'):
-                base_name = os.path.splitext(perq_file)[0]
-                perq_path = os.path.join(self.perq_dir, perq_file)
-                logger.info(f"Processing perq file: {perq_file}")
-                self.reads_to_filter[base_name] = self.parse_perq_file(perq_path)
-                logger.info(f"Found {len(self.reads_to_filter[base_name])} reads to filter in {perq_file}")
+        perq_files = [os.path.join(self.perq_dir, f) for f in os.listdir(self.perq_dir) if f.endswith('.perq')]
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_file = {executor.submit(self.prefilter_perq_file, perq_file): perq_file for perq_file in perq_files}
+            for future in future_to_file:
+                perq_file = future_to_file[future]
+                try:
+                    filtered_file = future.result()
+                    base_name = os.path.splitext(os.path.basename(perq_file))[0]
+                    logger.info(f"Processing perq file: {os.path.basename(perq_file)}")
+                    self.reads_to_filter[base_name] = self.parse_perq_file(filtered_file)
+                    logger.info(f"Found {len(self.reads_to_filter[base_name])} reads to filter in {os.path.basename(perq_file)}")
+                except Exception as e:
+                    logger.error(f"Error processing {perq_file}: {e}")
 
     def open_file(self, file_path: str, mode: str = 'r') -> TextIO:
         """Open a file, handling gzip compression if needed."""
