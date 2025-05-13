@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import argparse
+import logging
+import subprocess
+import gzip
+from pathlib import Path
+from typing import Dict, Set, Tuple, Optional, TextIO
+from concurrent.futures import ThreadPoolExecutor
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class ReadFilter:
+    def __init__(self, config_file: str, perq_dir: str, output_dir: str = 'filtered_reads',
+                 min_kmers: int = 1, output_config: str = 'configs/filtered_reads_config',
+                 max_workers: int = 1):
+        self.config_file = config_file
+        self.perq_dir = perq_dir
+        self.output_dir = output_dir
+        self.min_kmers = min_kmers
+        self.output_config = output_config
+        self.max_workers = max_workers
+        self.reads_to_filter: Dict[str, Set[str]] = {}  # filename -> set of reads to filter
+        
+    def parse_config(self) -> Dict[str, Tuple[str, Optional[str]]]:
+        """Parse the input config file."""
+        config_data = {}
+        with open(self.config_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                # Skip header line
+                if parts[0].lower() == 'filename':
+                    continue
+                if len(parts) >= 2:
+                    filename = parts[0]
+                    pe1 = parts[1]
+                    pe2 = parts[2] if len(parts) > 2 else None
+                    config_data[filename] = (pe1, pe2)
+        return config_data
+
+    def prefilter_perq_file(self, perq_file: str) -> str:
+        """Pre-filter perq file using grep to remove 'No matches found' lines."""
+        logger.info(f"Pre-filtering {perq_file}")
+        filtered_file = f"{perq_file}.filtered"
+        try:
+            with open(filtered_file, 'w') as outfile:
+                subprocess.run(['grep', '-v', 'No matches found', perq_file], 
+                             stdout=outfile, check=True)
+            return filtered_file
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error pre-filtering {perq_file}: {e}")
+            return perq_file
+
+    def parse_perq_file(self, perq_file: str) -> Set[str]:
+        """Parse a perq output file and return set of reads to filter."""
+        reads_to_filter = set()
+        filtered_file = self.prefilter_perq_file(perq_file)
+        
+        try:
+            with open(filtered_file, 'r') as f:
+                for line in f:
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 5:
+                        read_id = parts[0]
+                        total_kmers = int(parts[4]) if parts[4].isdigit() else 0
+                        if total_kmers < self.min_kmers:
+                            reads_to_filter.add(read_id)
+            
+            # Clean up temporary filtered file
+            if filtered_file != perq_file:
+                os.remove(filtered_file)
+                
+        except Exception as e:
+            logger.error(f"Error parsing {perq_file}: {e}")
+            
+        return reads_to_filter
+
+    def load_perq_files(self):
+        """Load all perq files and store reads to filter."""
+        for perq_file in os.listdir(self.perq_dir):
+            if perq_file.endswith('.perq'):
+                base_name = os.path.splitext(perq_file)[0]
+                perq_path = os.path.join(self.perq_dir, perq_file)
+                logger.info(f"Processing perq file: {perq_file}")
+                self.reads_to_filter[base_name] = self.parse_perq_file(perq_path)
+                logger.info(f"Found {len(self.reads_to_filter[base_name])} reads to filter in {perq_file}")
+
+    def open_file(self, file_path: str, mode: str = 'r') -> TextIO:
+        """Open a file, handling gzip compression if needed."""
+        if file_path.endswith('.gz'):
+            return gzip.open(file_path, mode + 't')
+        return open(file_path, mode)
+
+    def filter_fastq_file(self, fastq_file: str, perq_data: Set[str], output_file: str):
+        """Filter a FASTQ/FASTA file based on perq data."""
+        try:
+            # Add .gz extension to output file if not already present
+            if not output_file.endswith('.gz'):
+                output_file += '.gz'
+                
+            with self.open_file(fastq_file, 'r') as infile, gzip.open(output_file, 'wt') as outfile:
+                current_read = []
+                current_id = None
+                is_fasta = False
+                
+                for line in infile:
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    # Check if this is a header line
+                    if line.startswith('@') or line.startswith('>'):
+                        # If we have a previous read, process it
+                        if current_id and current_read:
+                            # REVERSED LOGIC: keep reads NOT in perq_data
+                            if current_id not in perq_data:
+                                outfile.write('\n'.join(current_read) + '\n')
+                            current_read = []
+                        
+                        # Start new read
+                        current_id = line[1:].split()[0]  # Remove @ or > and get first word
+                        is_fasta = line.startswith('>')
+                        current_read.append(line)
+                    else:
+                        current_read.append(line)
+                
+                # Process the last read
+                if current_id and current_read:
+                    if current_id not in perq_data:
+                        outfile.write('\n'.join(current_read) + '\n')
+                        
+        except Exception as e:
+            logging.error(f"Error filtering {fastq_file}: {str(e)}")
+            raise
+
+    def process_single_file(self, filename: str, pe1: str, pe2: Optional[str]) -> Tuple[str, str, Optional[str]]:
+        """Process a single file pair and return output paths."""
+        if filename not in self.reads_to_filter:
+            logger.warning(f"No perq file found for {filename}, skipping.")
+            return filename, pe1, pe2
+
+        # Process PE1
+        pe1_output = os.path.join(self.output_dir, os.path.basename(pe1))
+        self.filter_fastq_file(pe1, self.reads_to_filter[filename], pe1_output)
+        
+        # Process PE2 if it exists
+        pe2_output = None
+        if pe2:
+            pe2_output = os.path.join(self.output_dir, os.path.basename(pe2))
+            self.filter_fastq_file(pe2, self.reads_to_filter[filename], pe2_output)
+        
+        # Add .gz extension if not already present
+        pe1_output = pe1_output if pe1_output.endswith('.gz') else pe1_output + '.gz'
+        pe2_output = pe2_output if pe2_output and pe2_output.endswith('.gz') else (pe2_output + '.gz' if pe2_output else None)
+        
+        return filename, pe1_output, pe2_output
+
+    def process_files(self):
+        """Process all files according to config using parallel processing."""
+        # Create output directory
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(self.output_config), exist_ok=True)
+        
+        # Load perq files
+        self.load_perq_files()
+        
+        # Process each file in config using ThreadPoolExecutor
+        config_data = self.parse_config()
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(self.process_single_file, filename, pe1, pe2): filename
+                for filename, (pe1, pe2) in config_data.items()
+            }
+            
+            # Write results to config file as they complete
+            with open(self.output_config, 'w') as out_config:
+                # Write headers
+                out_config.write("filename\tpe1\tpe2\n")
+                for future in future_to_file:
+                    filename, pe1_output, pe2_output = future.result()
+                    if pe2_output:
+                        out_config.write(f"{filename}\t{pe1_output}\t{pe2_output}\n")
+                    else:
+                        out_config.write(f"{filename}\t{pe1_output}\n")
+
+def main():
+    parser = argparse.ArgumentParser(description='Filter reads based on perq output files.')
+    parser.add_argument('--config', required=True, help='Input config file (filename, pe1, pe2)')
+    parser.add_argument('--perq_dir', required=True, help='Directory containing perq output files')
+    parser.add_argument('--output_dir', default='filtered_reads', help='Output directory for filtered reads')
+    parser.add_argument('--min_kmers', type=int, default=1, help='Minimum number of kmers to keep a read')
+    parser.add_argument('--output_config', default='configs/filtered_reads_config',
+                       help='Output config file path')
+    parser.add_argument('--max_workers', type=int, default=1,
+                       help='Maximum number of parallel workers for processing files')
+    args = parser.parse_args()
+
+    # Initialize and run filter
+    filter = ReadFilter(args.config, args.perq_dir, args.output_dir, args.min_kmers, 
+                       args.output_config, args.max_workers)
+    filter.process_files()
+    logger.info("Read filtering completed successfully.")
+
+if __name__ == '__main__':
+    main() 
