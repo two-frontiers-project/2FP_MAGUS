@@ -15,6 +15,7 @@ def main():
         'qc': 'qc.py',
         'assemble-hosts':'assemble-host.py',
         'subsample-reads':'subsample-reads.py',
+        'filter-reads:filter_reads.py',
         'taxonomy': 'taxonomy.py',
         'cluster-contigs': 'cluster-contigs.py',
         'single-assembly': 'single-assembly.py',
