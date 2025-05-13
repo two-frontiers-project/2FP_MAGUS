@@ -64,9 +64,10 @@ class ReadFilter:
             with open(filtered_file, 'r') as f:
                 for line in f:
                     parts = line.strip().split('\t')
-                    if len(parts) >= 2:
+                    if len(parts) >= 6:  # We need 6 columns
                         read_id = parts[0]
-                        total_kmers = int(parts[-1]) if parts[-1].isdigit() else 0
+                        # Use column index 5 for kmer count
+                        total_kmers = int(parts[5]) if parts[5].isdigit() else 0
                         if total_kmers >= self.min_kmers:
                             reads_to_filter.add(read_id)
             
