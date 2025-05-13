@@ -67,7 +67,6 @@ class ReadFilter:
                     if len(parts) >= 2:
                         read_id = parts[0]
                         total_kmers = int(parts[-1]) if parts[-1].isdigit() else 0
-                        logger.info(f"Read ID: {read_id}, Total Kmers: {total_kmers}")
                         if total_kmers >= self.min_kmers:
                             reads_to_filter.add(read_id)
             
