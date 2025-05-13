@@ -64,10 +64,11 @@ class ReadFilter:
             with open(filtered_file, 'r') as f:
                 for line in f:
                     parts = line.strip().split('\t')
-                    if len(parts) >= 5:
+                    if len(parts) >= 2:
                         read_id = parts[0]
-                        total_kmers = int(parts[4]) if parts[4].isdigit() else 0
-                        if total_kmers < self.min_kmers:
+                        total_kmers = int(parts[-1]) if parts[-1].isdigit() else 0
+                        logger.info(f"Read ID: {read_id}, Total Kmers: {total_kmers}")
+                        if total_kmers >= self.min_kmers:
                             reads_to_filter.add(read_id)
             
             # Clean up temporary filtered file

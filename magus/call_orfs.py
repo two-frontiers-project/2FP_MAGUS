@@ -77,7 +77,7 @@ class ORFCaller:
             return manicure_file
 
         log_file = os.path.join(self.output_dir, 'viruses', f"{FN}_prodigal.log")
-        cmd = ['prodigal-gv', '-p', 'meta', '-q', '-i', genome_file, '-d', os.path.join(annot_dir, f"{FN}.ffn"), '-a', os.path.join(annot_dir, f"{FN}.faa"), '-o', '/dev/null']
+        cmd = ['prodigal-gv', '-p', '-q', '-i', genome_file, '-d', os.path.join(annot_dir, f"{FN}.ffn"), '-a', os.path.join(annot_dir, f"{FN}.faa"), '-o', '/dev/null']
         logger.info(f"Calling viral ORFs for {genome_file} using prodigal-gv")
         with open(log_file, 'w') as log:
             subprocess.run(cmd, check=True, stdout=log, stderr=log)
