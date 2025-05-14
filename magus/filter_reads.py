@@ -58,10 +58,10 @@ class ReadFilter:
     def parse_perq_file(self, perq_file: str) -> Set[str]:
         """Parse a perq output file and return set of reads to filter."""
         reads_to_filter = set()
-        filtered_file = self.prefilter_perq_file(perq_file)
+        logger.debug(f"Parsing perq file: {perq_file}")
         
         try:
-            with open(filtered_file, 'r') as f:
+            with open(perq_file, 'r') as f:
                 for line in f:
                     parts = line.strip().split('\t')
                     if len(parts) >= 6:  # We need 6 columns
@@ -72,8 +72,8 @@ class ReadFilter:
                             reads_to_filter.add(read_id)
             
             # Clean up temporary filtered file
-            if filtered_file != perq_file:
-                os.remove(filtered_file)
+            if perq_file.endswith('.filtered.tmp'):
+                os.remove(perq_file)
                 
         except Exception as e:
             logger.error(f"Error parsing {perq_file}: {e}")
@@ -84,13 +84,14 @@ class ReadFilter:
         """Load all perq files and store reads to filter."""
         perq_files = [os.path.join(self.perq_dir, f) for f in os.listdir(self.perq_dir) if f.endswith('.perq')]
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_file = {executor.submit(self.parse_perq_file, perq_file): perq_file for perq_file in perq_files}
+            future_to_file = {executor.submit(self.prefilter_perq_file, perq_file): perq_file for perq_file in perq_files}
             for future in future_to_file:
                 perq_file = future_to_file[future]
                 try:
+                    filtered_file = future.result()
                     base_name = os.path.splitext(os.path.basename(perq_file))[0]
                     logger.info(f"Processing perq file: {os.path.basename(perq_file)}")
-                    self.reads_to_filter[base_name] = future.result()
+                    self.reads_to_filter[base_name] = self.parse_perq_file(filtered_file)
                     logger.info(f"Found {len(self.reads_to_filter[base_name])} reads to filter in {os.path.basename(perq_file)}")
                 except Exception as e:
                     logger.error(f"Error processing {perq_file}: {e}")
