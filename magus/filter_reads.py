@@ -109,9 +109,9 @@ class ReadFilter:
             if not output_file.endswith('.gz'):
                 output_file += '.gz'
             
-            # Create a temporary file with read IDs to keep
-            keep_file = f"{output_file}.keep"
-            with open(keep_file, 'w') as f:
+            # Create a temporary file with read IDs to REMOVE
+            remove_file = f"{output_file}.remove"
+            with open(remove_file, 'w') as f:
                 for read_id in perq_data:
                     f.write(f"{read_id}\n")
             
@@ -127,14 +127,14 @@ class ReadFilter:
             is_fasta = result.stdout.startswith('>')
             
             if is_fasta:
-                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{keep[$1]; next}} /^>/{{id=substr($1,2); show=(id in keep)}} show{{print}}' {keep_file} - | gzip > {output_file}"
+                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{remove[$1]; next}} /^>/{{id=substr($1,2); if (!(id in remove)) print}}' {remove_file} - | gzip > {output_file}"
             else:
-                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{keep[$1]; next}} /^@/{{id=substr($1,2); show=(id in keep)}} show{{print}}' {keep_file} - | gzip > {output_file}"
+                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{remove[$1]; next}} /^@/{{id=substr($1,2); if (!(id in remove)) print}}' {remove_file} - | gzip > {output_file}"
             
             subprocess.run(awk_cmd, shell=True, check=True)
             
             # Clean up temporary file
-            os.remove(keep_file)
+            os.remove(remove_file)
             
         except Exception as e:
             logging.error(f"Error filtering {fastq_file}: {str(e)}")
