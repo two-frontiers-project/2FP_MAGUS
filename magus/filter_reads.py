@@ -141,20 +141,31 @@ class ReadFilter:
             raise
 
     def process_single_file(self, filename: str, pe1: str, pe2: Optional[str]) -> Tuple[str, str, Optional[str]]:
-        """Process a single file pair and return output paths."""
-        if filename not in self.reads_to_filter:
+        """Process a single file completely in serial and return output paths."""
+        logger.info(f"Processing file: {filename}")
+        
+        # Step 1: Process perq file for this sample
+        perq_file = os.path.join(self.perq_dir, f"{filename}.perq")
+        if not os.path.exists(perq_file):
             logger.warning(f"No perq file found for {filename}, skipping.")
             return filename, pe1, pe2
-
-        # Process PE1
-        pe1_output = os.path.join(self.output_dir, os.path.basename(pe1))
-        self.filter_fastq_file(pe1, self.reads_to_filter[filename], pe1_output)
+            
+        # Pre-filter and parse perq file
+        filtered_perq = self.prefilter_perq_file(perq_file)
+        reads_to_filter = self.parse_perq_file(filtered_perq)
+        logger.info(f"Found {len(reads_to_filter)} reads to filter in {filename}")
+        
+        # Step 2: Process fastq/fasta files for this sample
+        pe1_basename = os.path.basename(pe1)
+        pe1_output = os.path.join(self.output_dir, f"{filename}_{pe1_basename}")
+        self.filter_fastq_file(pe1, reads_to_filter, pe1_output)
         
         # Process PE2 if it exists
         pe2_output = None
         if pe2:
-            pe2_output = os.path.join(self.output_dir, os.path.basename(pe2))
-            self.filter_fastq_file(pe2, self.reads_to_filter[filename], pe2_output)
+            pe2_basename = os.path.basename(pe2)
+            pe2_output = os.path.join(self.output_dir, f"{filename}_{pe2_basename}")
+            self.filter_fastq_file(pe2, reads_to_filter, pe2_output)
         
         # Add .gz extension if not already present
         pe1_output = pe1_output if pe1_output.endswith('.gz') else pe1_output + '.gz'
@@ -168,11 +179,11 @@ class ReadFilter:
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(os.path.dirname(self.output_config), exist_ok=True)
         
-        # Load perq files
-        self.load_perq_files()
-        
-        # Process each file in config using ThreadPoolExecutor
+        # Get config data
         config_data = self.parse_config()
+        
+        # Process files in parallel using ThreadPoolExecutor
+        results = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all tasks
             future_to_file = {
@@ -180,16 +191,23 @@ class ReadFilter:
                 for filename, (pe1, pe2) in config_data.items()
             }
             
-            # Write results to config file as they complete
-            with open(self.output_config, 'w') as out_config:
-                # Write headers
-                out_config.write("filename\tpe1\tpe2\n")
-                for future in future_to_file:
-                    filename, pe1_output, pe2_output = future.result()
-                    if pe2_output:
-                        out_config.write(f"{filename}\t{pe1_output}\t{pe2_output}\n")
-                    else:
-                        out_config.write(f"{filename}\t{pe1_output}\n")
+            # Collect results as they complete
+            for future in future_to_file:
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    logger.error(f"Error processing file: {e}")
+        
+        # Write results to config file
+        with open(self.output_config, 'w') as out_config:
+            # Write headers
+            out_config.write("filename\tpe1\tpe2\n")
+            for filename, pe1_output, pe2_output in results:
+                if pe2_output:
+                    out_config.write(f"{filename}\t{pe1_output}\t{pe2_output}\n")
+                else:
+                    out_config.write(f"{filename}\t{pe1_output}\n")
 
 def main():
     parser = argparse.ArgumentParser(description='Filter reads based on perq output files.')
