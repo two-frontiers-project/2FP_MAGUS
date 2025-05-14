@@ -45,7 +45,7 @@ class ReadFilter:
     def prefilter_perq_file(self, perq_file: str) -> str:
         """Pre-filter perq file using grep to remove 'No matches found' lines and awk to filter by min_kmers."""
         logger.info(f"Pre-filtering {perq_file}")
-        filtered_file = f"{perq_file}.filtered"
+        filtered_file = f"{perq_file}.filtered.tmp"
         try:
             # Use grep to remove 'No matches found' lines, then awk to filter by min_kmers
             with open(filtered_file, 'w') as outfile:
@@ -84,14 +84,13 @@ class ReadFilter:
         """Load all perq files and store reads to filter."""
         perq_files = [os.path.join(self.perq_dir, f) for f in os.listdir(self.perq_dir) if f.endswith('.perq')]
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_file = {executor.submit(self.prefilter_perq_file, perq_file): perq_file for perq_file in perq_files}
+            future_to_file = {executor.submit(self.parse_perq_file, perq_file): perq_file for perq_file in perq_files}
             for future in future_to_file:
                 perq_file = future_to_file[future]
                 try:
-                    filtered_file = future.result()
                     base_name = os.path.splitext(os.path.basename(perq_file))[0]
                     logger.info(f"Processing perq file: {os.path.basename(perq_file)}")
-                    self.reads_to_filter[base_name] = self.parse_perq_file(filtered_file)
+                    self.reads_to_filter[base_name] = future.result()
                     logger.info(f"Found {len(self.reads_to_filter[base_name])} reads to filter in {os.path.basename(perq_file)}")
                 except Exception as e:
                     logger.error(f"Error processing {perq_file}: {e}")
