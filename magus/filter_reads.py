@@ -43,13 +43,13 @@ class ReadFilter:
         return config_data
 
     def prefilter_perq_file(self, perq_file: str) -> str:
-        """Pre-filter perq file using grep to remove 'No matches found' lines."""
+        """Pre-filter perq file using grep to remove 'No matches found' lines and awk to filter by min_kmers."""
         logger.info(f"Pre-filtering {perq_file}")
         filtered_file = f"{perq_file}.filtered"
         try:
+            # Use grep to remove 'No matches found' lines, then awk to filter by min_kmers
             with open(filtered_file, 'w') as outfile:
-                subprocess.run(['grep', '-v', 'No matches found', perq_file], 
-                             stdout=outfile, check=True)
+                subprocess.run(f"grep -v 'No matches found' {perq_file} | awk -F'\t' '$6 >= {self.min_kmers}'", shell=True, stdout=outfile, check=True)
             return filtered_file
         except subprocess.CalledProcessError as e:
             logger.error(f"Error pre-filtering {perq_file}: {e}")
@@ -103,43 +103,39 @@ class ReadFilter:
         return open(file_path, mode)
 
     def filter_fastq_file(self, fastq_file: str, perq_data: Set[str], output_file: str):
-        """Filter a FASTQ/FASTA file based on perq data."""
+        """Filter a FASTQ/FASTA file based on perq data using awk for streaming processing."""
         try:
             # Add .gz extension to output file if not already present
             if not output_file.endswith('.gz'):
                 output_file += '.gz'
-                
-            with self.open_file(fastq_file, 'r') as infile, gzip.open(output_file, 'wt') as outfile:
-                current_read = []
-                current_id = None
-                is_fasta = False
-                
-                for line in infile:
-                    line = line.strip()
-                    if not line:
-                        continue
-                        
-                    # Check if this is a header line
-                    if line.startswith('@') or line.startswith('>'):
-                        # If we have a previous read, process it
-                        if current_id and current_read:
-                            # REVERSED LOGIC: keep reads NOT in perq_data
-                            if current_id not in perq_data:
-                                outfile.write('\n'.join(current_read) + '\n')
-                            current_read = []
-                        
-                        # Start new read
-                        current_id = line[1:].split()[0]  # Remove @ or > and get first word
-                        is_fasta = line.startswith('>')
-                        current_read.append(line)
-                    else:
-                        current_read.append(line)
-                
-                # Process the last read
-                if current_id and current_read:
-                    if current_id not in perq_data:
-                        outfile.write('\n'.join(current_read) + '\n')
-                        
+            
+            # Create a temporary file with read IDs to keep
+            keep_file = f"{output_file}.keep"
+            with open(keep_file, 'w') as f:
+                for read_id in perq_data:
+                    f.write(f"{read_id}\n")
+            
+            # Use gzip -dc for gzipped files
+            cat_cmd = 'gzip -dc' if fastq_file.endswith('.gz') else 'cat'
+            
+            # Use awk to filter the FASTQ/FASTA file in a streaming fashion
+            # For FASTQ: keep 4 lines per read
+            # For FASTA: keep 2 lines per read
+            is_fasta = False
+            first_line_cmd = f"{cat_cmd} {fastq_file} | head -n 1"
+            result = subprocess.run(first_line_cmd, shell=True, capture_output=True, text=True, check=True)
+            is_fasta = result.stdout.startswith('>')
+            
+            if is_fasta:
+                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{keep[$1]; next}} /^>/{{id=substr($1,2); show=(id in keep)}} show{{print}}' {keep_file} - | gzip > {output_file}"
+            else:
+                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{keep[$1]; next}} /^@/{{id=substr($1,2); show=(id in keep)}} show{{print}}' {keep_file} - | gzip > {output_file}"
+            
+            subprocess.run(awk_cmd, shell=True, check=True)
+            
+            # Clean up temporary file
+            os.remove(keep_file)
+            
         except Exception as e:
             logging.error(f"Error filtering {fastq_file}: {str(e)}")
             raise
