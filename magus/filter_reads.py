@@ -102,36 +102,23 @@ class ReadFilter:
             return gzip.open(file_path, mode + 't')
         return open(file_path, mode)
 
-    def filter_fastq_file(self, fastq_file: str, perq_data: Set[str], output_file: str):
-        """Filter a FASTQ/FASTA file based on perq data using awk for streaming processing."""
+    def filter_fastq_file(self, fastq_file: str, reads_to_remove: Set[str], output_file: str):
+        """Filter a FASTQ/FASTA file using seqkit grep."""
         try:
             # Add .gz extension to output file if not already present
             if not output_file.endswith('.gz'):
                 output_file += '.gz'
             
-            # Create a temporary file with read IDs to REMOVE
+            # Create a temporary file with read IDs to remove
             remove_file = f"{output_file}.remove"
             with open(remove_file, 'w') as f:
-                for read_id in perq_data:
+                for read_id in reads_to_remove:
                     f.write(f"{read_id}\n")
             
-            # Use gzip -dc for gzipped files
-            cat_cmd = 'gzip -dc' if fastq_file.endswith('.gz') else 'cat'
-            
-            # Use awk to filter the FASTQ/FASTA file in a streaming fashion
-            # For FASTQ: keep 4 lines per read
-            # For FASTA: keep 2 lines per read
-            is_fasta = False
-            first_line_cmd = f"{cat_cmd} {fastq_file} | head -n 1"
-            result = subprocess.run(first_line_cmd, shell=True, capture_output=True, text=True, check=True)
-            is_fasta = result.stdout.startswith('>')
-            
-            if is_fasta:
-                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{remove[$1]; next}} /^>/{{id=substr($1,2); if (!(id in remove)) print}}' {remove_file} - | gzip > {output_file}"
-            else:
-                awk_cmd = f"{cat_cmd} {fastq_file} | awk 'FNR==NR{{remove[$1]; next}} /^@/{{id=substr($1,2); if (!(id in remove)) print}}' {remove_file} - | gzip > {output_file}"
-            
-            subprocess.run(awk_cmd, shell=True, check=True)
+            # Use seqkit grep to filter the file
+            cmd = f"seqkit grep -f {remove_file} -p -v {fastq_file} | gzip > {output_file}"
+            logger.info(f"Filtering {fastq_file} to {output_file}")
+            subprocess.run(cmd, shell=True, check=True)
             
             # Clean up temporary file
             os.remove(remove_file)
