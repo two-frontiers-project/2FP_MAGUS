@@ -30,11 +30,14 @@ def parse_config(config_file: str) -> dict:
 def filter_reads(perq_file: str, fastq_file: str, output_file: str, min_kmers: int, threads: int):
     """Filter reads using bash one-liner and seqkit."""
     tofilter = f"{output_file}.tofilter"
+    # Remove .gz extension for intermediate file
+    uncompressed_output = output_file.replace('.gz', '')
+    
     cmd = f"grep -v 'No matches found' {perq_file} | awk -F'\t' '$6 > {min_kmers} {{print $1}}' > {tofilter}"
     subprocess.run(cmd, shell=True, check=True)
-    cmd = f"seqkit grep -f {tofilter} -v {fastq_file} -j {threads} > {output_file}"
+    cmd = f"seqkit grep -f {tofilter} -v {fastq_file} -j {threads} > {uncompressed_output}"
     subprocess.run(cmd, shell=True, check=True)
-    cmd = f"gzip {output_file}"
+    cmd = f"gzip {uncompressed_output}"
     subprocess.run(cmd, shell=True, check=True)
 
 def process_file(filename: str, pe1: str, pe2: str, perq_dir: str, output_dir: str, min_kmers: int, threads: int):
@@ -44,13 +47,14 @@ def process_file(filename: str, pe1: str, pe2: str, perq_dir: str, output_dir: s
         logger.warning(f"No perq file found for {filename}, skipping.")
         return
     
-    pe1_basename = os.path.basename(pe1)
-    pe1_output = os.path.join(output_dir, f"{filename}_{pe1_basename}")
+    # Determine output extension based on input file
+    pe1_ext = '.fa.gz' if pe1.endswith(('.fa', '.fasta')) else '.fq.gz'
+    pe1_output = os.path.join(output_dir, f"{filename}_filtered{pe1_ext}")
     filter_reads(perq_file, pe1, pe1_output, min_kmers, threads)
     
     if pe2:
-        pe2_basename = os.path.basename(pe2)
-        pe2_output = os.path.join(output_dir, f"{filename}_{pe2_basename}")
+        pe2_ext = '.fa.gz' if pe2.endswith(('.fa', '.fasta')) else '.fq.gz'
+        pe2_output = os.path.join(output_dir, f"{filename}_filtered{pe2_ext}")
         filter_reads(perq_file, pe2, pe2_output, min_kmers, threads)
 
 def main():
