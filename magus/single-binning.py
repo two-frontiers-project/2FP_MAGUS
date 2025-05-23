@@ -137,8 +137,8 @@ class Binning:
         parent_dir = f"{self.tmpdir}/{sample_name}"
         good_fasta = f"{parent_dir}/good.fasta"
         good_dm = f"{parent_dir}/good.dm"
-        cmd = f"OMP_NUM_THREADS={self.threads} akmer100b {good_fasta} {good_dm} 13 ANI CHANCE GC LOCAL RC"
-        print(f"Running akmer100b for {sample_name}")
+        cmd = f"OMP_NUM_THREADS={self.threads} akmer102 {good_fasta} {good_dm} 13 ANI CHANCE GC LOCAL RC"
+        print(f"Running akmer102 for {sample_name}")
         subprocess.run(cmd, shell=True)
 
     def run_spamw(self, sample_name):

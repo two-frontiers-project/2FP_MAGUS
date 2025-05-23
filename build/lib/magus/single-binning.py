@@ -137,8 +137,8 @@ class Binning:
         parent_dir = f"{self.tmpdir}/{sample_name}"
         good_fasta = f"{parent_dir}/good.fasta"
         good_dm = f"{parent_dir}/good.dm"
-        cmd = f"OMP_NUM_THREADS={self.threads} akmer100b {good_fasta} {good_dm} 13 ANI CHANCE GC LOCAL RC"
-        print(f"Running akmer100b for {sample_name}")
+        cmd = f"OMP_NUM_THREADS={self.threads} akmer102 {good_fasta} {good_dm} 13 ANI CHANCE GC LOCAL RC"
+        print(f"Running akmer102 for {sample_name}")
         subprocess.run(cmd, shell=True)
 
     def run_spamw(self, sample_name):
@@ -181,7 +181,7 @@ class Binning:
     def run_sample(self, sample_name):
         """Runs the entire binning pipeline for a single sample."""
         try:
-            #self.run_sorenson(sample_name)
+            self.run_sorenson(sample_name)
             self.run_metabat(sample_name)
             if self.skip_checkm:
                 return 'Stopping after binning.'
