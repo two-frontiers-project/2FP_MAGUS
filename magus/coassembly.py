@@ -66,7 +66,7 @@ class CoAssembly:
                     print(f"Running megahit in single-end mode for {BS}")
                 else:
                     megahit_cmd = (
-                        f"megahit -f --k-min 75 --k-max 333 --k-step 6 "
+                        f"megahit-g -f --k-min 75 --k-max 333 --k-step 6 "
                         f"--cleaning-rounds 1 --merge-level 100,.999 "
                         f"--min-count 1 --min-contig-len 1000 --continue "
                         f"-t {self.threads} -1 {R1} -2 {R2} -o {OUTF}"

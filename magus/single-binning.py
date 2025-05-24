@@ -181,8 +181,8 @@ class Binning:
     def run_sample(self, sample_name):
         """Runs the entire binning pipeline for a single sample."""
         try:
-            self.run_sorenson(sample_name)
-            self.run_metabat(sample_name)
+            #self.run_sorenson(sample_name)
+            #self.run_metabat(sample_name)
             if self.skip_checkm:
                 return 'Stopping after binning.'
             self.run_checkm(sample_name)
