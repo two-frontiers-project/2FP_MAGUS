@@ -121,7 +121,7 @@ class Binning:
         print(f"Files to copy for {sample_name}: {bin_files}")
         
         for bin_file in bin_files:
-            cmd_copy = f"cp -l {bin_file} {good_dir}/"
+            cmd_copy = f"cp {bin_file} {good_dir}/"
             subprocess.run(cmd_copy, shell=True)
             print(f"Copied {bin_file} to {good_dir}")
 
@@ -171,7 +171,7 @@ class Binning:
         bestmags_txt = f"{parent_dir}/bestmags.txt"
         for z in subprocess.run(f"tail -n+2 {bestmags_txt} | cut -f1", shell=True, capture_output=True, text=True).stdout.splitlines():
             print(z)
-            cmd = f"cp -l {parent_dir}/bins/{z}.fa {mags_dir}/{sample_name}_{z}.fa"
+            cmd = f"cp {parent_dir}/bins/{z}.fa {mags_dir}/{sample_name}_{z}.fa"
             subprocess.run(cmd, shell=True)
             print(f"Copied final bin {z} for {sample_name} to {mags_dir}")
         checks_file = f"{mags_dir}/checks_single_assembly.txt"
