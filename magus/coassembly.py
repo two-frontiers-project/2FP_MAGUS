@@ -58,7 +58,7 @@ class CoAssembly:
 
                 if R2 is None:
                     megahit_cmd = (
-                        f"megahit -f --k-min 75 --k-max 333 --k-step 6 "
+                        f"megahit-g -f --k-min 75 --k-max 333 --k-step 6 "
                         f"--cleaning-rounds 1 --merge-level 100,.999 "
                         f"--min-count 1 --min-contig-len 1000 --continue "
                         f"-t {self.threads} -r {R1} -o {OUTF}"
