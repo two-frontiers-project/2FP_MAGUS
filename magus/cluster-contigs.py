@@ -94,8 +94,8 @@ class ContigClustering:
 	def run_akmer100b(self):
 		# Run akmer100b to generate the distance matrix
 		distance_matrix = f"{self.combined_output.replace('.fasta', '')}.dm"
-		cmd_akmer = f"OMP_NUM_THREADS={self.threads} akmer100b {self.combined_output} {distance_matrix} 16 ANI CHANCE GC LOCAL RC"
-		print(f"Running akmer100b to generate distance matrix: {distance_matrix}")
+		cmd_akmer = f"OMP_NUM_THREADS={self.threads} akmer102 {self.combined_output} {distance_matrix} 16 ANI CHANCE GC LOCAL RC"
+		print(f"Running akmer102 to generate distance matrix: {distance_matrix}")
 		subprocess.run(cmd_akmer, shell=True)
 		return distance_matrix
 
