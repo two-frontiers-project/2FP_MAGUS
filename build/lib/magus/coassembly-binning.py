@@ -5,7 +5,7 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class CoAssemblyBinning:
-    def __init__(self, config, tmpdir, outdir, threads=28, checkm_db=None, max_workers=4, test_mode=False):
+    def __init__(self, config, tmpdir, outdir, threads=28, checkm_db=None, max_workers=4, test_mode=False, restart=None):
         self.config = self.load_config(config)
         self.outdir = outdir
         self.magdir = f"{self.outdir}/mags"
@@ -14,6 +14,8 @@ class CoAssemblyBinning:
         self.checkm_db = checkm_db
         self.max_workers = max_workers
         self.test_mode = test_mode
+        # restart can be 'binning', 'checkm', or 'filtering'
+        self.restart = restart
 
         os.makedirs(self.outdir, exist_ok=True)
         os.makedirs(self.magdir, exist_ok=True)
@@ -90,8 +92,8 @@ class CoAssemblyBinning:
         print(f"Running lingenome for {BS}")
         subprocess.run(f"lingenome {OUTF}/good {OUTF}/good.fasta FILENAME", shell=True)
 
-        print(f"Running akmer100b for {BS}")
-        subprocess.run(f"OMP_NUM_THREADS={self.threads} akmer100b {OUTF}/good.fasta {OUTF}/good.dm 13 ANI CHANCE GC LOCAL RC", shell=True)
+        print(f"Running akmer102 for {BS}")
+        subprocess.run(f"OMP_NUM_THREADS={self.threads} akmer102 {OUTF}/good.fasta {OUTF}/good.dm 13 ANI CHANCE GC LOCAL RC", shell=True)
 
         print(f"Running spamw for {BS}")
         subprocess.run(f"spamw2 {OUTF}/good.dm {OUTF}/L 0 {self.threads} D2", shell=True)
@@ -135,10 +137,18 @@ class CoAssemblyBinning:
                     print(f"Error processing {BS}: {exc}")
 
     def process_sample(self, BS):
-        self.run_sorenson_alignment(BS)
-        self.merge_coverage_data(BS)
-        self.run_metabat(BS)
-        self.run_checkm_binning(BS)
+        """Run all steps for a single co-assembly starting from a chosen step."""
+        if self.restart is None:
+            self.run_sorenson_alignment(BS)
+            self.merge_coverage_data(BS)
+            self.run_metabat(BS)
+            self.run_checkm_binning(BS)
+        elif self.restart == "binning":
+            self.run_metabat(BS)
+            self.run_checkm_binning(BS)
+        elif self.restart == "checkm":
+            self.run_checkm_binning(BS)
+        # restart == "filtering" runs only downstream steps
         self.run_bestmag(BS)
 
 def main():
@@ -150,6 +160,8 @@ def main():
     parser.add_argument('--checkm_db', type=str, help='Path to a custom CheckM database')
     parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode to allow all bins regardless of quality (and generate spoof bins in the case of none being found)')
+    parser.add_argument('--restart', choices=['binning','checkm','filtering'], default=None,
+                        help='Resume pipeline from the specified step')
 
     args = parser.parse_args()
 
@@ -160,7 +172,8 @@ def main():
         threads=args.threads,
         checkm_db=args.checkm_db,
         max_workers=args.max_workers,
-        test_mode=args.test_mode
+        test_mode=args.test_mode,
+        restart=args.restart
     )
     binning.run()
 

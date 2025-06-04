@@ -6,8 +6,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 
 class Binning:
-    def __init__(self, config,tmp_dir, asmdir, magdir="mags", threads=14, checkm_db=None, test_mode=False, max_workers=4,skipcm = False,
-                 completeness=None, contamination=None, quality=None):
+    def __init__(self, config, tmp_dir, asmdir, magdir="mags", threads=14, checkm_db=None,
+                 test_mode=False, max_workers=4, completeness=None,
+                 contamination=None, quality=None, restart=None):
         self.config = self.load_config(config)
         self.asmdir = asmdir
         self.magdir = asmdir+"/"+magdir
@@ -16,10 +17,11 @@ class Binning:
         self.checkm_db = checkm_db  # Custom CheckM database path
         self.test_mode = test_mode  # Flag for test mode
         self.max_workers = max_workers  # Maximum parallel workers
-        self.skip_checkm = skipcm
         self.completeness = completeness
         self.contamination = contamination
         self.quality = quality
+        # restart can be 'binning', 'checkm', or 'filtering' to skip completed stages
+        self.restart = restart
 
         # Create the output directories if they don't exist
         os.makedirs(f"{self.magdir}", exist_ok=True)
@@ -199,13 +201,18 @@ class Binning:
         subprocess.run(cmd_append, shell=True)
 
     def run_sample(self, sample_name):
-        """Runs the entire binning pipeline for a single sample."""
+        """Run the pipeline for one sample starting from the chosen step."""
         try:
-            self.run_sorenson(sample_name)
-            self.run_metabat(sample_name)
-            if self.skip_checkm:
-                return 'Stopping after binning.'
-            self.run_checkm(sample_name)
+            if self.restart is None:
+                self.run_sorenson(sample_name)
+                self.run_metabat(sample_name)
+                self.run_checkm(sample_name)
+            elif self.restart == "binning":
+                self.run_metabat(sample_name)
+                self.run_checkm(sample_name)
+            elif self.restart == "checkm":
+                self.run_checkm(sample_name)
+            # restart == "filtering" skips directly to filtering steps
             self.filter_good_bins(sample_name)
             self.copy_good_bins(sample_name)
             self.run_lingenome(sample_name)
@@ -239,9 +246,10 @@ def main():
     parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
     parser.add_argument('--tmp_dir', type=str, default='tmp/single-binning', help='Temp directory. Default tmp/single-binning.')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
-    parser.add_argument('--skipcheckm',action = 'store_true', help='Skips checkm and downstream steps (so stops immediately after binning)')
     parser.add_argument('--completeness', type=float, default=None, help='Completeness threshold for filtering bins')
     parser.add_argument('--contamination', type=float, default=None, help='Contamination threshold for filtering bins')
+    parser.add_argument('--restart', choices=['binning','checkm','filtering'], default=None,
+                        help='Resume pipeline from the specified step')
     quality_group = parser.add_mutually_exclusive_group()
     quality_group.add_argument('--low-quality', dest='low_quality', action='store_true', help='Allow low quality bins (not recommended)')
     quality_group.add_argument('--medium-quality', dest='medium_quality', action='store_true', help='Use medium quality thresholds (completeness >=50, contamination <=10)')
@@ -267,10 +275,10 @@ def main():
         tmp_dir=args.tmp_dir,
         max_workers=args.max_workers,
         test_mode=args.test_mode,
-        skipcm=args.skipcheckm,
         completeness=args.completeness,
         contamination=args.contamination,
-        quality=quality
+        quality=quality,
+        restart=args.restart
     )
     binning.run()
 
