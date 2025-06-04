@@ -52,8 +52,8 @@ class ReadSubsampler:
             subprocess.run(cmd1, shell=True, check=True)
 
             if pe2.strip():  # If pe2 is NOT empty, process it as paired-end
-                pe2_subsampled = os.path.join(self.outdir, f"{filename}_2.{file_extension}")
-                cmd2 = f"{self.seqtk_path} sample -s100 {pe2} {self.depth} | gzip > {pe2_subsampled}.gz"
+                pe2_subsampled = os.path.join(self.outdir, f"{filename}_2.{file_extension}.gz")
+                cmd2 = f"{self.seqtk_path} sample -s100 {pe2} {self.depth} | gzip > {pe2_subsampled}"
                 subprocess.run(cmd2, shell=True, check=True)
                 return filename, pe1_subsampled, pe2_subsampled
             return filename, pe1_subsampled, ""  # If single-end, return empty pe2
