@@ -133,7 +133,7 @@ class Binning:
         print(f"Running lingenome for {sample_name}")
         subprocess.run(cmd, shell=True)
 
-    def run_akmer100b(self, sample_name):
+    def run_akmer102(self, sample_name):
         parent_dir = f"{self.tmpdir}/{sample_name}"
         good_fasta = f"{parent_dir}/good.fasta"
         good_dm = f"{parent_dir}/good.dm"
@@ -189,7 +189,7 @@ class Binning:
             self.filter_good_bins(sample_name)
             self.copy_good_bins(sample_name)
             self.run_lingenome(sample_name)
-            self.run_akmer100b(sample_name)
+            self.run_akmer102(sample_name)
             self.run_spamw(sample_name)
             self.run_bestmag(sample_name)
             self.run_final_copy(sample_name)

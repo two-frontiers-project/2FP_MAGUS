@@ -164,7 +164,7 @@ The external software that we use (e.g., tools not found in conda, like our vers
 | **metabat2**   | Bins assembled contigs into putative MAGs based on coverage and sequence composition.                        |
 | **fac**        | Filters contigs based on length and coverage.                                                                |
 | **lingenome**  | Generates concatenated genomes from individual FASTA files.                                                  |
-| **akmer100b**  | Calculates k-mer frequencies and distances for genome comparisons.                                           |
+| **akmer102**  | Calculates k-mer frequencies and distances for genome comparisons.                                           |
 | **bestmag2** | Selects the "best" MAGs based on quality metrics and coverage information.                          |
 | **spamw2**     | Clusters genomes based on pairwise jaccard distances.                                                        |
 

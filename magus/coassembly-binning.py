@@ -90,8 +90,8 @@ class CoAssemblyBinning:
         print(f"Running lingenome for {BS}")
         subprocess.run(f"lingenome {OUTF}/good {OUTF}/good.fasta FILENAME", shell=True)
 
-        print(f"Running akmer100b for {BS}")
-        subprocess.run(f"OMP_NUM_THREADS={self.threads} akmer100b {OUTF}/good.fasta {OUTF}/good.dm 13 ANI CHANCE GC LOCAL RC", shell=True)
+        print(f"Running akmer102 for {BS}")
+        subprocess.run(f"OMP_NUM_THREADS={self.threads} akmer102 {OUTF}/good.fasta {OUTF}/good.dm 13 ANI CHANCE GC LOCAL RC", shell=True)
 
         print(f"Running spamw for {BS}")
         subprocess.run(f"spamw2 {OUTF}/good.dm {OUTF}/L 0 {self.threads} D2", shell=True)
