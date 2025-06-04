@@ -1,5 +1,8 @@
+import os
+import sys
 import unittest
-from magus import taxonomy
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 class TestTaxonomy(unittest.TestCase):
     def test_main(self):
