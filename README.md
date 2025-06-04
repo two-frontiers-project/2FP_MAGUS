@@ -104,6 +104,11 @@ In the near future we'll release our gene catalog modules that enable functional
 |                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
 |                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
 |                          | `--test_mode`             | Enables test mode for debugging                                |
+|                          | `--completeness`          | Custom completeness threshold for bins                         |
+|                          | `--contamination`         | Custom contamination threshold for bins                        |
+|                          | `--low-quality`           | Include bins of low quality or better (not recommended)        |
+|                          | `--medium-quality`        | Include bins of medium quality or better                       |
+|                          | `--high-quality`          | Include only high quality bins                                 |
 | **cluster-contigs**      | `--config`                | Location of the configuration file containing the qc'd reads                              |
 |                          | `--threads`               | Number of threads assigned per job                             |
 |                          | `--contig_dir`            | Directory containing contigs for clustering                    |
