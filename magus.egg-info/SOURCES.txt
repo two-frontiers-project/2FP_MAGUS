@@ -28,7 +28,6 @@ magus/filter_host.py
 magus/filter_reads.py
 magus/finalize-bacterial-mags.py
 magus/find-euks.py
-magus/find-genes.py
 magus/find-viruses.py
 magus/magus_main.py
 magus/qc.py
