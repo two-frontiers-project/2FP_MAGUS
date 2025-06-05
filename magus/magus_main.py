@@ -13,22 +13,21 @@ def main():
     # Mapping commands to scripts
     command_map = {
         'qc': 'qc.py',
-        'assemble-hosts':'assemble-host.py',
-        'subsample-reads':'subsample-reads.py',
-        'filter-reads':'filter_reads.py',
+        'assemble-hosts': 'assemble-host.py',
+        'subsample-reads': 'subsample-reads.py',
+        'filter-reads': 'filter_reads.py',
         'taxonomy': 'taxonomy.py',
         'cluster-contigs': 'cluster-contigs.py',
         'single-assembly': 'single-assembly.py',
         'single-binning': 'single-binning.py',
-        'cluster-contigs': 'cluster-contigs.py',
         'coassembly': 'coassembly.py',
         'coassembly-binning': 'coassembly-binning.py',
         'dereplicate': 'dereplicate-genomes.py',
+        'call-orfs': 'call_orfs.py',
         'find-viruses': 'find-viruses.py',
         'find-euks': 'find-euks.py',
-        'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
-        'find-genes':'find_genes.py'
-  }
+        'finalize-bacterial-mags': 'finalize-bacterial-mags.py'
+    }
 
     # Check for valid command
     if command not in command_map:

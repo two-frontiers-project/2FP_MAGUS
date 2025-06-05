@@ -74,17 +74,23 @@ This is a **wildly** memory intensive piece of software. It is not meant to be r
 
 The sequence of commands to run the full pipeline is as follows:
 
-| Command       | Description                                                                                                  |
-|----------------|--------------------------------------------------------------------------------------------------------------|
-| magus qc |   Read quality control and compression    |
-| magus single-assembly |    Assemble samples one at a time        |
-| magus single-binning |  Bin genomes with MetaBAT2  and run CheckM2  |
-| magus cluster-contigs |   Identify samples for potential co-assembly  |
-| magus coassembly |  Co-assemble samples|
-| magus coassembly-binning |    Run MetaBAT2 and CheckM2 on coassembled bins    |
-| magus finalize-bacterial-mags |  Filter redundant bacterial/archaeal MAGS identified in both single and coassembly binning.  |
+| Command       | Description |
+|----------------|------------------------------------------------|
+| magus qc | Read quality control and compression |
+| magus assemble-hosts | Assemble host/large genomes for host filtering |
+| magus subsample-reads | Subsample reads using seqtk |
+| magus filter-reads | Filter reads based on perq output |
+| magus taxonomy | Assign taxonomy to reads using XTree |
+| magus single-assembly | Assemble samples one at a time |
+| magus single-binning | Bin genomes with MetaBAT2 and run CheckM2 |
+| magus cluster-contigs | Identify samples for potential co-assembly |
+| magus coassembly | Co-assemble samples |
+| magus coassembly-binning | Run MetaBAT2 and CheckM2 on coassembled bins |
+| magus dereplicate | Dereplicate genomes with lingenome/canolax5 |
+| magus call-orfs | Call ORFs in genomes and metagenomes |
+| magus finalize-bacterial-mags | Filter redundant bacterial/archaeal MAGs identified in both single and coassembly binning. |
 | magus find-viruses | Identify viral contigs with CheckV |
-| magus find-euks | Identify putative eukaryotic bins with EukRep and EukCC   |
+| magus find-euks | Identify putative eukaryotic bins with EukRep and EukCC |
 
 In the near future we'll release our gene catalog modules that enable functional comparison of various genomes and construction of phylogenetic trees.
 
@@ -95,6 +101,45 @@ In the near future we'll release our gene catalog modules that enable functional
 | **qc**      | `--config`                | Location of the configuration file containing the raw reads                            |
 |                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
 |                          | `--threads`               | Number of threads assigned per job                             |
+| **assemble-hosts**      | `--config`                | Path to the configuration TSV file |
+|                          | `--max_workers`           | Number of parallel workers |
+|                          | `--threads`               | Threads per worker |
+|                          | `--ksize`                 | Number of clusters to seek |
+|                          | `--output_config`         | Output config file path |
+|                          | `--tmpdir`                | Directory for temporary files |
+| **subsample-reads**     | `--config`                | Path to the input config file |
+|                          | `--outdir`                | Directory to store subsampled reads |
+|                          | `--out_config`            | Path to the output config file |
+|                          | `--depth`                 | Number of reads to subsample to |
+|                          | `--threads`               | Number of parallel threads |
+|                          | `--max_workers`           | Maximum number of workers |
+| **filter-reads**        | `--config`                | Input config file |
+|                          | `--perq_dir`              | Directory containing perq output files |
+|                          | `--output_dir`            | Output directory for filtered reads |
+|                          | `--min_kmers`             | Minimum number of kmers to keep a read |
+|                          | `--max_workers`           | Maximum number of parallel workers |
+|                          | `--threads`               | Number of threads for seqkit |
+| **taxonomy**            | `--config`                | Path to TSV config file |
+|                          | `--output`                | Directory to store output files |
+|                          | `--db`                    | Path to relevant xtree database |
+|                          | `--threads`               | Number of threads to use for each xtree run |
+|                          | `--max_workers`           | Max number of samples to process in parallel |
+|                          | `--taxmap`                | Path to GTDB taxonomy file (optional) |
+|                          | `--coverage-cutoff`       | Coverage cutoff for filtering alignments |
+| **dereplicate**         | `--mag_dir`               | Path or glob to MAGs |
+|                          | `--tmp`                   | Temporary working directory |
+|                          | `--threads`               | Number of threads for canolax5 |
+|                          | `--extension`             | File extension of MAGs |
+|                          | `--wildcard`              | Pattern to match anywhere in MAG path |
+|                          | `--output`                | Output directory |
+| **call-orfs**           | `--bacterial_genomes`     | Folder with bacterial genomes |
+|                          | `--viral_genomes`         | Folder with viral genomes |
+|                          | `--eukaryotic_genomes`    | Folder with eukaryotic genomes |
+|                          | `--metagenomes`           | Folder with metagenomic contigs |
+|                          | `--max_workers`           | Number of ORF calling jobs to run in parallel |
+|                          | `--extension`             | Extension of genome files |
+|                          | `--output_directory`      | Directory to store ORF output files |
+|                          | `--force`                 | Force rewriting of output files |
 | **single-assembly**      | `--config`                | Location of the configuration file containing the qc'd reads                            |
 |                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
 |                          | `--threads`               | Number of threads assigned per job                             |
