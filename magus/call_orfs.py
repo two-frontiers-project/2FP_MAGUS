@@ -105,13 +105,47 @@ class ORFCaller:
         return manicure_file
 
     def call_eukaryotic_orfs(self, genome_file):
-        """Call ORFs in eukaryotic genomes using a suite of tools (placeholder)."""
-        output_file = os.path.join(self.output_dir, 'eukaryotes', os.path.basename(genome_file).replace(self.extension, '_orfs.faa'))
-        logger.info(f"Calling eukaryotic ORFs for {genome_file} (placeholder)")
-        # Placeholder: In a real implementation, you would call a suite of tools here.
-        # For now, we'll just create an empty file.
-        Path(output_file).touch()
-        return output_file
+        """Call ORFs in eukaryotic genomes using MetaEuk."""
+        annot_dir = os.path.join(self.output_dir, 'eukaryotes', 'annot')
+        manicure_dir = os.path.join(self.output_dir, 'eukaryotes', 'manicure')
+        os.makedirs(annot_dir, exist_ok=True)
+        os.makedirs(manicure_dir, exist_ok=True)
+
+        FN = os.path.basename(genome_file).replace(self.extension, '')
+        manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
+
+        # Check if the manicure file already exists and has nonzero length
+        if os.path.exists(manicure_file) and os.path.getsize(manicure_file) > 0 and not self.args.force:
+            logger.info(f"Skipping ORF calling for {genome_file} as output already exists.")
+            return manicure_file
+
+        log_file = os.path.join(self.output_dir, 'eukaryotes', f"{FN}_metaeuk.log")
+        cmd = ['metaeuk', 'easy-predict', genome_file, 'data/uniref90', os.path.join(annot_dir, f"{FN}"), os.path.join(annot_dir, f"{FN}")]
+        logger.info(f"Calling eukaryotic ORFs for {genome_file} using MetaEuk")
+        with open(log_file, 'w') as log:
+            subprocess.run(cmd, check=True, stdout=log, stderr=log)
+
+        # Manicure the output files
+        with open(os.path.join(annot_dir, f"{FN}.faa"), 'r') as infile, open(manicure_file, 'w') as outfile:
+            for line in infile:
+                if line.startswith('>'):
+                    outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                else:
+                    outfile.write(line)
+
+        manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
+        with open(os.path.join(annot_dir, f"{FN}.ffn"), 'r') as infile, open(manicure_ffn, 'w') as outfile:
+            for line in infile:
+                if line.startswith('>'):
+                    outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                else:
+                    outfile.write(line)
+
+        # Clean up the annot files
+        os.remove(os.path.join(annot_dir, f"{FN}.ffn"))
+        os.remove(os.path.join(annot_dir, f"{FN}.faa"))
+
+        return manicure_file
 
     def call_metagenome_orfs(self, genome_file):
         """Call ORFs in metagenome mode using prodigal-gv."""
