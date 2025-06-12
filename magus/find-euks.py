@@ -50,7 +50,9 @@ class EukRepRunner:
             symlink_dest = os.path.join(self.input_bins_dir, unique_name.replace('/','-') + ".fa")
             if not os.path.exists(symlink_dest):
                 os.symlink(os.path.abspath(bin_path), symlink_dest)
-                print(f"Symlinked {bin_path} to {symlink_dest}")
+                logging.info(f"Symlinked {bin_path} to {symlink_dest}")
+            else:
+                logging.info(f"Symlink already exists for {bin_path}")
 
     def is_bin_large(self, bin_path):
         bin_size = 0
@@ -72,6 +74,12 @@ class EukRepRunner:
                 output_dir = os.path.join(self.euk_binning_outputdir, bin_name)
                 os.makedirs(output_dir, exist_ok=True)
                 output_file = os.path.join(output_dir, f"EUKREP_{bin_name}_eukrepcontigs.fa")
+                
+                # Check if EukRep output already exists and is not empty
+                if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                    logging.info(f"EukRep output already exists for {bin_name}, skipping")
+                    continue
+                
                 cmd = f"bash -c 'source activate {self.eukrepenv} && EukRep -i {bin_file} -o {output_file}'"
                 futures.append(executor.submit(subprocess.run, cmd, shell=True))
 
@@ -87,6 +95,13 @@ class EukRepRunner:
                 bin_name = os.path.basename(bin_file).replace('.fa', '')
                 output_dir = os.path.join(self.euk_binning_outputdir, bin_name, 'eukcc')
                 os.makedirs(output_dir, exist_ok=True)
+                eukcc_file = os.path.join(output_dir, 'eukcc.csv')
+                
+                # Check if EukCC output already exists and is not empty
+                if os.path.exists(eukcc_file) and os.path.getsize(eukcc_file) > 0:
+                    logging.info(f"EukCC output already exists for {bin_name}, skipping")
+                    continue
+                
                 cmd = f"eukcc single --out {output_dir} --threads {self.threads} --db {self.eukcc_db} {bin_file}"
                 futures.append(executor.submit(subprocess.run, cmd, shell=True))
 
@@ -151,16 +166,22 @@ class EukRepRunner:
 
             completeness = contamination = float('nan')
             if os.path.exists(eukcc_file) and os.path.getsize(eukcc_file) > 0:
-                eukcc_data = pd.read_csv(eukcc_file, sep='\t')
-                if 'completeness' in eukcc_data.columns:
-                    completeness = eukcc_data['completeness'].iloc[0]
-                if 'contamination' in eukcc_data.columns:
-                    contamination = eukcc_data['contamination'].iloc[0]
+                try:
+                    eukcc_data = pd.read_csv(eukcc_file, sep='\t')
+                    if 'completeness' in eukcc_data.columns:
+                        completeness = eukcc_data['completeness'].iloc[0]
+                    if 'contamination' in eukcc_data.columns:
+                        contamination = eukcc_data['contamination'].iloc[0]
+                except Exception as e:
+                    logging.warning(f"Error reading EukCC file for {bin_name}: {str(e)}")
 
             eukrep_contig_count = 0
-            if os.path.exists(contig_file):
-                with open(contig_file, 'r') as f:
-                    eukrep_contig_count = sum(1 for line in f if line.startswith('>'))
+            if os.path.exists(contig_file) and os.path.getsize(contig_file) > 0:
+                try:
+                    with open(contig_file, 'r') as f:
+                        eukrep_contig_count = sum(1 for line in f if line.startswith('>'))
+                except Exception as e:
+                    logging.warning(f"Error reading EukRep file for {bin_name}: {str(e)}")
 
             row = {
                 'bin_name': bin_name,
@@ -182,8 +203,9 @@ class EukRepRunner:
             summary_data.append(row)
 
         summary_df = pd.DataFrame(summary_data)
-        summary_df.to_csv(os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv'), index=False)
-        logging.info("Summary table saved with CheckM2 data incorporated")
+        output_file = os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv')
+        summary_df.to_csv(output_file, index=False)
+        logging.info(f"Summary table saved to {output_file} with CheckM2 data incorporated")
 
     def run(self):
         self.find_bins()
