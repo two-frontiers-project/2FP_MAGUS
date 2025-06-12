@@ -113,9 +113,19 @@ class EukRepRunner:
         """Find CheckM2 quality report files in bin directories."""
         checkm2_files = []
         for directory in self.bin_dirs:
+            # First try the specific pattern
+            specific_path = os.path.join(directory, "checkm", "quality_report.tsv")
+            if os.path.exists(specific_path):
+                checkm2_files.append(specific_path)
+                logging.info(f"Found CheckM2 file at {specific_path}")
+                continue
+            
+            # Then try walking through the directory
             for root, dirs, files in os.walk(directory):
-                if 'quality_report.tsv' in files:
-                    checkm2_files.append(os.path.join(root, 'quality_report.tsv'))
+                if 'quality_report.tsv' in files and 'checkm' in root:
+                    full_path = os.path.join(root, 'quality_report.tsv')
+                    checkm2_files.append(full_path)
+                    logging.info(f"Found CheckM2 file at {full_path}")
         
         if checkm2_files:
             logging.info(f"Found {len(checkm2_files)} CheckM2 quality report files")
@@ -137,24 +147,34 @@ class EukRepRunner:
         """Load and process CheckM2 data."""
         if self.checkm2_file:
             logging.info(f"Loading user-provided CheckM2 file: {self.checkm2_file}")
-            self.checkm2_data = pd.read_csv(self.checkm2_file, sep='\t')
+            try:
+                self.checkm2_data = pd.read_csv(self.checkm2_file, sep='\t')
+                logging.info(f"Successfully loaded CheckM2 data for {len(self.checkm2_data)} bins")
+            except Exception as e:
+                logging.error(f"Error loading CheckM2 file: {str(e)}")
+                self.checkm2_data = None
             return
 
         checkm2_files = self.find_checkm2_outputs()
         if not checkm2_files:
+            self.checkm2_data = None
             return
 
         # Combine all CheckM2 files
         dfs = []
         for file in checkm2_files:
-            df = pd.read_csv(file, sep='\t')
-            dfs.append(df)
+            try:
+                df = pd.read_csv(file, sep='\t')
+                dfs.append(df)
+            except Exception as e:
+                logging.error(f"Error reading CheckM2 file {file}: {str(e)}")
         
         if dfs:
             self.checkm2_data = pd.concat(dfs, ignore_index=True)
-            logging.info(f"Loaded CheckM2 data for {len(self.checkm2_data)} bins")
+            logging.info(f"Successfully loaded CheckM2 data for {len(self.checkm2_data)} bins")
         else:
-            logging.info("No CheckM2 data found to load")
+            self.checkm2_data = None
+            logging.info("No valid CheckM2 data found to load")
 
     def process_output(self):
         summary_data = []
@@ -193,19 +213,25 @@ class EukRepRunner:
             }
 
             # Add CheckM2 data if available
+            checkm2_data_added = False
             if self.checkm2_data is not None:
                 short_name = bin_name.split('-')[-1]
                 checkm2_row = self.checkm2_data[self.checkm2_data.iloc[:, 0] == short_name]
                 if not checkm2_row.empty:
                     for col in checkm2_row.columns[1:]:  # Skip the bin name column
                         row[f'checkm2_{col}'] = checkm2_row[col].iloc[0]
+                    checkm2_data_added = True
 
             summary_data.append(row)
 
         summary_df = pd.DataFrame(summary_data)
         output_file = os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv')
         summary_df.to_csv(output_file, index=False)
-        logging.info(f"Summary table saved to {output_file} with CheckM2 data incorporated")
+        
+        if checkm2_data_added:
+            logging.info(f"Summary table saved to {output_file} with CheckM2 data incorporated")
+        else:
+            logging.info(f"Summary table saved to {output_file} (no CheckM2 data available)")
 
     def run(self):
         self.find_bins()
