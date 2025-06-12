@@ -247,20 +247,11 @@ class EukRepRunner:
 
         # Create summary DataFrame
         summary_df = pd.DataFrame(summary_data)
+        logging.info("Created summary DataFrame")
         
         # Merge with CheckM2 data if available
         if self.checkm2_data is not None:
-            # Log column names and first few rows of both DataFrames
-            logging.info("\nSummary DataFrame columns:")
-            logging.info(summary_df.columns.tolist())
-            logging.info("\nFirst few rows of Summary DataFrame:")
-            logging.info(summary_df.head())
-            
-            logging.info("\nCheckM2 DataFrame columns:")
-            logging.info(self.checkm2_data.columns.tolist())
-            logging.info("\nFirst few rows of CheckM2 DataFrame:")
-            logging.info(self.checkm2_data.head())
-            
+            logging.info("Merging CheckM2 data...")
             # Rename CheckM2 columns to add prefix
             checkm2_cols = {col: f'checkm2_{col}' for col in self.checkm2_data.columns if col != self.checkm2_data.columns[0]}
             checkm2_df = self.checkm2_data.rename(columns=checkm2_cols)
@@ -273,8 +264,7 @@ class EukRepRunner:
             
             # Drop the redundant bin name column from CheckM2 data
             summary_df = summary_df.drop(columns=[checkm2_df.columns[0]])
-            
-            logging.info(f"Merged CheckM2 data with {len(summary_df)} bins")
+            logging.info("CheckM2 data merged")
         
         # Save the final summary
         output_file = os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv')
