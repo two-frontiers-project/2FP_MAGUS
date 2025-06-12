@@ -113,19 +113,13 @@ class EukRepRunner:
         """Find CheckM2 quality report files in bin directories."""
         checkm2_files = []
         for directory in self.bin_dirs:
-            # First try the specific pattern
-            specific_path = os.path.join(directory, "checkm", "quality_report.tsv")
-            if os.path.exists(specific_path):
-                checkm2_files.append(specific_path)
-                logging.info(f"Found CheckM2 file at {specific_path}")
-                continue
-            
-            # Then try walking through the directory
-            for root, dirs, files in os.walk(directory):
-                if 'quality_report.tsv' in files and 'checkm' in root:
-                    full_path = os.path.join(root, 'quality_report.tsv')
-                    checkm2_files.append(full_path)
-                    logging.info(f"Found CheckM2 file at {full_path}")
+            # Use glob to find all quality_report.tsv files in the bins directory
+            pattern = os.path.join(directory, "quality_report.tsv")
+            found_files = glob.glob(pattern)
+            if found_files:
+                checkm2_files.extend(found_files)
+                for file in found_files:
+                    logging.info(f"Found CheckM2 file at {file}")
         
         if checkm2_files:
             logging.info(f"Found {len(checkm2_files)} CheckM2 quality report files")
@@ -165,7 +159,12 @@ class EukRepRunner:
         for file in checkm2_files:
             try:
                 df = pd.read_csv(file, sep='\t')
+                # Get the bin directory path from the CheckM2 file path
+                bin_dir = os.path.dirname(file)
+                # Add the bin directory path as a prefix to the bin names in the CheckM2 file
+                df.iloc[:, 0] = bin_dir + '/' + df.iloc[:, 0].astype(str)
                 dfs.append(df)
+                logging.info(f"Loaded CheckM2 data from {file}")
             except Exception as e:
                 logging.error(f"Error reading CheckM2 file {file}: {str(e)}")
         
@@ -215,8 +214,13 @@ class EukRepRunner:
             # Add CheckM2 data if available
             checkm2_data_added = False
             if self.checkm2_data is not None:
+                # Get the original bin path from the symlink
+                original_bin_path = os.path.realpath(bin_file)
+                bin_dir = os.path.dirname(original_bin_path)
                 short_name = bin_name.split('-')[-1]
-                checkm2_row = self.checkm2_data[self.checkm2_data.iloc[:, 0] == short_name]
+                
+                # Look for the bin in the CheckM2 data using the full path
+                checkm2_row = self.checkm2_data[self.checkm2_data.iloc[:, 0] == f"{bin_dir}/{short_name}"]
                 if not checkm2_row.empty:
                     for col in checkm2_row.columns[1:]:  # Skip the bin name column
                         row[f'checkm2_{col}'] = checkm2_row[col].iloc[0]
