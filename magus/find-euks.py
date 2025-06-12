@@ -162,42 +162,25 @@ class EukRepRunner:
         dfs = []
         for file in checkm2_files:
             try:
-                df = pd.read_csv(file, sep='\t')
-                # Get the directory path and format it
-                dir_path = os.path.dirname(file)
+                # Get the root directory (up to /bins)
+                root_dir = os.path.dirname(os.path.dirname(file))
                 logging.info(f"\nProcessing CheckM2 file: {file}")
-                logging.info(f"Original directory path: {dir_path}")
+                logging.info(f"Root directory: {root_dir}")
                 
-                # Find which bin_dir this file belongs to
-                matching_dir = None
-                for bin_dir in self.bin_dirs:
-                    if file.startswith(bin_dir):
-                        matching_dir = bin_dir
-                        break
+                # Load the file
+                df = pd.read_csv(file, sep='\t')
                 
-                if matching_dir is None:
-                    logging.error(f"Could not find matching bin directory for {file}")
-                    continue
-                
-                # Get the path relative to the bin directory
-                rel_path = os.path.relpath(dir_path, matching_dir)
-                # Remove the 'checkm' part
-                rel_path = os.path.dirname(rel_path)
-                
-                # Format the path
-                dir_path = matching_dir + '/' + rel_path
-                dir_path = dir_path.lstrip('./')
-                dir_path = dir_path.replace('/', '-')
-                
-                logging.info(f"Final directory path for bin names: {dir_path}")
+                # Format the directory name
+                dir_name = root_dir.replace('/', '-')
+                logging.info(f"Formatted directory name: {dir_name}")
                 
                 # Show original bin names
                 logging.info("Original bin names in CheckM2 file:")
                 for bin_name in df.iloc[:, 0]:
                     logging.info(f"  {bin_name}")
                 
-                # Append to bin names
-                df.iloc[:, 0] = dir_path + '-' + df.iloc[:, 0].astype(str)
+                # Append directory to bin names
+                df.iloc[:, 0] = dir_name + '-' + df.iloc[:, 0].astype(str)
                 
                 # Show new bin names
                 logging.info("New bin names after transformation:")
@@ -205,12 +188,21 @@ class EukRepRunner:
                     logging.info(f"  {bin_name}")
                 
                 dfs.append(df)
-                logging.info(f"Loaded CheckM2 data from {file}")
+                
+                # Write the transformed data to a file for inspection
+                output_file = os.path.join(self.euk_binning_outputdir, f"checkm2_transformed_{os.path.basename(root_dir)}.tsv")
+                df.to_csv(output_file, sep='\t', index=False)
+                logging.info(f"Wrote transformed CheckM2 data to {output_file}")
+                
             except Exception as e:
                 logging.error(f"Error reading CheckM2 file {file}: {str(e)}")
         
         if dfs:
             self.checkm2_data = pd.concat(dfs, ignore_index=True)
+            # Write the combined data to a file
+            combined_file = os.path.join(self.euk_binning_outputdir, "checkm2_combined.tsv")
+            self.checkm2_data.to_csv(combined_file, sep='\t', index=False)
+            logging.info(f"Wrote combined CheckM2 data to {combined_file}")
             logging.info(f"Successfully loaded CheckM2 data for {len(self.checkm2_data)} bins")
         else:
             self.checkm2_data = None
