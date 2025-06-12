@@ -165,12 +165,30 @@ class EukRepRunner:
                 df = pd.read_csv(file, sep='\t')
                 # Get the directory path and format it
                 dir_path = os.path.dirname(file)
+                logging.info(f"\nProcessing CheckM2 file: {file}")
+                logging.info(f"Original directory path: {dir_path}")
+                
                 # Remove leading ./ if present
                 dir_path = dir_path.lstrip('./')
+                logging.info(f"After removing ./: {dir_path}")
+                
                 # Replace / with -
                 dir_path = dir_path.replace('/', '-')
+                logging.info(f"After replacing / with -: {dir_path}")
+                
+                # Show original bin names
+                logging.info("Original bin names in CheckM2 file:")
+                for bin_name in df.iloc[:, 0]:
+                    logging.info(f"  {bin_name}")
+                
                 # Append to bin names
                 df.iloc[:, 0] = dir_path + '-' + df.iloc[:, 0].astype(str)
+                
+                # Show new bin names
+                logging.info("New bin names after transformation:")
+                for bin_name in df.iloc[:, 0]:
+                    logging.info(f"  {bin_name}")
+                
                 dfs.append(df)
                 logging.info(f"Loaded CheckM2 data from {file}")
             except Exception as e:
