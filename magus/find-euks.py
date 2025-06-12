@@ -252,18 +252,12 @@ class EukRepRunner:
         # Merge with CheckM2 data if available
         if self.checkm2_data is not None:
             logging.info("Merging CheckM2 data...")
-            # Rename CheckM2 columns to add prefix
-            checkm2_cols = {col: f'checkm2_{col}' for col in self.checkm2_data.columns if col != self.checkm2_data.columns[0]}
-            checkm2_df = self.checkm2_data.rename(columns=checkm2_cols)
+            # Rename first column to bin_name and add checkm_ prefix to rest
+            checkm2_cols = {col: f'checkm_{col}' for col in self.checkm2_data.columns if col != 'Name'}
+            checkm2_df = self.checkm2_data.rename(columns={'Name': 'bin_name', **checkm2_cols})
             
             # Merge on bin name
-            summary_df = pd.merge(summary_df, checkm2_df, 
-                                left_on='bin_name', 
-                                right_on=checkm2_df.columns[0], 
-                                how='left')
-            
-            # Drop the redundant bin name column from CheckM2 data
-            summary_df = summary_df.drop(columns=[checkm2_df.columns[0]])
+            summary_df = pd.merge(summary_df, checkm2_df, on='bin_name', how='left')
             logging.info("CheckM2 data merged")
         
         # Save the final summary
