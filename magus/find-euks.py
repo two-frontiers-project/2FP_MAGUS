@@ -163,10 +163,14 @@ class EukRepRunner:
         for file in checkm2_files:
             try:
                 df = pd.read_csv(file, sep='\t')
-                # Get the bin directory path from the CheckM2 file path
-                bin_dir = os.path.dirname(file)
-                # Add the bin directory path as a prefix to the bin names in the CheckM2 file
-                df.iloc[:, 0] = bin_dir + '/' + df.iloc[:, 0].astype(str)
+                # Get the directory path and format it
+                dir_path = os.path.dirname(file)
+                # Remove leading ./ if present
+                dir_path = dir_path.lstrip('./')
+                # Replace / with -
+                dir_path = dir_path.replace('/', '-')
+                # Append to bin names
+                df.iloc[:, 0] = dir_path + '-' + df.iloc[:, 0].astype(str)
                 dfs.append(df)
                 logging.info(f"Loaded CheckM2 data from {file}")
             except Exception as e:
@@ -220,15 +224,16 @@ class EukRepRunner:
             if self.checkm2_data is not None:
                 # Get the original bin path from the symlink
                 original_bin_path = os.path.realpath(bin_file)
-                bin_dir = os.path.dirname(original_bin_path)
-                short_name = bin_name.split('-')[-1]
+                # Extract the bin number from the bin name (e.g., "21.60" from the long name)
+                bin_number = bin_name.split('-')[-1]
                 
-                # Look for the bin in the CheckM2 data using the full path
-                checkm2_row = self.checkm2_data[self.checkm2_data.iloc[:, 0] == f"{bin_dir}/{short_name}"]
+                # Look for the bin in the CheckM2 data using just the bin number
+                checkm2_row = self.checkm2_data[self.checkm2_data.iloc[:, 0] == bin_number]
                 if not checkm2_row.empty:
                     for col in checkm2_row.columns[1:]:  # Skip the bin name column
                         row[f'checkm2_{col}'] = checkm2_row[col].iloc[0]
                     checkm2_data_added = True
+                    logging.info(f"Added CheckM2 data for bin {bin_name}")
 
             summary_data.append(row)
 
