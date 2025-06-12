@@ -113,13 +113,17 @@ class EukRepRunner:
         """Find CheckM2 quality report files in bin directories."""
         checkm2_files = []
         for directory in self.bin_dirs:
-            # Use glob to find all quality_report.tsv files in the bins directory
-            pattern = os.path.join(directory, "quality_report.tsv")
-            found_files = glob.glob(pattern)
-            if found_files:
-                checkm2_files.extend(found_files)
-                for file in found_files:
-                    logging.info(f"Found CheckM2 file at {file}")
+            # Run find command in each bin directory
+            cmd = f"find {directory} -name 'quality_report.tsv'"
+            try:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout:
+                    files = result.stdout.strip().split('\n')
+                    checkm2_files.extend(files)
+                    for file in files:
+                        logging.info(f"Found CheckM2 file at {file}")
+            except Exception as e:
+                logging.error(f"Error running find command in {directory}: {str(e)}")
         
         if checkm2_files:
             logging.info(f"Found {len(checkm2_files)} CheckM2 quality report files")
