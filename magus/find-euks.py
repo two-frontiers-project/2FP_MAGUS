@@ -250,6 +250,17 @@ class EukRepRunner:
         
         # Merge with CheckM2 data if available
         if self.checkm2_data is not None:
+            # Log column names and first few rows of both DataFrames
+            logging.info("\nSummary DataFrame columns:")
+            logging.info(summary_df.columns.tolist())
+            logging.info("\nFirst few rows of Summary DataFrame:")
+            logging.info(summary_df.head())
+            
+            logging.info("\nCheckM2 DataFrame columns:")
+            logging.info(self.checkm2_data.columns.tolist())
+            logging.info("\nFirst few rows of CheckM2 DataFrame:")
+            logging.info(self.checkm2_data.head())
+            
             # Rename CheckM2 columns to add prefix
             checkm2_cols = {col: f'checkm2_{col}' for col in self.checkm2_data.columns if col != self.checkm2_data.columns[0]}
             checkm2_df = self.checkm2_data.rename(columns=checkm2_cols)
