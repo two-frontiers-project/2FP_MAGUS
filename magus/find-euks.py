@@ -243,33 +243,32 @@ class EukRepRunner:
                 'contamination': contamination,
                 'eukrep_contig_count': eukrep_contig_count
             }
-
-            # Add CheckM2 data if available
-            checkm2_data_added = False
-            if self.checkm2_data is not None:
-                # Get the original bin path from the symlink
-                original_bin_path = os.path.realpath(bin_file)
-                # Extract the bin number from the bin name (e.g., "21.60" from the long name)
-                bin_number = bin_name.split('-')[-1]
-                
-                # Look for the bin in the CheckM2 data using just the bin number
-                checkm2_row = self.checkm2_data[self.checkm2_data.iloc[:, 0] == bin_number]
-                if not checkm2_row.empty:
-                    for col in checkm2_row.columns[1:]:  # Skip the bin name column
-                        row[f'checkm2_{col}'] = checkm2_row[col].iloc[0]
-                    checkm2_data_added = True
-                    logging.info(f"Added CheckM2 data for bin {bin_name}")
-
             summary_data.append(row)
 
+        # Create summary DataFrame
         summary_df = pd.DataFrame(summary_data)
+        
+        # Merge with CheckM2 data if available
+        if self.checkm2_data is not None:
+            # Rename CheckM2 columns to add prefix
+            checkm2_cols = {col: f'checkm2_{col}' for col in self.checkm2_data.columns if col != self.checkm2_data.columns[0]}
+            checkm2_df = self.checkm2_data.rename(columns=checkm2_cols)
+            
+            # Merge on bin name
+            summary_df = pd.merge(summary_df, checkm2_df, 
+                                left_on='bin_name', 
+                                right_on=checkm2_df.columns[0], 
+                                how='left')
+            
+            # Drop the redundant bin name column from CheckM2 data
+            summary_df = summary_df.drop(columns=[checkm2_df.columns[0]])
+            
+            logging.info(f"Merged CheckM2 data with {len(summary_df)} bins")
+        
+        # Save the final summary
         output_file = os.path.join(self.euk_binning_outputdir, 'eukaryotic_summary_table.csv')
         summary_df.to_csv(output_file, index=False)
-        
-        if checkm2_data_added:
-            logging.info(f"Summary table saved to {output_file} with CheckM2 data incorporated")
-        else:
-            logging.info(f"Summary table saved to {output_file} (no CheckM2 data available)")
+        logging.info(f"Summary table saved to {output_file}")
 
     def run(self):
         self.find_bins()
