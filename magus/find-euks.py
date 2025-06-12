@@ -168,13 +168,28 @@ class EukRepRunner:
                 logging.info(f"\nProcessing CheckM2 file: {file}")
                 logging.info(f"Original directory path: {dir_path}")
                 
-                # Remove leading ./ if present
-                dir_path = dir_path.lstrip('./')
-                logging.info(f"After removing ./: {dir_path}")
+                # Find which bin_dir this file belongs to
+                matching_dir = None
+                for bin_dir in self.bin_dirs:
+                    if file.startswith(bin_dir):
+                        matching_dir = bin_dir
+                        break
                 
-                # Replace / with -
+                if matching_dir is None:
+                    logging.error(f"Could not find matching bin directory for {file}")
+                    continue
+                
+                # Get the path relative to the bin directory
+                rel_path = os.path.relpath(dir_path, matching_dir)
+                # Remove the 'checkm' part
+                rel_path = os.path.dirname(rel_path)
+                
+                # Format the path
+                dir_path = matching_dir + '/' + rel_path
+                dir_path = dir_path.lstrip('./')
                 dir_path = dir_path.replace('/', '-')
-                logging.info(f"After replacing / with -: {dir_path}")
+                
+                logging.info(f"Final directory path for bin names: {dir_path}")
                 
                 # Show original bin names
                 logging.info("Original bin names in CheckM2 file:")
