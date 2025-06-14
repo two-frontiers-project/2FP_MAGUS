@@ -169,7 +169,7 @@ class ORFCaller:
         return manicure_file
 
     def call_metagenome_orfs(self, genome_file, sample_id=None, hmmfile=None):
-        """Call ORFs in metagenome mode using prodigal-gv."""
+        """Call ORFs in metagenome mode using prodigal."""
         annot_dir = os.path.join(self.output_dir, 'metagenomes', 'annot')
         manicure_dir = os.path.join(self.output_dir, 'metagenomes', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
@@ -185,7 +185,7 @@ class ORFCaller:
 
         log_file = os.path.join(self.output_dir, 'metagenomes', f"{FN}_prodigal.log")
         cmd = ['prodigal', '-p', 'meta', '-q', '-i', genome_file, '-d', os.path.join(annot_dir, f"{FN}.ffn"), '-a', os.path.join(annot_dir, f"{FN}.faa"), '-o', '/dev/null']
-        logger.info(f"Calling metagenome ORFs for {genome_file} using prodigal-gv")
+        logger.info(f"Calling metagenome ORFs for {genome_file} using prodigal (metagenome mode)")
         with open(log_file, 'w') as log:
             subprocess.run(cmd, check=True, stdout=log, stderr=log)
 
@@ -247,50 +247,34 @@ def summarize_output(output_dir):
                                             summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{id_part}\t{partial_part}\t{start_type_part}\t{rbs_motif_part}\t{rbs_spacer_part}\t{gc_cont_part}\t{mode}\n')
 
 def main():
-    parser = argparse.ArgumentParser(description='Call ORFs in bacterial, viral, and eukaryotic genomes.')
-    parser.add_argument('--bacterial_genomes', type=str, help='Path to folder with bacterial genomes.')
-    parser.add_argument('--viral_genomes', type=str, help='Path to folder with viral genomes.')
-    parser.add_argument('--eukaryotic_genomes', type=str, help='Path to folder with eukaryotic genomes.')
-    parser.add_argument('--metagenomes', type=str, help='Path to folder with metagenomic contigs.')
+    parser = argparse.ArgumentParser(description='Call ORFs in genomes using a config file.')
+    parser.add_argument('--config_file', type=str, required=True, help='Tab-delimited file: sample_id<TAB>genome_path<TAB>domain')
+    parser.add_argument('--output_directory', type=str, default='magus_output/orf_calling', help='Directory to store ORF output files (default: magus_output/orf_calling).')
     parser.add_argument('--max_workers', type=int, default=1, help='Number of ORF calling jobs to run in parallel.')
     parser.add_argument('--extension', type=str, default='.fa', help='Extension of genome files (default: .fa).')
-    parser.add_argument('--output_directory', type=str, default='magus_output/orf_calling', help='Directory to store ORF output files (default: magus_output/orf_calling).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
-    parser.add_argument('--config_file', type=str, default=None, help='Tab-delimited file: sample_id<TAB>genome_path')
     args = parser.parse_args()
 
-    # Create output directory if it doesn't exist
     os.makedirs(args.output_directory, exist_ok=True)
-
-    # Initialize ORFCaller
     orf_caller = ORFCaller(args.output_directory, args.extension, args)
 
-    if args.config_file:
-        with open(args.config_file, 'r') as f:
-            reader = csv.reader(f, delimiter='\t')
-            for row in reader:
-                if not row or row[0].startswith('#') or len(row) < 2:
-                    continue
-                sample_id, genome_path = row[0], row[1]
+    with open(args.config_file, 'r') as f:
+        reader = csv.reader(f, delimiter='\t')
+        for row in reader:
+            if not row or row[0].startswith('#') or len(row) < 3:
+                continue
+            sample_id, genome_path, domain = row[0], row[1], row[2].lower()
+            if domain == 'bacterial':
                 orf_caller.call_bacterial_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
-    else:
-        # Get list of genome files from the input directories
-        bacterial_files = [os.path.join(args.bacterial_genomes, f) for f in os.listdir(args.bacterial_genomes) if f.endswith(args.extension)] if args.bacterial_genomes else []
-        viral_files = [os.path.join(args.viral_genomes, f) for f in os.listdir(args.viral_genomes) if f.endswith(args.extension)] if args.viral_genomes else []
-        eukaryotic_files = [os.path.join(args.eukaryotic_genomes, f) for f in os.listdir(args.eukaryotic_genomes) if f.endswith(args.extension)] if args.eukaryotic_genomes else []
-        metagenome_files = [os.path.join(args.metagenomes, f) for f in os.listdir(args.metagenomes) if f.endswith(args.extension)] if args.metagenomes else []
-
-        # Process genomes based on type
-        with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-            for genome_file in bacterial_files:
-                executor.submit(orf_caller.call_bacterial_orfs, genome_file, None, args.hmmfile)
-            for genome_file in viral_files:
-                executor.submit(orf_caller.call_viral_orfs, genome_file, None, args.hmmfile)
-            for genome_file in eukaryotic_files:
-                executor.submit(orf_caller.call_eukaryotic_orfs, genome_file, None, args.hmmfile)
-            for genome_file in metagenome_files:
-                executor.submit(orf_caller.call_metagenome_orfs, genome_file, None, args.hmmfile)
+            elif domain == 'viral':
+                orf_caller.call_viral_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
+            elif domain == 'eukaryotic':
+                orf_caller.call_eukaryotic_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
+            elif domain == 'metagenomic':
+                orf_caller.call_metagenome_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
+            else:
+                logger.error(f"Unknown domain '{domain}' for sample {sample_id}. Skipping.")
 
     # Remove the annot directory after the script is complete
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
