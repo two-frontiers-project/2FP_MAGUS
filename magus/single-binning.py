@@ -43,7 +43,7 @@ class Binning:
         else:
             cmd = f"sorenson-g -db {temp0_file} -qc -r1 {r1} -r2 {r2} -t {self.threads} -e 0.01 -o {cov_file}"
             print(f"Running sorenson-g in paired-end mode on {sample_name}")
-        
+        print(cmd) 
         subprocess.run(cmd, shell=True)
 
     def run_metabat(self, sample_name):
