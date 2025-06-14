@@ -13,6 +13,33 @@ import csv
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def is_valid_fasta(file_path):
+    """Check if a FASTA file exists, is non-empty, and contains valid FASTA sequences."""
+    if not os.path.exists(file_path):
+        logger.error(f"File does not exist: {file_path}")
+        return False
+    
+    if os.path.getsize(file_path) == 0:
+        logger.error(f"File is empty: {file_path}")
+        return False
+    
+    # Check if file contains at least one valid FASTA sequence
+    try:
+        with open(file_path, 'r') as f:
+            has_sequence = False
+            for line in f:
+                if line.startswith('>'):
+                    has_sequence = True
+                    break
+            if not has_sequence:
+                logger.error(f"File does not contain any FASTA sequences: {file_path}")
+                return False
+    except Exception as e:
+        logger.error(f"Error reading file {file_path}: {str(e)}")
+        return False
+    
+    return True
+
 class ORFCaller:
     def __init__(self, output_dir, extension, args):
         self.output_dir = output_dir
@@ -36,6 +63,10 @@ class ORFCaller:
 
     def call_bacterial_orfs(self, genome_file, sample_id=None, hmmfile=None):
         """Call ORFs in bacterial genomes using prodigal."""
+        if not is_valid_fasta(genome_file):
+            logger.error(f"Skipping ORF calling for invalid FASTA file: {genome_file}")
+            return None
+
         annot_dir = os.path.join(self.output_dir, 'bacteria', 'annot')
         manicure_dir = os.path.join(self.output_dir, 'bacteria', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
@@ -80,6 +111,10 @@ class ORFCaller:
 
     def call_viral_orfs(self, genome_file, sample_id=None, hmmfile=None):
         """Call ORFs in viral genomes using prodigal-gv."""
+        if not is_valid_fasta(genome_file):
+            logger.error(f"Skipping ORF calling for invalid FASTA file: {genome_file}")
+            return None
+
         annot_dir = os.path.join(self.output_dir, 'viruses', 'annot')
         manicure_dir = os.path.join(self.output_dir, 'viruses', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
@@ -125,6 +160,10 @@ class ORFCaller:
 
     def call_eukaryotic_orfs(self, genome_file, sample_id=None, hmmfile=None):
         """Call ORFs in eukaryotic genomes using MetaEuk."""
+        if not is_valid_fasta(genome_file):
+            logger.error(f"Skipping ORF calling for invalid FASTA file: {genome_file}")
+            return None
+
         annot_dir = os.path.join(self.output_dir, 'eukaryotes', 'annot')
         manicure_dir = os.path.join(self.output_dir, 'eukaryotes', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
@@ -170,6 +209,10 @@ class ORFCaller:
 
     def call_metagenome_orfs(self, genome_file, sample_id=None, hmmfile=None):
         """Call ORFs in metagenome mode using prodigal."""
+        if not is_valid_fasta(genome_file):
+            logger.error(f"Skipping ORF calling for invalid FASTA file: {genome_file}")
+            return None
+
         annot_dir = os.path.join(self.output_dir, 'metagenomes', 'annot')
         manicure_dir = os.path.join(self.output_dir, 'metagenomes', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
