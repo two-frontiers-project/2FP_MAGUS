@@ -37,9 +37,57 @@ class EukRepRunner:
     def find_bins(self):
         self.bin_paths = []
         for directory in self.bin_dirs:
+            logging.info(f"Searching in directory: {directory}")
+            if not os.path.exists(directory):
+                logging.warning(f"Directory does not exist: {directory}")
+                continue
+                
             for pattern in self.wildcards:
-                pattern="*" + pattern +"*"
-                self.bin_paths.extend(glob.glob(os.path.join(directory, pattern)))
+                original_pattern = pattern
+                logging.info(f"Processing wildcard: {original_pattern}")
+                
+                # Check if pattern looks like a directory name (no file extension)
+                if '.' not in pattern and pattern in ['bins', 'bin']:
+                    # Special case: look for files within directories named 'bins'
+                    bins_dirs = glob.glob(os.path.join(directory, "*", pattern), recursive=False)
+                    logging.info(f"Found {len(bins_dirs)} 'bins' directories under {directory}")
+                    
+                    for bins_dir in bins_dirs:
+                        logging.info(f"Searching for files in bins directory: {bins_dir}")
+                        # Look for common genome file extensions in bins directory
+                        for ext in ['*.fa', '*.fasta', '*.fna', '*.fas']:
+                            files = glob.glob(os.path.join(bins_dir, ext))
+                            logging.info(f"  Found {len(files)} files matching {ext}")
+                            for f in files:
+                                logging.info(f"    File: {f}")
+                            self.bin_paths.extend(files)
+                else:
+                    # Regular file pattern matching
+                    pattern="*" + pattern +"*"
+                    logging.info(f"Looking for file pattern: {pattern}")
+                    
+                    # First try direct pattern match
+                    direct_pattern = os.path.join(directory, pattern)
+                    logging.info(f"Direct search pattern: {direct_pattern}")
+                    direct_matches = glob.glob(direct_pattern)
+                    logging.info(f"Direct matches found: {len(direct_matches)}")
+                    for match in direct_matches:
+                        logging.info(f"  Direct match: {match}")
+                    self.bin_paths.extend(direct_matches)
+                    
+                    # Also try recursive search for nested directories
+                    recursive_pattern = os.path.join(directory, "**", pattern)
+                    logging.info(f"Recursive search pattern: {recursive_pattern}")
+                    recursive_matches = glob.glob(recursive_pattern, recursive=True)
+                    logging.info(f"Recursive matches found: {len(recursive_matches)}")
+                    for match in recursive_matches:
+                        logging.info(f"  Recursive match: {match}")
+                    self.bin_paths.extend(recursive_matches)
+        
+        logging.info(f"Total bin paths found: {len(self.bin_paths)}")
+        
+        # Remove duplicates
+        self.bin_paths = list(set(self.bin_paths))
         
         for bin_path in self.bin_paths:
             unique_name = os.path.relpath(bin_path).rsplit('.', 1)[0].replace('/', '-')
@@ -278,7 +326,7 @@ class EukRepRunner:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--bin_dirs", type=str, required=True, help="Pipe-separated list of directories containing bins, quoted")
-    parser.add_argument("--wildcards", type=str, default = "", required=False, help="Pipe-separated list of glob patterns for bin files, quoted")
+    parser.add_argument("--wildcards", type=str, default = "", required=False, help="Pipe-separated list of patterns for bin files, quoted. Use 'bins' to search in subdirectories named 'bins', or file patterns like '.fa|.fasta'")
     parser.add_argument("--size_threshold", type=int, default=10000000)
     parser.add_argument("--euk_binning_outputdir", type=str, default="magus_output/magus_euks")
     parser.add_argument("--dblocs", type=str, required=True)
