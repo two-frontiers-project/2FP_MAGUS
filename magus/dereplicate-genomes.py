@@ -8,13 +8,14 @@ from pathlib import Path
 import glob
 
 class Dereplicator:
-	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output):
+	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size):
 		self.input_paths = [Path(p).resolve() for p in glob.glob(mag_glob, recursive=True)]
 		self.tmp = Path(tmp)
 		self.threads = threads
 		self.extension = extension
 		self.wildcard = wildcard
 		self.derep_out = output
+		self.kmer_size = kmer_size
 		self.derep_tmp = self.tmp / "dereplicate_tmp"
 		self.tmp_input_bins = self.derep_tmp / "input_bins"
 		self.linearized_fa = self.derep_tmp / "lin.fa"
@@ -64,7 +65,7 @@ class Dereplicator:
 	def run_canolax5(self):
 		cmd = [
 			"canolax5",
-			"-k", "16",
+			"-k", str(self.kmer_size),
 			"-db", str(self.linearized_fa),
 			"-o", str(self.output_reps),
 			"-local",
@@ -83,6 +84,7 @@ def main():
 	parser.add_argument("--extension", type=str, default="fa", help="File extension of MAGs (default: fa).")
 	parser.add_argument("-w", "--wildcard", type=str, default="", help="Pattern to match anywhere in MAG path.")
 	parser.add_argument("-o", "--output", type=str, default="dereplicated_genomes", help="Output directory (default: dereplicated_genomes).")
+	parser.add_argument("-k", "--kmer_size", type=int, default=16, help="K-mer size for canolax5 (default: 16).")
 
 	args = parser.parse_args()
 
@@ -92,7 +94,8 @@ def main():
 		args.threads,
 		args.extension,
 		args.wildcard,
-		args.output
+		args.output,
+		args.kmer_size
 	)
 	runner.symlink_bins()
 	runner.run_lingenome()

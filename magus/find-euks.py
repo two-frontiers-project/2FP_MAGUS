@@ -36,23 +36,41 @@ class EukRepRunner:
 
     def find_bins(self):
         self.bin_paths = []
+        # First expand any glob patterns in bin_dirs to get actual directory paths
+        expanded_dirs = []
         for directory in self.bin_dirs:
+            if '*' in directory:
+                # Expand glob pattern to get actual directories
+                expanded_dirs.extend(glob.glob(directory))
+            else:
+                expanded_dirs.append(directory)
+        
+        logging.info(f"Expanded directories: {expanded_dirs}")
+        
+        for directory in expanded_dirs:
             for pattern in self.wildcards:
                 pattern="*" + pattern +"*"
-                self.bin_paths.extend(glob.glob(os.path.join(directory, pattern)))
+                found_files = glob.glob(os.path.join(directory, pattern))
+                self.bin_paths.extend(found_files)
+                logging.info(f"Found {len(found_files)} files in {directory} matching pattern {pattern}")
         
         for bin_path in self.bin_paths:
             unique_name = os.path.relpath(bin_path).rsplit('.', 1)[0].replace('/', '-')
             is_large, bin_size, contig_count = self.is_bin_large(bin_path)
-            self.bin_sizes[unique_name] = bin_size
-            self.bin_contigs[unique_name] = contig_count
+            
+            # Only process bins that meet the size threshold
+            if is_large:
+                self.bin_sizes[unique_name] = bin_size
+                self.bin_contigs[unique_name] = contig_count
 
-            symlink_dest = os.path.join(self.input_bins_dir, unique_name.replace('/','-') + ".fa")
-            if not os.path.exists(symlink_dest):
-                os.symlink(os.path.abspath(bin_path), symlink_dest)
-                logging.info(f"Symlinked {bin_path} to {symlink_dest}")
+                symlink_dest = os.path.join(self.input_bins_dir, unique_name.replace('/','-') + ".fa")
+                if not os.path.exists(symlink_dest):
+                    os.symlink(os.path.abspath(bin_path), symlink_dest)
+                    logging.info(f"Symlinked {bin_path} to {symlink_dest} (size: {bin_size:,} bp)")
+                else:
+                    logging.info(f"Symlink already exists for {bin_path}")
             else:
-                logging.info(f"Symlink already exists for {bin_path}")
+                logging.info(f"Skipping {bin_path} - size {bin_size:,} bp below threshold {self.size_threshold:,} bp")
 
     def is_bin_large(self, bin_path):
         bin_size = 0
