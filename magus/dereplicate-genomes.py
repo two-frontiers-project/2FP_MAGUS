@@ -8,7 +8,7 @@ from pathlib import Path
 import glob
 
 class Dereplicator:
-	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, individual_reps):
+	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, individual_reps, contig_level):
 		self.input_paths = [Path(p).resolve() for p in glob.glob(mag_glob, recursive=True)]
 		self.tmp = Path(tmp)
 		self.threads = threads
@@ -17,6 +17,7 @@ class Dereplicator:
 		self.derep_out = output
 		self.kmer_size = kmer_size
 		self.individual_reps = individual_reps
+		self.contig_level = contig_level
 		self.derep_tmp = self.tmp / "dereplicate_tmp"
 		self.tmp_input_bins = self.derep_tmp / "input_bins"
 		self.linearized_fa = self.derep_tmp / "lin.fa"
@@ -73,6 +74,28 @@ class Dereplicator:
 		#subprocess.run(cmd, check=True)
 		os.system(cmd)
 
+	def run_linfasta_contig_level(self):
+		"""Run linfasta on each genome individually, then concatenate results."""
+		linfasta_dir = self.derep_tmp / "linfasta_output"
+		os.makedirs(linfasta_dir, exist_ok=True)
+		
+		# Process each genome with linfasta
+		for genome_file in self.tmp_input_bins.iterdir():
+			if genome_file.is_symlink() and genome_file.suffix == f".{self.extension}":
+				output_file = linfasta_dir / f"{genome_file.stem}_lin.fa"
+				cmd = f'linfasta {genome_file} {output_file}'
+				print(f"Running linfasta on {genome_file.name}")
+				os.system(cmd)
+		
+		# Concatenate all linearized files
+		with open(self.linearized_fa, 'w') as outfile:
+			for lin_file in linfasta_dir.glob("*_lin.fa"):
+				if lin_file.exists():
+					with open(lin_file, 'r') as infile:
+						outfile.write(infile.read())
+		
+		print(f"Concatenated all linearized contigs into {self.linearized_fa}")
+
 	def run_canolax5(self):
 		cmd = [
 			"canolax5",
@@ -88,48 +111,116 @@ class Dereplicator:
 		subprocess.run(cmd, check=True, env=env)
 
 	def create_individual_representatives(self):
-		"""Parse canolax5 output and symlink individual representative genome files."""
+		"""Parse canolax5 output and extract individual representative genome files from reps.fa."""
 		if not self.individual_reps:
 			return
 			
-		if not os.path.exists(self.output_log):
-			print(f"Warning: Cluster log file {self.output_log} not found. Skipping individual representatives.")
+		if not os.path.exists(self.output_reps):
+			print(f"Warning: Representative file {self.output_reps} not found. Skipping individual representatives.")
 			return
 		
-		representatives = set()
+		# Parse the representative genomes and group by original genome
+		genome_contigs = {}
 		
-		# Parse the canolax5 log file to identify representatives
-		with open(self.output_log, 'r') as f:
+		with open(self.output_reps, 'r') as f:
+			current_header = None
+			current_sequence = []
+			
 			for line in f:
 				line = line.strip()
-				if line and not line.startswith('#'):
-					# The format may vary, but typically the first column is the representative
-					# and subsequent columns are cluster members
-					parts = line.split('\t')
-					if parts:
-						rep_name = parts[0]
-						representatives.add(rep_name)
+				if line.startswith('>'):
+					# Save previous genome if exists
+					if current_header and current_sequence:
+						# Extract genome name from header (everything before first semicolon)
+						genome_name = current_header.split(';')[0].lstrip('>')
+						if genome_name not in genome_contigs:
+							genome_contigs[genome_name] = []
+						genome_contigs[genome_name].append((current_header, ''.join(current_sequence)))
+					
+					# Start new genome
+					current_header = line
+					current_sequence = []
+				else:
+					current_sequence.append(line)
+			
+			# Don't forget the last genome
+			if current_header and current_sequence:
+				genome_name = current_header.split(';')[0].lstrip('>')
+				if genome_name not in genome_contigs:
+					genome_contigs[genome_name] = []
+				genome_contigs[genome_name].append((current_header, ''.join(current_sequence)))
 		
-		# Symlink original files for each representative
-		symlinked_count = 0
-		for rep_name in representatives:
-			if rep_name in self.original_file_map:
-				original_file = self.original_file_map[rep_name]
-				dest_file = os.path.join(self.individual_reps_dir, rep_name)
-				try:
-					# Remove existing file/symlink if it exists
-					if os.path.exists(dest_file):
-						os.remove(dest_file)
-					# Create symlink to original file
-					os.symlink(original_file, dest_file)
-					symlinked_count += 1
-					print(f"Symlinked representative: {rep_name}")
-				except Exception as e:
-					print(f"Error symlinking {rep_name}: {e}")
-			else:
-				print(f"Warning: Original file not found for representative {rep_name}")
+		# Write individual genome files
+		created_count = 0
+		for genome_name, contigs in genome_contigs.items():
+			output_file = os.path.join(self.individual_reps_dir, f"{genome_name}.fa")
+			try:
+				with open(output_file, 'w') as f:
+					for header, sequence in contigs:
+						f.write(f"{header}\n")
+						f.write(f"{sequence}\n")
+				created_count += 1
+				print(f"Created representative genome: {genome_name} with {len(contigs)} contigs")
+			except Exception as e:
+				print(f"Error creating {genome_name}: {e}")
 		
-		print(f"Created {symlinked_count} individual representative genome symlinks in {self.individual_reps_dir}")
+		print(f"Created {created_count} individual representative genome files in {self.individual_reps_dir}")
+
+	def create_contig_level_representatives(self):
+		"""For contig-level mode: separate representative contigs back into individual genome files."""
+		if not self.individual_reps or not self.contig_level:
+			return
+			
+		if not os.path.exists(self.output_reps):
+			print(f"Warning: Representative file {self.output_reps} not found. Skipping contig-level representatives.")
+			return
+		
+		# Parse the representative contigs and group by original genome
+		genome_contigs = {}
+		
+		with open(self.output_reps, 'r') as f:
+			current_header = None
+			current_sequence = []
+			
+			for line in f:
+				line = line.strip()
+				if line.startswith('>'):
+					# Save previous contig if exists
+					if current_header and current_sequence:
+						# Extract genome name from header (everything before first semicolon)
+						genome_name = current_header.split(';')[0].lstrip('>')
+						if genome_name not in genome_contigs:
+							genome_contigs[genome_name] = []
+						genome_contigs[genome_name].append((current_header, ''.join(current_sequence)))
+					
+					# Start new contig
+					current_header = line
+					current_sequence = []
+				else:
+					current_sequence.append(line)
+			
+			# Don't forget the last contig
+			if current_header and current_sequence:
+				genome_name = current_header.split(';')[0].lstrip('>')
+				if genome_name not in genome_contigs:
+					genome_contigs[genome_name] = []
+				genome_contigs[genome_name].append((current_header, ''.join(current_sequence)))
+		
+		# Write individual genome files
+		created_count = 0
+		for genome_name, contigs in genome_contigs.items():
+			output_file = os.path.join(self.individual_reps_dir, f"{genome_name}.fa")
+			try:
+				with open(output_file, 'w') as f:
+					for header, sequence in contigs:
+						f.write(f"{header}\n")
+						f.write(f"{sequence}\n")
+				created_count += 1
+				print(f"Created representative genome: {genome_name} with {len(contigs)} contigs")
+			except Exception as e:
+				print(f"Error creating {genome_name}: {e}")
+		
+		print(f"Created {created_count} individual representative genome files in {self.individual_reps_dir}")
 
 def main():
 	parser = argparse.ArgumentParser(description="Dereplicate MAGs using lingenome and canolax5.")
@@ -141,6 +232,7 @@ def main():
 	parser.add_argument("-o", "--output", type=str, default="dereplicated_genomes", help="Output directory (default: dereplicated_genomes).")
 	parser.add_argument("-k", "--kmer_size", type=int, default=16, help="K-mer size for canolax5 (default: 16).")
 	parser.add_argument("--individual_reps", action="store_true", help="Create individual files for each representative genome with original contigs in genome_representatives/ folder.")
+	parser.add_argument("--contig-level", action="store_true", help="Use contig-level deduplication with linfasta (for large eukaryotic contigs).")
 
 	args = parser.parse_args()
 
@@ -152,12 +244,22 @@ def main():
 		args.wildcard,
 		args.output,
 		args.kmer_size,
-		args.individual_reps
+		args.individual_reps,
+		args.contig_level
 	)
 	runner.symlink_bins()
-	runner.run_lingenome()
+	
+	if args.contig_level:
+		runner.run_linfasta_contig_level()
+	else:
+		runner.run_lingenome()
+	
 	runner.run_canolax5()
-	runner.create_individual_representatives()
+	
+	if args.contig_level:
+		runner.create_contig_level_representatives()
+	else:
+		runner.create_individual_representatives()
 
 if __name__ == "__main__":
 	main()
