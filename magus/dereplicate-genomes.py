@@ -8,22 +8,15 @@ from pathlib import Path
 import glob
 
 class Dereplicator:
-<<<<<<< HEAD
-	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size):
-=======
-	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, individual_reps):
->>>>>>> 49503425e9c51e6bcfc10bcce8626bf08ec19813
+	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, individual_reps):
 		self.input_paths = [Path(p).resolve() for p in glob.glob(mag_glob, recursive=True)]
 		self.tmp = Path(tmp)
 		self.threads = threads
 		self.extension = extension
 		self.wildcard = wildcard
 		self.derep_out = output
-<<<<<<< HEAD
 		self.kmer_size = kmer_size
-=======
 		self.individual_reps = individual_reps
->>>>>>> 49503425e9c51e6bcfc10bcce8626bf08ec19813
 		self.derep_tmp = self.tmp / "dereplicate_tmp"
 		self.tmp_input_bins = self.derep_tmp / "input_bins"
 		self.linearized_fa = self.derep_tmp / "lin.fa"
@@ -95,7 +88,7 @@ class Dereplicator:
 		subprocess.run(cmd, check=True, env=env)
 
 	def create_individual_representatives(self):
-		"""Parse canolax5 output and copy individual representative genome files."""
+		"""Parse canolax5 output and symlink individual representative genome files."""
 		if not self.individual_reps:
 			return
 			
@@ -117,22 +110,26 @@ class Dereplicator:
 						rep_name = parts[0]
 						representatives.add(rep_name)
 		
-		# Copy original files for each representative
-		copied_count = 0
+		# Symlink original files for each representative
+		symlinked_count = 0
 		for rep_name in representatives:
 			if rep_name in self.original_file_map:
 				original_file = self.original_file_map[rep_name]
 				dest_file = os.path.join(self.individual_reps_dir, rep_name)
 				try:
-					shutil.copy2(original_file, dest_file)
-					copied_count += 1
-					print(f"Copied representative: {rep_name}")
+					# Remove existing file/symlink if it exists
+					if os.path.exists(dest_file):
+						os.remove(dest_file)
+					# Create symlink to original file
+					os.symlink(original_file, dest_file)
+					symlinked_count += 1
+					print(f"Symlinked representative: {rep_name}")
 				except Exception as e:
-					print(f"Error copying {rep_name}: {e}")
+					print(f"Error symlinking {rep_name}: {e}")
 			else:
 				print(f"Warning: Original file not found for representative {rep_name}")
 		
-		print(f"Created {copied_count} individual representative genome files in {self.individual_reps_dir}")
+		print(f"Created {symlinked_count} individual representative genome symlinks in {self.individual_reps_dir}")
 
 def main():
 	parser = argparse.ArgumentParser(description="Dereplicate MAGs using lingenome and canolax5.")
@@ -142,11 +139,8 @@ def main():
 	parser.add_argument("--extension", type=str, default="fa", help="File extension of MAGs (default: fa).")
 	parser.add_argument("-w", "--wildcard", type=str, default="", help="Pattern to match anywhere in MAG path.")
 	parser.add_argument("-o", "--output", type=str, default="dereplicated_genomes", help="Output directory (default: dereplicated_genomes).")
-<<<<<<< HEAD
 	parser.add_argument("-k", "--kmer_size", type=int, default=16, help="K-mer size for canolax5 (default: 16).")
-=======
 	parser.add_argument("--individual_reps", action="store_true", help="Create individual files for each representative genome with original contigs in genome_representatives/ folder.")
->>>>>>> 49503425e9c51e6bcfc10bcce8626bf08ec19813
 
 	args = parser.parse_args()
 
@@ -157,11 +151,8 @@ def main():
 		args.extension,
 		args.wildcard,
 		args.output,
-<<<<<<< HEAD
-		args.kmer_size
-=======
+		args.kmer_size,
 		args.individual_reps
->>>>>>> 49503425e9c51e6bcfc10bcce8626bf08ec19813
 	)
 	runner.symlink_bins()
 	runner.run_lingenome()
