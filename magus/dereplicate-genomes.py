@@ -8,7 +8,7 @@ from pathlib import Path
 import glob
 
 class Dereplicator:
-	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, individual_reps):
+	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, individual_reps, max_genome_size):
 		self.input_paths = [Path(p).resolve() for p in glob.glob(mag_glob, recursive=True)]
 		self.tmp = Path(tmp)
 		self.threads = threads
@@ -17,6 +17,7 @@ class Dereplicator:
 		self.derep_out = output
 		self.kmer_size = kmer_size
 		self.individual_reps = individual_reps
+		self.max_genome_size = max_genome_size
 		self.derep_tmp = self.tmp / "dereplicate_tmp"
 		self.tmp_input_bins = self.derep_tmp / "input_bins"
 		self.linearized_fa = self.derep_tmp / "lin.fa"
@@ -80,7 +81,7 @@ class Dereplicator:
 			return
 		
 		trimmed_fa = self.derep_tmp / "lin_trimmed.fa"
-		max_bases = 2_000_000_000  # 2 gigabase pairs
+		max_bases = self.max_genome_size  # Use max_genome_size parameter
 		
 		print(f"Trimming contigs larger than {max_bases:,} bases...")
 		
@@ -210,6 +211,7 @@ def main():
 	parser.add_argument("-o", "--output", type=str, default="dereplicated_genomes", help="Output directory (default: dereplicated_genomes).")
 	parser.add_argument("-k", "--kmer_size", type=int, default=16, help="K-mer size for canolax5 (default: 16).")
 	parser.add_argument("--individual_reps", action="store_true", help="Create individual files for each representative genome with original contigs in genome_representatives/ folder.")
+	parser.add_argument("--max_genome_size", type=int, default=2_000_000_000, help="Maximum genome size in bases for trimming (default: 2GB).")
 
 	args = parser.parse_args()
 
@@ -221,7 +223,8 @@ def main():
 		args.wildcard,
 		args.output,
 		args.kmer_size,
-		args.individual_reps
+		args.individual_reps,
+		args.max_genome_size
 	)
 	runner.symlink_bins()
 	runner.run_lingenome()
