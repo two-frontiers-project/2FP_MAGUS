@@ -8,7 +8,7 @@ from pathlib import Path
 import glob
 
 class Dereplicator:
-	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, individual_reps, max_genome_size):
+	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, max_genome_size):
 		self.input_paths = [Path(p).resolve() for p in glob.glob(mag_glob, recursive=True)]
 		self.tmp = Path(tmp)
 		self.threads = threads
@@ -16,7 +16,6 @@ class Dereplicator:
 		self.wildcard = wildcard
 		self.derep_out = output
 		self.kmer_size = kmer_size
-		self.individual_reps = individual_reps
 		self.max_genome_size = max_genome_size
 		self.derep_tmp = self.tmp / "dereplicate_tmp"
 		self.tmp_input_bins = self.derep_tmp / "input_bins"
@@ -27,6 +26,7 @@ class Dereplicator:
 
 		# Store original file mapping for individual reps
 		self.original_file_map = {}
+		self.genomes_were_trimmed = False
 
 		self._init_tmp_dir()
 
@@ -35,8 +35,7 @@ class Dereplicator:
 			shutil.rmtree(self.derep_tmp)
 		os.makedirs(self.tmp_input_bins, exist_ok=True)
 		os.makedirs(self.derep_out, exist_ok=True)
-		if self.individual_reps:
-			os.makedirs(self.individual_reps_dir, exist_ok=True)
+		os.makedirs(self.individual_reps_dir, exist_ok=True)
 
 	def symlink_bins(self):
 		all_matches = []
@@ -59,8 +58,7 @@ class Dereplicator:
 			os.symlink(path, target)
 			
 			# Store mapping for individual reps feature
-			if self.individual_reps:
-				self.original_file_map[new_name] = path
+			self.original_file_map[new_name] = path
 
 	def run_lingenome(self):
 		cmd = f'lingenome {self.tmp_input_bins} {self.linearized_fa} HEADFIX FILENAME; sleep 5'
@@ -85,6 +83,7 @@ class Dereplicator:
 		
 		print(f"Trimming contigs larger than {max_bases:,} bases...")
 		
+		trimmed_count = 0
 		with open(self.linearized_fa, 'r') as infile, open(trimmed_fa, 'w') as outfile:
 			current_header = None
 			current_sequence = []
@@ -98,6 +97,7 @@ class Dereplicator:
 						if len(sequence) > max_bases:
 							print(f"Trimming {current_header} from {len(sequence):,} to {max_bases:,} bases")
 							sequence = sequence[:max_bases]
+							trimmed_count += 1
 						outfile.write(f"{current_header}\n")
 						outfile.write(f"{sequence}\n")
 					
@@ -113,12 +113,19 @@ class Dereplicator:
 				if len(sequence) > max_bases:
 					print(f"Trimming {current_header} from {len(sequence):,} to {max_bases:,} bases")
 					sequence = sequence[:max_bases]
+					trimmed_count += 1
 				outfile.write(f"{current_header}\n")
 				outfile.write(f"{sequence}\n")
 		
 		# Replace original file with trimmed version
 		shutil.move(trimmed_fa, self.linearized_fa)
 		print("Contig trimming completed.")
+		
+		# Set flag and warning if any genomes were trimmed
+		if trimmed_count > 0:
+			self.genomes_were_trimmed = True
+			print(f"\nWARNING: {trimmed_count} genomes were trimmed to {max_bases:,} bases.")
+			print("The reps.fa file contains trimmed genomes. Use the full genomes in genome_representatives/ directory instead.")
 
 	def run_canolax5(self):
 		cmd = [
@@ -136,9 +143,6 @@ class Dereplicator:
 
 	def create_individual_representatives(self):
 		"""Parse canolax5 output and copy individual representative genome files."""
-		if not self.individual_reps:
-			return
-			
 		if not os.path.exists(self.output_log):
 			print(f"Warning: Cluster log file {self.output_log} not found. Skipping individual representatives.")
 			return
@@ -176,6 +180,11 @@ class Dereplicator:
 				print(f"Warning: Representative file {rep_name}.{self.extension} not found in {self.tmp_input_bins}")
 		
 		print(f"Created {copied_count} individual representative genome files in {self.individual_reps_dir}")
+		
+		# Add warning about trimmed genomes if applicable
+		if self.genomes_were_trimmed:
+			print("\nNOTE: Some genomes were trimmed during processing.")
+			print("The reps.fa file contains trimmed sequences. Use the full genomes in genome_representatives/ directory.")
 
 def main():
 	parser = argparse.ArgumentParser(description="Dereplicate MAGs using lingenome and canolax5.")
@@ -186,7 +195,6 @@ def main():
 	parser.add_argument("-w", "--wildcard", type=str, default="", help="Pattern to match anywhere in MAG path.")
 	parser.add_argument("-o", "--output", type=str, default="dereplicated_genomes", help="Output directory (default: dereplicated_genomes).")
 	parser.add_argument("-k", "--kmer_size", type=int, default=16, help="K-mer size for canolax5 (default: 16).")
-	parser.add_argument("--individual_reps", action="store_true", help="Create individual files for each representative genome with original contigs in genome_representatives/ folder.")
 	parser.add_argument("--max_genome_size", type=int, default=2_000_000_000, help="Maximum genome size in bases for trimming (default: 2GB).")
 
 	args = parser.parse_args()
@@ -199,7 +207,6 @@ def main():
 		args.wildcard,
 		args.output,
 		args.kmer_size,
-		args.individual_reps,
 		args.max_genome_size
 	)
 	runner.symlink_bins()
