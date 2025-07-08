@@ -161,19 +161,19 @@ class Dereplicator:
 		# Copy representative files from symlinked input bins
 		copied_count = 0
 		for rep_name in representatives:
-			# Look for the file in the symlinked input bins directory
-			rep_file = self.tmp_input_bins / rep_name
+			# Look for the file in the symlinked input bins directory (add .fa extension)
+			rep_file = self.tmp_input_bins / f"{rep_name}.{self.extension}"
 			if rep_file.exists():
-				dest_file = os.path.join(self.individual_reps_dir, rep_name)
+				dest_file = os.path.join(self.individual_reps_dir, f"{rep_name}.{self.extension}")
 				try:
 					# Copy the file (it's a symlink, so this copies the original)
 					shutil.copy2(rep_file, dest_file)
 					copied_count += 1
-					print(f"Copied representative: {rep_name}")
+					print(f"Copied representative: {rep_name}.{self.extension}")
 				except Exception as e:
-					print(f"Error copying {rep_name}: {e}")
+					print(f"Error copying {rep_name}.{self.extension}: {e}")
 			else:
-				print(f"Warning: Representative file {rep_name} not found in {self.tmp_input_bins}")
+				print(f"Warning: Representative file {rep_name}.{self.extension} not found in {self.tmp_input_bins}")
 		
 		print(f"Created {copied_count} individual representative genome files in {self.individual_reps_dir}")
 
