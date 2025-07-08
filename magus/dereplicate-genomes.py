@@ -135,7 +135,7 @@ class Dereplicator:
 		subprocess.run(cmd, check=True, env=env)
 
 	def create_individual_representatives(self):
-		"""Parse canolax5 output and symlink individual representative genome files."""
+		"""Parse canolax5 output and copy individual representative genome files."""
 		if not self.individual_reps:
 			return
 			
@@ -143,32 +143,14 @@ class Dereplicator:
 			print(f"Warning: Cluster log file {self.output_log} not found. Skipping individual representatives.")
 			return
 		
-		# First, parse the linearized FASTA to get the mapping from genome names to file paths
-		genome_to_file_map = {}
-		if os.path.exists(self.linearized_fa):
-			with open(self.linearized_fa, 'r') as f:
-				for line in f:
-					if line.startswith('>'):
-						# lingenome format: >genome_name;FILENAME=actual_filename
-						parts = line.strip().split(';')
-						if len(parts) >= 2:
-							genome_name = parts[0].lstrip('>')
-							filename_part = parts[1]
-							if filename_part.startswith('FILENAME='):
-								actual_filename = filename_part.replace('FILENAME=', '')
-								genome_to_file_map[genome_name] = actual_filename
-		
-		print(f"Found {len(genome_to_file_map)} genome name mappings")
-		
 		representatives = set()
 		
-		# Parse the canolax5 log file to identify representatives
+		# Parse the canolax5 log file to identify representatives (first column)
 		with open(self.output_log, 'r') as f:
 			for line in f:
 				line = line.strip()
 				if line and not line.startswith('#'):
-					# The format may vary, but typically the first column is the representative
-					# and subsequent columns are cluster members
+					# First column is the representative
 					parts = line.split('\t')
 					if parts:
 						rep_name = parts[0]
@@ -176,30 +158,24 @@ class Dereplicator:
 		
 		print(f"Found {len(representatives)} representatives: {list(representatives)}")
 		
-		# Symlink original files for each representative
-		symlinked_count = 0
+		# Copy representative files from symlinked input bins
+		copied_count = 0
 		for rep_name in representatives:
-			if rep_name in genome_to_file_map:
-				actual_filename = genome_to_file_map[rep_name]
-				if actual_filename in self.original_file_map:
-					original_file = self.original_file_map[actual_filename]
-					dest_file = os.path.join(self.individual_reps_dir, actual_filename)
-					try:
-						# Remove existing file/symlink if it exists
-						if os.path.exists(dest_file):
-							os.remove(dest_file)
-						# Create symlink to original file
-						os.symlink(original_file, dest_file)
-						symlinked_count += 1
-						print(f"Symlinked representative: {rep_name} -> {actual_filename}")
-					except Exception as e:
-						print(f"Error symlinking {rep_name}: {e}")
-				else:
-					print(f"Warning: Original file not found for {actual_filename} (representative: {rep_name})")
+			# Look for the file in the symlinked input bins directory
+			rep_file = self.tmp_input_bins / rep_name
+			if rep_file.exists():
+				dest_file = os.path.join(self.individual_reps_dir, rep_name)
+				try:
+					# Copy the file (it's a symlink, so this copies the original)
+					shutil.copy2(rep_file, dest_file)
+					copied_count += 1
+					print(f"Copied representative: {rep_name}")
+				except Exception as e:
+					print(f"Error copying {rep_name}: {e}")
 			else:
-				print(f"Warning: Genome name {rep_name} not found in genome mapping")
+				print(f"Warning: Representative file {rep_name} not found in {self.tmp_input_bins}")
 		
-		print(f"Created {symlinked_count} individual representative genome symlinks in {self.individual_reps_dir}")
+		print(f"Created {copied_count} individual representative genome files in {self.individual_reps_dir}")
 
 def main():
 	parser = argparse.ArgumentParser(description="Dereplicate MAGs using lingenome and canolax5.")
