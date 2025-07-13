@@ -65,6 +65,7 @@ class Binning:
         for k in [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 30]:
             bin_output = f"{bins_dir}/{k}"
             cmd = f"metabat2 --seed {k} -i {temp0_file} -a {cov_file} -t {self.threads} -o {bin_output} -m 1500"
+            print(cmd)
             print(f"Running MetaBAT2 with seed {k} for {sample_name}")
             subprocess.run(cmd, shell=True)
         
