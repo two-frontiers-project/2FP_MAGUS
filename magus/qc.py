@@ -42,11 +42,28 @@ class QualityControl:
             self.qc_results.append({'filename': sample_name, 'pe1': f"{self.qc_dir}/{sample_name}.R1.fa.gz", 'pe2': f"{self.qc_dir}/{sample_name}.R2.fa.gz" if r2 else None})
 
     def compress_output(self, sample_name, r2):
-        for file in os.listdir(self.qc_dir):
-            if file.startswith(sample_name):
-                file_path = os.path.join(self.qc_dir, file)
-                cmd = f"minigzip -4 {file_path}"
-                print(f"Compressing {file_path}")
+        # Compress the exact files that shi7_trimmer creates
+        if r2:
+            # Paired-end: compress R1 and R2 files
+            r1_file = os.path.join(self.qc_dir, f"{sample_name}.R1.fa")
+            r2_file = os.path.join(self.qc_dir, f"{sample_name}.R2.fa")
+            
+            if os.path.exists(r1_file):
+                cmd = f"minigzip -4 {r1_file}"
+                print(f"Compressing {r1_file}")
+                subprocess.run(cmd, shell=True)
+            
+            if os.path.exists(r2_file):
+                cmd = f"minigzip -4 {r2_file}"
+                print(f"Compressing {r2_file}")
+                subprocess.run(cmd, shell=True)
+        else:
+            # Single-end: compress the single output file
+            single_file = os.path.join(self.qc_dir, f"{sample_name}.fa")
+            
+            if os.path.exists(single_file):
+                cmd = f"minigzip -4 {single_file}"
+                print(f"Compressing {single_file}")
                 subprocess.run(cmd, shell=True)
 
     def write_output_config(self):
