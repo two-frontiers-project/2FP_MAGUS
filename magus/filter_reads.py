@@ -24,7 +24,7 @@ def parse_config(config_file: str) -> dict:
             if len(parts) >= 2:
                 filename = parts[0]
                 pe1 = parts[1]
-                pe2 = parts[2] if len(parts) > 2 else None
+                pe2 = parts[2] if len(parts) > 2 and parts[2].strip() else None
                 config_data[filename] = (pe1, pe2)
     return config_data
 
@@ -42,7 +42,7 @@ def filter_reads(perq_file: str, fastq_file: str, output_file: str, min_kmers: i
     subprocess.run(cmd, shell=True, check=True)
 
 def process_file(filename: str, pe1: str, pe2: str, perq_dir: str, output_dir: str, min_kmers: int, threads: int):
-    """Process a single file pair."""
+    """Process a single file or file pair."""
     perq_file = os.path.join(perq_dir, f"{filename}.perq")
     if not os.path.exists(perq_file):
         logger.warning(f"No perq file found for {filename}, skipping.")
@@ -50,13 +50,27 @@ def process_file(filename: str, pe1: str, pe2: str, perq_dir: str, output_dir: s
     
     # Determine output extension based on input file
     pe1_ext = '.fa.gz' if pe1.endswith(('.fa', '.fasta')) else '.fq.gz'
-    pe1_output = os.path.join(output_dir, f"{filename}_filtered{pe1_ext}")
-    filter_reads(perq_file, pe1, pe1_output, min_kmers, threads)
     
     if pe2:
+        # Paired-end mode - apply same filtering to both files
+        logger.info(f"Processing paired-end files for {filename}")
         pe2_ext = '.fa.gz' if pe2.endswith(('.fa', '.fasta')) else '.fq.gz'
-        pe2_output = os.path.join(output_dir, f"{filename}_filtered{pe2_ext}")
-        filter_reads(perq_file, pe2, pe2_output, min_kmers, threads)
+        
+        # Use R1/R2 naming convention for output files
+        r1_output = os.path.join(output_dir, f"{filename}.R1{pe1_ext}")
+        r2_output = os.path.join(output_dir, f"{filename}.R2{pe2_ext}")
+        
+        # Apply same filtering logic to both files
+        filter_reads(perq_file, pe1, r1_output, min_kmers, threads)
+        filter_reads(perq_file, pe2, r2_output, min_kmers, threads)
+        logger.info(f"Filtered paired-end reads for {filename}: {r1_output}, {r2_output}")
+    else:
+        # Single-end mode
+        logger.info(f"Processing single-end file for {filename}")
+        pe1_output = os.path.join(output_dir, f"{filename}_filtered{pe1_ext}")
+        
+        filter_reads(perq_file, pe1, pe1_output, min_kmers, threads)
+        logger.info(f"Filtered single-end reads for {filename}: {pe1_output}")
 
 def main():
     parser = argparse.ArgumentParser(description='Filter reads based on perq output files.')
