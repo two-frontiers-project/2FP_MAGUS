@@ -139,7 +139,7 @@ class ORFCaller:
             return manicure_file
 
         log_file = os.path.join(self.output_dir, 'eukaryotes', f"{FN}_metaeuk.log")
-        cmd = ['metaeuk', 'easy-predict', genome_file, 'data/uniref90', os.path.join(annot_dir, f"{FN}"), os.path.join(annot_dir, f"{FN}")]
+        cmd = ['metaeuk', 'easy-predict', genome_file, self.args.eukdb, os.path.join(annot_dir, f"{FN}"), os.path.join(annot_dir, f"{FN}")]
         logger.info(f"Calling eukaryotic ORFs for {genome_file} using MetaEuk")
         with open(log_file, 'w') as log:
             subprocess.run(cmd, check=True, stdout=log, stderr=log)
@@ -254,6 +254,7 @@ def main():
     parser.add_argument('--extension', type=str, default='.fa', help='Extension of genome files (default: .fa).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
+    parser.add_argument('--eukdb', type=str, default='data/uniref90', help='Path to UniRef90 database for MetaEuk (default: data/uniref90).')
     args = parser.parse_args()
 
     os.makedirs(args.output_directory, exist_ok=True)
