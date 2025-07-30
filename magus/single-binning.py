@@ -34,6 +34,78 @@ class Binning:
         else:
             return config_df.assign(pe2=None).to_dict(orient='records')
 
+    def recreate_tmp_structure_for_restart(self, sample_name):
+        """
+        Recreate the tmp directory structure for restart by symlinking to preserved data 
+        in the assembly directory.
+        """
+        sample_tmp_dir = f"{self.tmpdir}/{sample_name}"
+        sample_asm_dir = f"{self.asmdir}/{sample_name}"
+        
+        # Check if assembly directory exists (where data was moved to)
+        if not os.path.exists(sample_asm_dir):
+            print(f"Warning: Assembly directory {sample_asm_dir} does not exist. Cannot recreate tmp structure for restart.")
+            return False
+        
+        # Create the sample tmp directory if it doesn't exist
+        os.makedirs(sample_tmp_dir, exist_ok=True)
+        
+        def safe_symlink(source, target, description):
+            """Helper function to safely create symlinks, removing broken ones first."""
+            if os.path.islink(target) and not os.path.exists(target):
+                # Remove broken symlink
+                os.unlink(target)
+                print(f"Removed broken symlink: {target}")
+            
+            if os.path.exists(source) and not os.path.exists(target):
+                os.symlink(os.path.abspath(source), target)
+                print(f"Created symlink for {description}: {target} -> {source}")
+                return True
+            return False
+        
+        # Determine what needs to be recreated based on restart mode
+        if self.restart == "binning":
+            # Need covs.txt for metabat
+            covs_source = f"{sample_asm_dir}/covs.txt"
+            covs_target = f"{sample_tmp_dir}/covs.txt"
+            safe_symlink(covs_source, covs_target, "covs.txt")
+                
+        elif self.restart == "checkm":
+            # Need bins directory for checkm
+            bins_source = f"{sample_asm_dir}/bins"
+            bins_target = f"{sample_tmp_dir}/bins"
+            safe_symlink(bins_source, bins_target, "bins directory")
+                
+        elif self.restart == "filtering":
+            # Need bins directory with checkm results for filtering
+            bins_source = f"{sample_asm_dir}/bins"
+            bins_target = f"{sample_tmp_dir}/bins"
+            safe_symlink(bins_source, bins_target, "bins directory")
+            
+            # For filtering restarts, clean up downstream files that depend on filtering thresholds
+            # This ensures a fresh restart when using different contamination/completeness cutoffs
+            downstream_files = [
+                "worthwhile.tsv", "worthwhile.stat", "good.fasta", "good.dm", 
+                "L", "L.txt", "bestmags.txt"
+            ]
+            
+            for file_name in downstream_files:
+                target_file = f"{sample_tmp_dir}/{file_name}"
+                if os.path.exists(target_file) or os.path.islink(target_file):
+                    os.unlink(target_file)
+                    print(f"Removed existing {file_name} for clean filtering restart")
+            
+            # Also remove the good directory if it exists (will be recreated with new thresholds)
+            good_target = f"{sample_tmp_dir}/good"
+            if os.path.exists(good_target) or os.path.islink(good_target):
+                if os.path.islink(good_target):
+                    os.unlink(good_target)
+                else:
+                    shutil.rmtree(good_target)
+                print(f"Removed existing good directory for clean filtering restart")
+        
+        return True
+
     def run_sorenson(self, sample_name):
         out_sample_dir = f"{self.tmpdir}/{sample_name}"
         os.makedirs(out_sample_dir, exist_ok=True)
@@ -204,6 +276,13 @@ class Binning:
     def run_sample(self, sample_name):
         """Run the pipeline for one sample starting from the chosen step."""
         try:
+            # If restarting, check and recreate tmp structure if needed
+            if self.restart is not None:
+                success = self.recreate_tmp_structure_for_restart(sample_name)
+                if not success:
+                    print(f"Failed to recreate tmp structure for {sample_name}. Cannot restart.")
+                    return
+            
             if self.restart is None:
                 self.run_sorenson(sample_name)
                 self.run_metabat(sample_name)
