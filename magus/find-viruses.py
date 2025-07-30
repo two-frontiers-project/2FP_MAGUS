@@ -36,7 +36,10 @@ class CheckVRunner:
                     continue
                 sample_id, contig_path = row[0], row[1]
                 if os.path.exists(contig_path):
-                    contig_files.append((sample_id, contig_path))
+                    # Create unique identifier from sample_id and path for safety
+                    path_part = Path(contig_path).parent.name
+                    unique_id = f"{sample_id}____{path_part}".replace('/', '____').replace('\\', '____')
+                    contig_files.append((unique_id, contig_path))
                 else:
                     print(f"Warning: Contig file {contig_path} for sample {sample_id} not found.")
         return contig_files
@@ -55,11 +58,15 @@ class CheckVRunner:
             if os.path.isdir(path_pattern) and not any(wildcard in path_pattern for wildcard in ['*', '?', '[']):
                 # Single directory - look for final.contigs.fa files recursively
                 for contig_file in Path(path_pattern).rglob("final.contigs.fa"):
-                    # Extract sample name from directory structure
-                    # Assume structure like: base_dir/sample_name/final.contigs.fa or base_dir/sample_name/some_subdir/final.contigs.fa
-                    relative_path = contig_file.relative_to(Path(path_pattern))
-                    sample_name = relative_path.parts[0] if relative_path.parts else contig_file.parent.name
-                    all_matches.append((sample_name, str(contig_file.resolve())))
+                    # Create unique identifier from path, using last 3 directory levels to keep it manageable
+                    dir_path = contig_file.parent.resolve()
+                    # Use last 3 directory levels for uniqueness while keeping it readable  
+                    path_parts = dir_path.parts[-3:] if len(dir_path.parts) >= 3 else dir_path.parts
+                    unique_id = '____'.join(path_parts).replace('/', '____').replace('\\', '____')
+                    # Fallback if we get an empty unique_id
+                    if not unique_id:
+                        unique_id = contig_file.parent.name
+                    all_matches.append((unique_id, str(contig_file.resolve())))
             else:
                 # Wildcard pattern - expand and find contig files
                 expanded_paths = glob.glob(path_pattern, recursive=True)
@@ -72,12 +79,13 @@ class CheckVRunner:
                             contig_candidates = list(Path(expanded_path).glob("*/final.contigs.fa"))
                         
                         for contig_file in contig_candidates:
-                            # Extract sample name from the assembly directory name
-                            if 'final.contigs.fa' in str(contig_file):
-                                # Get the directory that contains final.contigs.fa
-                                asm_dir = contig_file.parent
-                                sample_name = asm_dir.name
-                                all_matches.append((sample_name, str(contig_file.resolve())))
+                            # Create unique identifier from path, using last 3 directory levels to keep it manageable
+                            full_path = str(contig_file.resolve())
+                            dir_path = contig_file.parent.resolve()
+                            # Use last 3 directory levels for uniqueness while keeping it readable
+                            path_parts = dir_path.parts[-3:] if len(dir_path.parts) >= 3 else dir_path.parts
+                            unique_id = '____'.join(path_parts).replace('/', '____').replace('\\', '____')
+                            all_matches.append((unique_id, full_path))
         
         if not all_matches:
             print("No final.contigs.fa files found in the specified paths.")
@@ -96,22 +104,22 @@ class CheckVRunner:
             return
         
         print(f"Found {len(self.contig_files)} contig files to merge:")
-        for sample_name, contig_path in self.contig_files:
-            print(f"  {sample_name}: {contig_path}")
+        for unique_id, contig_path in self.contig_files:
+            print(f"  {unique_id}: {contig_path}")
         
         # Create temporary files with renamed headers
         temp_files = []
-        for sample_name, contig_path in self.contig_files:
-            temp_file = os.path.join(self.tmp_dir, f"{sample_name}_renamed.fa")
+        for unique_id, contig_path in self.contig_files:
+            temp_file = os.path.join(self.tmp_dir, f"{unique_id}_renamed.fa")
             temp_files.append(temp_file)
             
-            # Rename headers to include sample name
+            # Rename headers to include unique path-based identifier
             with open(contig_path, 'r') as infile, open(temp_file, 'w') as outfile:
                 for line in infile:
                     if line.startswith('>'):
-                        # Prepend sample name to contig header
+                        # Prepend unique identifier to contig header
                         header = line.strip()[1:]  # Remove '>'
-                        outfile.write(f">{sample_name}___{header}\n")
+                        outfile.write(f">{unique_id}___{header}\n")
                     else:
                         outfile.write(line)
         
@@ -166,15 +174,15 @@ class CheckVRunner:
                 with open(good_file, "w") as good_out:
                     with open(summary_file) as summary_in:
                         header = summary_in.readline().strip()
-                        good_out.write(f"{header}\tRepresentative\tSample_ID\n")  # Add new columns
+                        good_out.write(f"{header}\tRepresentative\tUnique_ID\n")  # Add new columns
                         for line in summary_in:
                             columns = line.strip().split("\t")
                             contig_id, quality = columns[0], columns[7]
                             if quality in selected_qualities:
                                 binids.append(contig_id)
-                                # Extract sample name from contig ID if it has our naming convention
-                                sample_id = contig_id.split('___')[0] if '___' in contig_id else 'unknown'
-                                good_out.write(f"{line.strip()}\tNO\t{sample_id}\n")  # Initialize as 'NO'
+                                # Extract unique identifier from contig ID if it has our naming convention
+                                unique_id = contig_id.split('___')[0] if '___' in contig_id else 'unknown'
+                                good_out.write(f"{line.strip()}\tNO\t{unique_id}\n")  # Initialize as 'NO'
         print(f"Processed CheckV results and saved filtered summary with selected qualities.")
         return binids
 
