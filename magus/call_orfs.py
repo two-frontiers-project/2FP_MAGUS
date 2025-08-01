@@ -29,6 +29,7 @@ class ORFCaller:
                 '--tblout', hmm_out,
                 '--noali',
                 '--notextw',
+                '--cpu', str(self.args.threads),
                 hmmfile,
                 faa_file
             ]
