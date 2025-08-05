@@ -144,25 +144,53 @@ class ORFCaller:
         with open(log_file, 'w') as log:
             subprocess.run(cmd, check=True, stdout=log, stderr=log)
 
-        # Manicure the output files
-        with open(os.path.join(annot_dir, f"{FN}.faa"), 'r') as infile, open(manicure_file, 'w') as outfile:
+        # Manicure the output files - MetaEuk produces .fas and .codon.fas files
+        with open(os.path.join(annot_dir, f"{FN}.fas"), 'r') as infile, open(manicure_file, 'w') as outfile:
             for line in infile:
                 if line.startswith('>'):
-                    outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                    # Parse MetaEuk header format: >UniRef90_ID|sample|strand|score|evalue|num_exons|start|end|exon_info
+                    parts = line.strip().split('|')
+                    if len(parts) >= 3:
+                        uniref_id = parts[0].replace('>', '')
+                        sample = parts[1]
+                        strand = parts[2]
+                        # Extract start and end positions
+                        if len(parts) >= 7:
+                            start = parts[6]
+                            end = parts[7]
+                            # Create simplified header format
+                            new_header = f">{FN}-----{sample}-----{start}+{end}+{strand}+ID={uniref_id};partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500\n"
+                            outfile.write(new_header)
+                        else:
+                            outfile.write(line)
                 else:
                     outfile.write(line)
 
         manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
-        with open(os.path.join(annot_dir, f"{FN}.ffn"), 'r') as infile, open(manicure_ffn, 'w') as outfile:
+        with open(os.path.join(annot_dir, f"{FN}.codon.fas"), 'r') as infile, open(manicure_ffn, 'w') as outfile:
             for line in infile:
                 if line.startswith('>'):
-                    outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                    # Parse MetaEuk header format for nucleotide sequences
+                    parts = line.strip().split('|')
+                    if len(parts) >= 3:
+                        uniref_id = parts[0].replace('>', '')
+                        sample = parts[1]
+                        strand = parts[2]
+                        # Extract start and end positions
+                        if len(parts) >= 7:
+                            start = parts[6]
+                            end = parts[7]
+                            # Create simplified header format
+                            new_header = f">{FN}-----{sample}-----{start}+{end}+{strand}+ID={uniref_id};partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500\n"
+                            outfile.write(new_header)
+                        else:
+                            outfile.write(line)
                 else:
                     outfile.write(line)
 
         # Clean up the annot files
-        os.remove(os.path.join(annot_dir, f"{FN}.ffn"))
-        os.remove(os.path.join(annot_dir, f"{FN}.faa"))
+        os.remove(os.path.join(annot_dir, f"{FN}.codon.fas"))
+        os.remove(os.path.join(annot_dir, f"{FN}.fas"))
 
         # HMM annotation (standalone)
         self.run_hmm_annotation(manicure_file, manicure_dir, FN, hmmfile)
