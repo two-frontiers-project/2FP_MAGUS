@@ -27,7 +27,8 @@ def main():
         'find-viruses': 'find-viruses.py',
         'find-euks': 'find-euks.py',
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
-        'find-genes':'find_genes.py'
+        'find-genes':'find_genes.py',
+        'call-orfs': 'call_orfs.py'
   }
 
     # Check for valid command
