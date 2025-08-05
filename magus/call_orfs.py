@@ -167,20 +167,39 @@ def find_genome_files(mag_dir, extension, wildcard):
     
     return all_matches
 
-def process_genomes(orf_caller, genomes_data):
+def process_genomes(orf_caller, genomes_data, max_workers=1):
     """Process a list of genomes data (tuples of sample_id, genome_path, domain)"""
-    for sample_id, genome_path, domain in genomes_data:
+    
+    def process_single_genome(genome_data):
+        sample_id, genome_path, domain = genome_data
         domain = domain.lower()
-        if domain == 'bacterial':
-            orf_caller.call_bacterial_orfs(genome_path, sample_id=sample_id)
-        elif domain == 'viral':
-            orf_caller.call_viral_orfs(genome_path, sample_id=sample_id)
-        elif domain == 'eukaryotic':
-            orf_caller.call_eukaryotic_orfs(genome_path, sample_id=sample_id)
-        elif domain == 'metagenomic':
-            orf_caller.call_metagenome_orfs(genome_path, sample_id=sample_id)
-        else:
-            logger.error(f"Unknown domain '{domain}' for sample {sample_id}. Skipping.")
+        try:
+            if domain == 'bacterial':
+                orf_caller.call_bacterial_orfs(genome_path, sample_id=sample_id)
+            elif domain == 'viral':
+                orf_caller.call_viral_orfs(genome_path, sample_id=sample_id)
+            elif domain == 'eukaryotic':
+                orf_caller.call_eukaryotic_orfs(genome_path, sample_id=sample_id)
+            elif domain == 'metagenomic':
+                orf_caller.call_metagenome_orfs(genome_path, sample_id=sample_id)
+            else:
+                logger.error(f"Unknown domain '{domain}' for sample {sample_id}. Skipping.")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Error processing {sample_id}: {e}")
+            return False
+    
+    if max_workers > 1:
+        logger.info(f"Processing {len(genomes_data)} genomes with {max_workers} parallel workers")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(process_single_genome, genomes_data))
+        successful = sum(results)
+        logger.info(f"Successfully processed {successful}/{len(genomes_data)} genomes")
+    else:
+        logger.info(f"Processing {len(genomes_data)} genomes sequentially")
+        for genome_data in genomes_data:
+            process_single_genome(genome_data)
 
 def summarize_calls(output_dir):
     """Summarize ORF calls into a single TSV per domain type."""
@@ -214,12 +233,14 @@ def summarize_calls(output_dir):
         
         logger.info(f"Created {subdir} calls summary: {summary_file}")
 
-def run_annotations(output_dir, hmmfile):
+def run_annotations(output_dir, hmmfile, max_workers=1):
     """Run HMM annotations on all protein files."""
     if not hmmfile:
         logger.warning("No HMM file provided. Skipping annotation stage.")
         return
-        
+    
+    # Collect all files that need annotation
+    annotation_tasks = []
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
         annot_dir = os.path.join(output_dir, subdir, 'annot')
         if not os.path.exists(annot_dir):
@@ -229,9 +250,28 @@ def run_annotations(output_dir, hmmfile):
             if file.endswith('.faa') or file.endswith('.fas'):
                 sample_id = file.replace('.faa', '').replace('.fas', '')
                 faa_file = os.path.join(annot_dir, file)
-                
-                orf_caller = ORFCaller(output_dir, 'fa', type('Args', (), {'threads': 4, 'force': False})())
-                orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, hmmfile)
+                annotation_tasks.append((faa_file, annot_dir, sample_id, hmmfile))
+    
+    def run_single_annotation(task):
+        faa_file, annot_dir, sample_id, hmmfile = task
+        try:
+            orf_caller = ORFCaller(output_dir, 'fa', type('Args', (), {'threads': 4, 'force': False})())
+            orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, hmmfile)
+            return True
+        except Exception as e:
+            logger.error(f"Error running HMM annotation for {sample_id}: {e}")
+            return False
+    
+    if max_workers > 1 and len(annotation_tasks) > 1:
+        logger.info(f"Running HMM annotations on {len(annotation_tasks)} files with {max_workers} parallel workers")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(run_single_annotation, annotation_tasks))
+        successful = sum(results)
+        logger.info(f"Successfully annotated {successful}/{len(annotation_tasks)} files")
+    else:
+        logger.info(f"Running HMM annotations on {len(annotation_tasks)} files sequentially")
+        for task in annotation_tasks:
+            run_single_annotation(task)
 
 def summarize_annotations(output_dir):
     """Create manicured files and final summary with annotations."""
@@ -390,7 +430,7 @@ def main():
         return
     elif args.restart == 'annotation':
         logger.info("Running in annotation mode - running HMM annotations")
-        run_annotations(args.output_directory, args.hmmfile)
+        run_annotations(args.output_directory, args.hmmfile, args.max_workers)
         logger.info("Annotation completed successfully.")
         return
     elif args.restart == 'summarize-annotations':
@@ -456,7 +496,7 @@ def main():
 
     # Process all genomes (Stage 1: ORF calling)
     logger.info("Stage 1: Calling ORFs")
-    process_genomes(orf_caller, genomes_data)
+    process_genomes(orf_caller, genomes_data, args.max_workers)
 
     # Stage 2: Summarize calls
     logger.info("Stage 2: Summarizing calls")
@@ -464,7 +504,7 @@ def main():
 
     # Stage 3: Run annotations (if HMM file provided)
     logger.info("Stage 3: Running annotations")
-    run_annotations(args.output_directory, args.hmmfile)
+    run_annotations(args.output_directory, args.hmmfile, args.max_workers)
 
     # Stage 4: Summarize annotations
     logger.info("Stage 4: Summarizing annotations")
