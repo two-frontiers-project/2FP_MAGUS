@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import csv
+import glob
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,7 +17,8 @@ logger = logging.getLogger(__name__)
 class ORFCaller:
     def __init__(self, output_dir, extension, args):
         self.output_dir = output_dir
-        self.extension = extension
+        # Ensure extension starts with a dot for consistent usage
+        self.extension = f".{extension}" if not extension.startswith('.') else extension
         self.args = args
 
     def run_hmm_annotation(self, faa_file, output_dir, sample_id, hmmfile):
@@ -27,6 +29,7 @@ class ORFCaller:
                 '--tblout', hmm_out,
                 '--noali',
                 '--notextw',
+                '--cpu', str(self.args.threads),
                 hmmfile,
                 faa_file
             ]
@@ -139,8 +142,8 @@ class ORFCaller:
             return manicure_file
 
         log_file = os.path.join(self.output_dir, 'eukaryotes', f"{FN}_metaeuk.log")
-        cmd = ['metaeuk', 'easy-predict', genome_file, self.args.eukdb, os.path.join(annot_dir, f"{FN}"), os.path.join(annot_dir, f"{FN}")]
-        logger.info(f"Calling eukaryotic ORFs for {genome_file} using MetaEuk")
+        cmd = ['metaeuk', 'easy-predict', genome_file, self.args.eukdb, os.path.join(annot_dir, f"{FN}"), os.path.join(annot_dir, f"{FN}"), '--threads', str(self.args.threads)]
+        logger.info(f"Calling eukaryotic ORFs for {genome_file} using MetaEuk with {self.args.threads} threads")
         with open(log_file, 'w') as log:
             subprocess.run(cmd, check=True, stdout=log, stderr=log)
 
@@ -241,6 +244,38 @@ class ORFCaller:
         self.run_hmm_annotation(manicure_file, manicure_dir, FN, hmmfile)
         return manicure_file
 
+def find_genome_files(mag_dir, extension, wildcard):
+    """Find genome files using directory and wildcard pattern, similar to dereplicate_genomes.py"""
+    input_paths = [Path(p).resolve() for p in glob.glob(mag_dir, recursive=True)]
+    all_matches = []
+    
+    for base_path in input_paths:
+        if base_path.is_dir():
+            suffix = f".{extension}" if not extension.startswith('.') else extension
+            for path in base_path.rglob(f"*{suffix}"):
+                if wildcard in str(path):
+                    all_matches.append(path.resolve())
+    
+    if not all_matches:
+        raise RuntimeError("No matching genome files found.")
+    
+    return all_matches
+
+def process_genomes(orf_caller, genomes_data, hmmfile):
+    """Process a list of genomes data (tuples of sample_id, genome_path, domain)"""
+    for sample_id, genome_path, domain in genomes_data:
+        domain = domain.lower()
+        if domain == 'bacterial':
+            orf_caller.call_bacterial_orfs(genome_path, sample_id=sample_id, hmmfile=hmmfile)
+        elif domain == 'viral':
+            orf_caller.call_viral_orfs(genome_path, sample_id=sample_id, hmmfile=hmmfile)
+        elif domain == 'eukaryotic':
+            orf_caller.call_eukaryotic_orfs(genome_path, sample_id=sample_id, hmmfile=hmmfile)
+        elif domain == 'metagenomic':
+            orf_caller.call_metagenome_orfs(genome_path, sample_id=sample_id, hmmfile=hmmfile)
+        else:
+            logger.error(f"Unknown domain '{domain}' for sample {sample_id}. Skipping.")
+
 def summarize_output(output_dir):
     """Summarize the output in a table with specified columns."""
     summary_file = os.path.join(output_dir, 'summary.txt')
@@ -275,35 +310,98 @@ def summarize_output(output_dir):
                                             summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{id_part}\t{partial_part}\t{start_type_part}\t{rbs_motif_part}\t{rbs_spacer_part}\t{gc_cont_part}\t{mode}\n')
 
 def main():
-    parser = argparse.ArgumentParser(description='Call ORFs in genomes using a config file.')
-    parser.add_argument('--config_file', type=str, required=True, help='Tab-delimited file: sample_id<TAB>genome_path<TAB>domain')
+    parser = argparse.ArgumentParser(description='Call ORFs in genomes using a config file or directory search.')
+    
+    # Config file mode arguments
+    parser.add_argument('--config_file', type=str, default=None, help='Tab-delimited file: sample_id<TAB>genome_path<TAB>domain')
+    
+    # Directory mode arguments (modeled after dereplicate_genomes.py)
+    parser.add_argument('-m', '--mag_dir', type=str, default=None, help='Path or glob to genome files (e.g. asm/*/bins).')
+    parser.add_argument('-w', '--wildcard', type=str, default='', help='Pattern to match anywhere in genome file path (can be pipe-separated for multiple patterns).')
+    parser.add_argument('--domain', type=str, choices=['bacterial', 'viral', 'eukaryotic', 'metagenomic'], 
+                        help='Domain type for all genomes when using directory mode.')
+    
+    # Common arguments
     parser.add_argument('--output_directory', type=str, default='magus_output/orf_calling', help='Directory to store ORF output files (default: magus_output/orf_calling).')
     parser.add_argument('--max_workers', type=int, default=1, help='Number of ORF calling jobs to run in parallel.')
-    parser.add_argument('--extension', type=str, default='.fa', help='Extension of genome files (default: .fa).')
+    parser.add_argument('--threads', type=int, default=4, help='Number of threads for tools (default: 4).')
+    parser.add_argument('--extension', type=str, default='fa', help='Extension of genome files (default: fa).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
     parser.add_argument('--eukdb', type=str, default='data/uniref90', help='Path to UniRef90 database for MetaEuk (default: data/uniref90).')
+    
     args = parser.parse_args()
+
+    # Validate arguments
+    if not args.config_file and not args.mag_dir:
+        parser.error("Either --config_file or --mag_dir must be provided.")
+    
+    if args.config_file and args.mag_dir:
+        parser.error("Cannot use both --config_file and --mag_dir. Choose one mode.")
+    
+    if args.mag_dir and not args.domain:
+        parser.error("--domain must be specified when using --mag_dir.")
 
     os.makedirs(args.output_directory, exist_ok=True)
     orf_caller = ORFCaller(args.output_directory, args.extension, args)
 
-    with open(args.config_file, 'r') as f:
-        reader = csv.reader(f, delimiter='\t')
-        for row in reader:
-            if not row or row[0].startswith('#') or len(row) < 3:
-                continue
-            sample_id, genome_path, domain = row[0], row[1], row[2].lower()
-            if domain == 'bacterial':
-                orf_caller.call_bacterial_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
-            elif domain == 'viral':
-                orf_caller.call_viral_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
-            elif domain == 'eukaryotic':
-                orf_caller.call_eukaryotic_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
-            elif domain == 'metagenomic':
-                orf_caller.call_metagenome_orfs(genome_path, sample_id=sample_id, hmmfile=args.hmmfile)
-            else:
-                logger.error(f"Unknown domain '{domain}' for sample {sample_id}. Skipping.")
+    genomes_data = []
+
+    if args.config_file:
+        # Config file mode
+        logger.info(f"Using config file mode: {args.config_file}")
+        with open(args.config_file, 'r') as f:
+            reader = csv.reader(f, delimiter='\t')
+            for row in reader:
+                if not row or row[0].startswith('#') or len(row) < 3:
+                    continue
+                sample_id, genome_path, domain = row[0], row[1], row[2]
+                genomes_data.append((sample_id, genome_path, domain))
+    
+    else:
+        # Directory mode
+        logger.info(f"Using directory mode: {args.mag_dir}")
+        
+        # Handle multiple wildcard patterns separated by pipes
+        wildcards = args.wildcard.split('|') if args.wildcard else ['']
+        
+        all_genome_files = []
+        for wildcard in wildcards:
+            try:
+                genome_files = find_genome_files(args.mag_dir, args.extension, wildcard.strip())
+                all_genome_files.extend(genome_files)
+                logger.info(f"Found {len(genome_files)} files matching wildcard '{wildcard.strip()}'")
+            except RuntimeError as e:
+                if len(wildcards) == 1:  # Only one wildcard, so this is an error
+                    raise e
+                else:  # Multiple wildcards, so this one just didn't match anything
+                    logger.warning(f"No files found for wildcard '{wildcard.strip()}'")
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_genome_files = []
+        for path in all_genome_files:
+            if path not in seen:
+                seen.add(path)
+                unique_genome_files.append(path)
+        
+        if not unique_genome_files:
+            raise RuntimeError("No matching genome files found with any of the provided wildcards.")
+        
+        logger.info(f"Total unique genome files found: {len(unique_genome_files)}")
+        
+        # Create genome data tuples - ALL files get the same domain specified at command line
+        for genome_path in unique_genome_files:
+            # Use the filename (without extension) as sample_id
+            sample_id = genome_path.name
+            # Remove the extension properly
+            extension = f".{args.extension}" if not args.extension.startswith('.') else args.extension
+            if sample_id.endswith(extension):
+                sample_id = sample_id[:-len(extension)]
+            genomes_data.append((sample_id, str(genome_path), args.domain))
+
+    # Process all genomes
+    process_genomes(orf_caller, genomes_data, args.hmmfile)
 
     # Remove the annot directory after the script is complete
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
