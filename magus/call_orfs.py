@@ -79,6 +79,12 @@ class ORFCaller:
 
         # HMM annotation (standalone)
         self.run_hmm_annotation(manicure_file, manicure_dir, FN, hmmfile)
+
+        # Remove MetaEuk temporary directory named after the sample within annot_dir
+        sample_tmp_dir = os.path.join(annot_dir, FN)
+        if os.path.isdir(sample_tmp_dir):
+            import shutil
+            shutil.rmtree(sample_tmp_dir, ignore_errors=True)
         return manicure_file
 
     def call_viral_orfs(self, genome_file, sample_id=None, hmmfile=None):

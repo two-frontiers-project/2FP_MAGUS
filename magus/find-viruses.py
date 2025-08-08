@@ -252,6 +252,14 @@ if __name__ == "__main__":
     parser.add_argument("--quality", type=str, default="CHM", help="Viral contig levels to include (C [Complete], H [High], M [Medium], L [Low])")
     parser.add_argument("--tmp_dir", type=str, default="tmp/run_checkv", help="Temporary directory for storing intermediate files")
     parser.add_argument("--checkv_db", type=str, required=True, help="Path to the CheckV database directory")
+    parser.add_argument(
+        "--restart",
+        choices=["cleanup"],
+        help=(
+            "Restart a step using existing file structures. Only 'cleanup' is supported, "
+            "which resumes immediately after CheckV has run by processing results and dereplicating."
+        ),
+    )
     
     args = parser.parse_args()
 
@@ -271,4 +279,20 @@ if __name__ == "__main__":
         tmp_dir=args.tmp_dir,
         config_file=config_file
     )
-    runner.run()
+    # If restarting from cleanup, validate CheckV outputs exist and resume post-CheckV steps
+    if args.restart == "cleanup":
+        checkv_output_dir = os.path.join(runner.virus_dir, "checkv_output")
+        quality_summary = os.path.join(checkv_output_dir, "quality_summary.tsv")
+        viruses_fna = os.path.join(checkv_output_dir, "viruses.fna")
+
+        if not os.path.exists(quality_summary) or not os.path.exists(viruses_fna):
+            print(
+                "Error: CheckV outputs not found. Expected files: "
+                f"{quality_summary} and {viruses_fna}. Ensure CheckV has completed before restarting with --restart cleanup."
+            )
+            raise SystemExit(1)
+
+        binids = runner.process_results()
+        runner.dereplicate_viruses(binids)
+    else:
+        runner.run()
