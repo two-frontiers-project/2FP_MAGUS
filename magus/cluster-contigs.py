@@ -91,17 +91,17 @@ class ContigClustering:
 		print(f"Running lingenome to generate combined contigs file: {self.combined_output}")
 		subprocess.run(cmd, shell=True)
 
-        def run_akmer102(self):
-                # Run akmer102 to generate the distance matrix
-                distance_matrix = f"{self.combined_output.replace('.fasta', '')}.dm"
-                cmd_akmer = f"OMP_NUM_THREADS={self.threads} akmer102 {self.combined_output} {distance_matrix} 16 ANI CHANCE GC LOCAL RC"
-                print(f"Running akmer102 to generate distance matrix: {distance_matrix}")
-                subprocess.run(cmd_akmer, shell=True)
-                return distance_matrix
+	def run_akmer102(self):
+		# Run akmer102 to generate the distance matrix
+		distance_matrix = f"{self.combined_output.replace('.fasta', '')}.dm"
+		cmd_akmer = f"OMP_NUM_THREADS={self.threads} akmer102 {self.combined_output} {distance_matrix} 16 ANI CHANCE GC LOCAL RC"
+		print(f"Running akmer102 to generate distance matrix: {distance_matrix}")
+		subprocess.run(cmd_akmer, shell=True)
+		return distance_matrix
 
 	def run_clustering(self):
-                # Run spamw2 for clustering and bestmag for selecting best bins
-                distance_matrix = self.run_akmer102()  # Generate the distance matrix
+		# Run spamw2 for clustering and bestmag for selecting best bins
+		distance_matrix = self.run_akmer102()  # Generate the distance matrix
 		cluster_output = f"{self.tmp_dir}/clus/S"
 		coasm_output = f"{self.tmp_dir}/coasm.reps"
 		
