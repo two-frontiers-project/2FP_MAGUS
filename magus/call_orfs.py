@@ -463,7 +463,7 @@ def main():
     parser = argparse.ArgumentParser(description='Call ORFs in genomes using a config file or directory search.')
     
     # Config file mode arguments
-    parser.add_argument('--config_file', type=str, default=None, help='Tab-delimited file: sample_id<TAB>genome_path<TAB>domain')
+    parser.add_argument('--config', type=str, default=None, help='Tab-delimited file: sample_id<TAB>genome_path<TAB>domain')
     
     # Directory mode arguments (modeled after dereplicate_genomes.py)
     parser.add_argument('-m', '--mag_dir', type=str, default=None, help='Path or glob to genome files (e.g. asm/*/bins).')
@@ -488,11 +488,11 @@ def main():
     args = parser.parse_args()
 
     # Validate arguments
-    if not args.config_file and not args.mag_dir:
-        parser.error("Either --config_file or --mag_dir must be provided.")
+    if not args.config and not args.mag_dir:
+        parser.error("Either --config or --mag_dir must be provided.")
     
-    if args.config_file and args.mag_dir:
-        parser.error("Cannot use both --config_file and --mag_dir. Choose one mode.")
+    if args.config and args.mag_dir:
+        parser.error("Cannot use both --config and --mag_dir. Choose one mode.")
     
     if args.mag_dir and not args.domain:
         parser.error("--domain must be specified when using --mag_dir.")
@@ -519,10 +519,10 @@ def main():
 
     genomes_data = []
 
-    if args.config_file:
+    if args.config:
         # Config file mode
-        logger.info(f"Using config file mode: {args.config_file}")
-        with open(args.config_file, 'r') as f:
+        logger.info(f"Using config file mode: {args.config}")
+        with open(args.config, 'r') as f:
             reader = csv.reader(f, delimiter='\t')
             for row in reader:
                 if not row or row[0].startswith('#') or len(row) < 3:
