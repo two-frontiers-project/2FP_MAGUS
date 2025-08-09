@@ -318,32 +318,37 @@ def summarize_annotations(output_dir):
         # Special handling for eukaryotes: concatenate MetaEuk headers maps with a sample column
         if subdir == 'eukaryotes':
             summary_file = os.path.join(output_dir, f'{subdir}_final_summary.tsv')
+            header_written = False
             with open(summary_file, 'w') as summary:
                 for file in os.listdir(annot_dir):
                     if file.endswith('.headersMap.tsv'):
                         sample_id = file.replace('.headersMap.tsv', '')
                         file_path = os.path.join(annot_dir, file)
                         with open(file_path, 'r') as infile:
-                            for line in infile:
+                            for i, line in enumerate(infile):
                                 line = line.rstrip('\n')
                                 if not line.strip():
                                     continue
-                                summary.write(f'{sample_id}\t{line}\n')
+                                
+                                # Write header only once (first line of first file)
+                                if i == 0 and not header_written:
+                                    summary.write(f'sample_id\t{line}\n')
+                                    header_written = True
+                                elif i > 0 or header_written:  # Skip header lines from subsequent files
+                                    summary.write(f'{sample_id}\t{line}\n')
             logger.info(f"Created {subdir} calls summary: {summary_file}")
-            # Skip the generic manicure/summarization logic for eukaryotes
-            continue
             
-        for file in os.listdir(annot_dir):
-            if file.endswith('.faa') or file.endswith('.fas'):
-                sample_id = file.replace('.faa', '').replace('.fas', '')
-                faa_file = os.path.join(annot_dir, file)
-                manicure_file = os.path.join(manicure_dir, f"{sample_id}.faa")
-                
-                # Manicure the protein file
-                with open(faa_file, 'r') as infile, open(manicure_file, 'w') as outfile:
-                    for line in infile:
-                        if line.startswith('>'):
-                            if subdir == 'eukaryotes':
+            # Also create manicured FASTA files for eukaryotes
+            for file in os.listdir(annot_dir):
+                if file.endswith('.fas'):
+                    sample_id = file.replace('.fas', '')
+                    faa_file = os.path.join(annot_dir, file)
+                    manicure_file = os.path.join(manicure_dir, f"{sample_id}.faa")
+                    
+                    # Manicure the protein file
+                    with open(faa_file, 'r') as infile, open(manicure_file, 'w') as outfile:
+                        for line in infile:
+                            if line.startswith('>'):
                                 # Handle MetaEuk header format: >UniRef90_ID|sample|strand|score|evalue|num_exons|start|end|exon_info
                                 parts = line.strip().split('|')
                                 if len(parts) >= 7:
@@ -358,8 +363,46 @@ def summarize_annotations(output_dir):
                                 else:
                                     outfile.write(line)
                             else:
-                                # Handle Prodigal header format
-                                outfile.write(line.replace('>',f'>{sample_id}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                                outfile.write(line)
+                    
+                    # Also manicure the nucleotide file if it exists
+                    ffn_file = faa_file.replace('.fas', '.codon.fas')
+                    if os.path.exists(ffn_file):
+                        manicure_ffn = os.path.join(manicure_dir, f"{sample_id}.ffn")
+                        with open(ffn_file, 'r') as infile, open(manicure_ffn, 'w') as outfile:
+                            for line in infile:
+                                if line.startswith('>'):
+                                    # Handle MetaEuk header format for nucleotide sequences
+                                    parts = line.strip().split('|')
+                                    if len(parts) >= 7:
+                                        uniref_id = parts[0].replace('>', '')
+                                        contig_id = parts[1]
+                                        strand = parts[2]
+                                        start = parts[6]
+                                        end = parts[7]
+                                        # Create simplified header format for MetaEuk
+                                        new_header = f">{sample_id}-----{contig_id}-----{start}+{end}+{strand}+ID={uniref_id};partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500\n"
+                                        outfile.write(new_header)
+                                    else:
+                                        outfile.write(line)
+                                else:
+                                    outfile.write(line)
+            
+            # Skip the generic manicure/summarization logic for eukaryotes
+            continue
+            
+        for file in os.listdir(annot_dir):
+            if file.endswith('.faa') or file.endswith('.fas'):
+                sample_id = file.replace('.faa', '').replace('.fas', '')
+                faa_file = os.path.join(annot_dir, file)
+                manicure_file = os.path.join(manicure_dir, f"{sample_id}.faa")
+                
+                # Manicure the protein file
+                with open(faa_file, 'r') as infile, open(manicure_file, 'w') as outfile:
+                    for line in infile:
+                        if line.startswith('>'):
+                            # Handle Prodigal header format
+                            outfile.write(line.replace('>',f'>{sample_id}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
                         else:
                             outfile.write(line)
                 
@@ -381,22 +424,7 @@ def summarize_annotations(output_dir):
                         with open(ffn_file, 'r') as infile, open(manicure_ffn, 'w') as outfile:
                             for line in infile:
                                 if line.startswith('>'):
-                                    if subdir == 'eukaryotes':
-                                        # Handle MetaEuk header format for nucleotide sequences
-                                        parts = line.strip().split('|')
-                                        if len(parts) >= 7:
-                                            uniref_id = parts[0].replace('>', '')
-                                            contig_id = parts[1]
-                                            strand = parts[2]
-                                            start = parts[6]
-                                            end = parts[7]
-                                            # Create simplified header format for MetaEuk
-                                            new_header = f">{sample_id}-----{contig_id}-----{start}+{end}+{strand}+ID={uniref_id};partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500\n"
-                                            outfile.write(new_header)
-                                        else:
-                                            outfile.write(line)
-                                    else:
-                                        outfile.write(line.replace('>',f'>{sample_id}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                                    outfile.write(line.replace('>',f'>{sample_id}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
                                 else:
                                     outfile.write(line)
         
