@@ -9,7 +9,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import csv
 import glob
-import pandas as pd
+# pandas is not required here
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,7 +25,9 @@ class ORFCaller:
     def call_bacterial_orfs(self, genome_file, sample_id=None):
         """Call ORFs in bacterial genomes using prodigal."""
         annot_dir = os.path.join(self.output_dir, 'bacteria', 'annot')
+        manicure_dir = os.path.join(self.output_dir, 'bacteria', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
+        os.makedirs(manicure_dir, exist_ok=True)
 
         FN = sample_id if sample_id else os.path.basename(genome_file).replace(self.extension, '')
         
@@ -47,6 +49,7 @@ class ORFCaller:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
 
             # Manicure the output files
+            manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
             with open(os.path.join(annot_dir, f"{FN}.faa"), 'r') as infile, open(manicure_file, 'w') as outfile:
                 for line in infile:
                     if line.startswith('>'):
@@ -67,7 +70,8 @@ class ORFCaller:
             os.remove(os.path.join(annot_dir, f"{FN}.faa"))
 
         # HMM annotation (standalone)
-        self.run_hmm_annotation(manicure_file, manicure_dir, FN, hmmfile)
+        manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
+        self.run_hmm_annotation(manicure_file, manicure_dir, FN, self.args.hmmfile)
 
         # Remove MetaEuk temporary directory named after the sample within annot_dir
         sample_tmp_dir = os.path.join(annot_dir, FN)
@@ -310,6 +314,24 @@ def summarize_annotations(output_dir):
         
         if not os.path.exists(annot_dir):
             continue
+        
+        # Special handling for eukaryotes: concatenate MetaEuk headers maps with a sample column
+        if subdir == 'eukaryotes':
+            summary_file = os.path.join(output_dir, f'{subdir}_final_summary.tsv')
+            with open(summary_file, 'w') as summary:
+                for file in os.listdir(annot_dir):
+                    if file.endswith('.headersMap.tsv'):
+                        sample_id = file.replace('.headersMap.tsv', '')
+                        file_path = os.path.join(annot_dir, file)
+                        with open(file_path, 'r') as infile:
+                            for line in infile:
+                                line = line.rstrip('\n')
+                                if not line.strip():
+                                    continue
+                                summary.write(f'{sample_id}\t{line}\n')
+            logger.info(f"Created {subdir} calls summary: {summary_file}")
+            # Skip the generic manicure/summarization logic for eukaryotes
+            continue
             
         for file in os.listdir(annot_dir):
             if file.endswith('.faa') or file.endswith('.fas'):
@@ -378,7 +400,7 @@ def summarize_annotations(output_dir):
                                 else:
                                     outfile.write(line)
         
-        # Create final summary for this domain
+        # Create final summary for this domain (non-eukaryotes)
         summary_file = os.path.join(output_dir, f'{subdir}_final_summary.tsv')
         with open(summary_file, 'w') as summary:
             summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\tmode\n')
