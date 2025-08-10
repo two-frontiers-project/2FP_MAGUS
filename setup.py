@@ -8,6 +8,7 @@ setup(
     entry_points={
         'console_scripts': [
             'magus=magus.magus_main:main',
+            'magus-call-orfs=magus.call_orfs:main',
         ],
     },
     data_files=[

@@ -65,13 +65,12 @@ class ORFCaller:
                     else:
                         outfile.write(line)
 
-            # Clean up the annot files
-            os.remove(os.path.join(annot_dir, f"{FN}.ffn"))
-            os.remove(os.path.join(annot_dir, f"{FN}.faa"))
+            # Keep the annot files for the comprehensive summary
+            # (Files are kept in annot directory for summary generation)
 
-        # HMM annotation (standalone)
+        # HMM annotation (put results in annot directory for summary)
         manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
-        self.run_hmm_annotation(manicure_file, manicure_dir, FN, self.args.hmmfile)
+        self.run_hmm_annotation(manicure_file, annot_dir, FN, self.args.hmmfile)
 
         # Remove MetaEuk temporary directory named after the sample within annot_dir
         sample_tmp_dir = os.path.join(annot_dir, FN)
@@ -104,6 +103,10 @@ class ORFCaller:
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
         
+        # HMM annotation (put results in annot directory for summary)
+        if self.args.hmmfile:
+            self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
+        
         return faa_file, ffn_file, gff_file
 
     def call_eukaryotic_orfs(self, genome_file, sample_id=None):
@@ -127,6 +130,10 @@ class ORFCaller:
             logger.info(f"Calling eukaryotic ORFs for {genome_file} using MetaEuk with {self.args.threads} threads")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
+        
+        # HMM annotation (put results in annot directory for summary)
+        if self.args.hmmfile:
+            self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
         
         return faa_file, ffn_file, None  # MetaEuk doesn't produce GFF
 
@@ -153,6 +160,10 @@ class ORFCaller:
             logger.info(f"Calling metagenome ORFs for {genome_file} using prodigal (metagenome mode)")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
+        
+        # HMM annotation (put results in annot directory for summary)
+        if self.args.hmmfile:
+            self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
         
         return faa_file, ffn_file, gff_file
 
@@ -233,77 +244,134 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
         for genome_data in genomes_data:
             process_single_genome(genome_data)
 
-def summarize_calls(output_dir):
-    """Summarize ORF calls into a single TSV per domain type."""
+def create_comprehensive_summary(output_dir, hmmfile):
+    """Create ONE comprehensive summary file per domain with ALL information."""
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
         annot_dir = os.path.join(output_dir, subdir, 'annot')
         if not os.path.exists(annot_dir):
             continue
             
-        summary_file = os.path.join(output_dir, f'{subdir}_calls_summary.tsv')
-        all_calls = []
+        summary_file = os.path.join(output_dir, f'{subdir}_orf_summary.tsv')
+        logger.info(f"Creating comprehensive summary for {subdir}: {summary_file}")
         
-        for file in os.listdir(annot_dir):
-            if file.endswith('.faa') or file.endswith('.fas'):
-                sample_id = file.replace('.faa', '').replace('.fas', '')
-                faa_file = os.path.join(annot_dir, file)
-                
-                with open(faa_file, 'r') as infile:
-                    for line in infile:
-                        if line.startswith('>'):
-                            # Parse header and extract information
-                            header = line.strip()
-                            # Add sample_id as first column
-                            call_info = [sample_id, header]
-                            all_calls.append(call_info)
-        
-        # Write summary file
         with open(summary_file, 'w') as summary:
-            summary.write('sample_id\torf_header\n')
-            for call in all_calls:
-                summary.write(f'{call[0]}\t{call[1]}\n')
+            if subdir == 'eukaryotes':
+                # Eukaryotes: use headersMap.tsv files
+                header_written = False
+                for file in os.listdir(annot_dir):
+                    if file.endswith('.headersMap.tsv'):
+                        sample_id = file.replace('.headersMap.tsv', '')
+                        file_path = os.path.join(annot_dir, file)
+                        
+                        with open(file_path, 'r') as infile:
+                            for i, line in enumerate(infile):
+                                line = line.rstrip('\n')
+                                if not line.strip():
+                                    continue
+                                
+                                # Write header only once
+                                if i == 0 and not header_written:
+                                    summary.write(f'sample_id\t{line}\n')
+                                    header_written = True
+                                elif i > 0 or header_written:
+                                    summary.write(f'{sample_id}\t{line}\n')
+            else:
+                # Bacteria/Viruses/Metagenomes: parse Prodigal output
+                summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
+                
+                for file in os.listdir(annot_dir):
+                    if file.endswith('.faa'):
+                        sample_id = file.replace('.faa', '')
+                        faa_file = os.path.join(annot_dir, file)
+                        
+                        with open(faa_file, 'r') as infile:
+                            for line in infile:
+                                if line.startswith('>'):
+                                    # Parse Prodigal header: >contig_1 # 1 # 279 # 1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500
+                                    parts = line.strip().split(' # ')
+                                    if len(parts) >= 4:
+                                        contig_id = parts[0].replace('>', '')
+                                        start = parts[1]
+                                        end = parts[2]
+                                        strand = parts[3]
+                                        
+                                        # Parse the metadata part
+                                        metadata = parts[4] if len(parts) > 4 else ''
+                                        partial = '00'
+                                        start_type = 'ATG'
+                                        rbs_motif = 'None'
+                                        rbs_spacer = 'None'
+                                        gc_cont = '0.500'
+                                        
+                                        if 'partial=' in metadata:
+                                            partial = metadata.split('partial=')[1].split(';')[0]
+                                        if 'start_type=' in metadata:
+                                            start_type = metadata.split('start_type=')[1].split(';')[0]
+                                        if 'rbs_motif=' in metadata:
+                                            rbs_motif = metadata.split('rbs_motif=')[1].split(';')[0]
+                                        if 'rbs_spacer=' in metadata:
+                                            rbs_spacer = metadata.split('rbs_spacer=')[1].split(';')[0]
+                                        if 'gc_cont=' in metadata:
+                                            gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
+                                        
+                                        summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
         
-        logger.info(f"Created {subdir} calls summary: {summary_file}")
-
-def run_annotations(output_dir, hmmfile, max_workers=1):
-    """Run HMM annotations on all protein files."""
-    if not hmmfile:
-        logger.warning("No HMM file provided. Skipping annotation stage.")
-        return
-    
-    # Collect all files that need annotation
-    annotation_tasks = []
-    for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
-        annot_dir = os.path.join(output_dir, subdir, 'annot')
-        if not os.path.exists(annot_dir):
-            continue
+        # Now add HMM results if available
+        if hmmfile:
+            logger.info(f"Adding HMM results to {subdir} summary")
+            hmm_results = {}
             
-        for file in os.listdir(annot_dir):
-            if file.endswith('.faa') or file.endswith('.fas'):
-                sample_id = file.replace('.faa', '').replace('.fas', '')
-                faa_file = os.path.join(annot_dir, file)
-                annotation_tasks.append((faa_file, annot_dir, sample_id, hmmfile))
-    
-    def run_single_annotation(task):
-        faa_file, annot_dir, sample_id, hmmfile = task
-        try:
-            orf_caller = ORFCaller(output_dir, 'fa', type('Args', (), {'threads': 4, 'force': False})())
-            orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, hmmfile)
-            return True
-        except Exception as e:
-            logger.error(f"Error running HMM annotation for {sample_id}: {e}")
-            return False
-    
-    if max_workers > 1 and len(annotation_tasks) > 1:
-        logger.info(f"Running HMM annotations on {len(annotation_tasks)} files with {max_workers} parallel workers")
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            results = list(executor.map(run_single_annotation, annotation_tasks))
-        successful = sum(results)
-        logger.info(f"Successfully annotated {successful}/{len(annotation_tasks)} files")
-    else:
-        logger.info(f"Running HMM annotations on {len(annotation_tasks)} files sequentially")
-        for task in annotation_tasks:
-            run_single_annotation(task)
+            # Collect HMM results from all samples
+            for file in os.listdir(annot_dir):
+                if file.endswith('.hmm.tsv'):
+                    sample_id = file.replace('.hmm.tsv', '')
+                    hmm_file = os.path.join(annot_dir, file)
+                    
+                    with open(hmm_file, 'r') as infile:
+                        for line in infile:
+                            if line.startswith('#'):
+                                continue
+                            parts = line.strip().split()
+                            if len(parts) >= 5:
+                                target_name = parts[0]
+                                query_name = parts[2]
+                                evalue = parts[4]
+                                score = parts[5]
+                                
+                                if query_name not in hmm_results:
+                                    hmm_results[query_name] = []
+                                hmm_results[query_name].append(f"{target_name}:{evalue}:{score}")
+            
+            # Add HMM column to summary
+            if hmm_results:
+                # Read existing summary and add HMM column
+                temp_summary = summary_file + '.tmp'
+                with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
+                    header = infile.readline().strip()
+                    outfile.write(f'{header}\thmm_hits\n')
+                    
+                    for line in infile:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        # Extract query name from line to match with HMM results
+                        parts = line.split('\t')
+                        if subdir == 'eukaryotes':
+                            # For eukaryotes, need to extract query name from headersMap format
+                            # This depends on the actual format of your headersMap.tsv
+                            query_name = parts[1] if len(parts) > 1 else 'unknown'
+                        else:
+                            # For bacteria/viruses, query is contig_id
+                            query_name = parts[1] if len(parts) > 1 else 'unknown'
+                        
+                        hmm_hits = ';'.join(hmm_results.get(query_name, []))
+                        outfile.write(f'{line}\t{hmm_hits}\n')
+                
+                # Replace original with enhanced version
+                os.replace(temp_summary, summary_file)
+        
+        logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
 
 def summarize_annotations(output_dir):
     """Create manicured files and final summary with annotations."""
@@ -482,8 +550,8 @@ def main():
     parser.add_argument('--cleanup', action='store_true', help='Clean up annotation directories after processing.')
     
     # Restart functionality
-    parser.add_argument('--restart', type=str, choices=['summarize-calls', 'annotation', 'summarize-annotations'], 
-                        help='Restart from specific stage: summarize-calls, annotation, or summarize-annotations')
+    parser.add_argument('--restart', type=str, choices=['create-summary'], 
+                        help='Restart from specific stage: create-summary')
     
     args = parser.parse_args()
 
@@ -501,20 +569,10 @@ def main():
     orf_caller = ORFCaller(args.output_directory, args.extension, args)
 
     # Handle restart modes
-    if args.restart == 'summarize-calls':
-        logger.info("Running in summarize-calls mode - generating call summaries")
-        summarize_calls(args.output_directory)
-        logger.info("Call summarization completed successfully.")
-        return
-    elif args.restart == 'annotation':
-        logger.info("Running in annotation mode - running HMM annotations")
-        run_annotations(args.output_directory, args.hmmfile, args.max_workers)
-        logger.info("Annotation completed successfully.")
-        return
-    elif args.restart == 'summarize-annotations':
-        logger.info("Running in summarize-annotations mode - creating manicured files and final summaries")
-        summarize_annotations(args.output_directory)
-        logger.info("Annotation summarization completed successfully.")
+    if args.restart == 'create-summary':
+        logger.info("Running in create-summary mode - generating comprehensive summaries")
+        create_comprehensive_summary(args.output_directory, args.hmmfile)
+        logger.info("Comprehensive summary creation completed successfully.")
         return
 
     genomes_data = []
@@ -576,17 +634,9 @@ def main():
     logger.info("Stage 1: Calling ORFs")
     process_genomes(orf_caller, genomes_data, args.max_workers)
 
-    # Stage 2: Summarize calls
-    logger.info("Stage 2: Summarizing calls")
-    summarize_calls(args.output_directory)
-
-    # Stage 3: Run annotations (if HMM file provided)
-    logger.info("Stage 3: Running annotations")
-    run_annotations(args.output_directory, args.hmmfile, args.max_workers)
-
-    # Stage 4: Summarize annotations
-    logger.info("Stage 4: Summarizing annotations")
-    summarize_annotations(args.output_directory)
+    # Stage 2: Create comprehensive summaries with HMM results
+    logger.info("Stage 2: Creating comprehensive summaries")
+    create_comprehensive_summary(args.output_directory, args.hmmfile)
 
     # Clean up annot directories
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
