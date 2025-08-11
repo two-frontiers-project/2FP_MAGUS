@@ -9,6 +9,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import csv
 import glob
+import re
 # pandas is not required here
 
 # Configure logging
@@ -48,25 +49,33 @@ class ORFCaller:
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
 
-            # Manicure the output files
-            manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
-            with open(os.path.join(annot_dir, f"{FN}.faa"), 'r') as infile, open(manicure_file, 'w') as outfile:
-                for line in infile:
-                    if line.startswith('>'):
-                        outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
-                    else:
-                        outfile.write(line)
+        # Ensure manicured files exist (even if ORF calling was skipped previously)
+        source_faa = os.path.join(annot_dir, f"{FN}.faa")
+        source_ffn = os.path.join(annot_dir, f"{FN}.ffn")
+        manicure_faa = os.path.join(manicure_dir, f"{FN}.faa")
+        manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
 
-            manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
-            with open(os.path.join(annot_dir, f"{FN}.ffn"), 'r') as infile, open(manicure_ffn, 'w') as outfile:
-                for line in infile:
-                    if line.startswith('>'):
-                        outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
-                    else:
-                        outfile.write(line)
+        if os.path.exists(source_faa) and os.path.getsize(source_faa) > 0:
+            if not os.path.exists(manicure_faa) or self.args.force:
+                with open(source_faa, 'r') as infile, open(manicure_faa, 'w') as outfile:
+                    for line in infile:
+                        if line.startswith('>'):
+                            outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                        else:
+                            outfile.write(line)
+        else:
+            logger.warning(f"Expected protein file missing for manicure: {source_faa}")
 
-            # Keep the annot files for the comprehensive summary
-            # (Files are kept in annot directory for summary generation)
+        if os.path.exists(source_ffn) and os.path.getsize(source_ffn) > 0:
+            if not os.path.exists(manicure_ffn) or self.args.force:
+                with open(source_ffn, 'r') as infile, open(manicure_ffn, 'w') as outfile:
+                    for line in infile:
+                        if line.startswith('>'):
+                            outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                        else:
+                            outfile.write(line)
+        else:
+            logger.warning(f"Expected nucleotide file missing for manicure: {source_ffn}")
 
         # HMM annotation (put results in annot directory for summary)
         manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
@@ -277,7 +286,8 @@ def create_comprehensive_summary(output_dir, hmmfile):
                                     summary.write(f'{sample_id}\t{line}\n')
             else:
                 # Bacteria/Viruses/Metagenomes: parse Prodigal output
-                summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
+                # Include ID in the summary so we can join HMM hits reliably
+                summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
                 
                 for file in os.listdir(annot_dir):
                     if file.endswith('.faa'):
@@ -297,12 +307,15 @@ def create_comprehensive_summary(output_dir, hmmfile):
                                         
                                         # Parse the metadata part
                                         metadata = parts[4] if len(parts) > 4 else ''
+                                        gene_id = 'NA'
                                         partial = '00'
                                         start_type = 'ATG'
                                         rbs_motif = 'None'
                                         rbs_spacer = 'None'
                                         gc_cont = '0.500'
                                         
+                                        if 'ID=' in metadata:
+                                            gene_id = metadata.split('ID=')[1].split(';')[0]
                                         if 'partial=' in metadata:
                                             partial = metadata.split('partial=')[1].split(';')[0]
                                         if 'start_type=' in metadata:
@@ -314,61 +327,167 @@ def create_comprehensive_summary(output_dir, hmmfile):
                                         if 'gc_cont=' in metadata:
                                             gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
                                         
-                                        summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
+                                        summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{gene_id}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
         
         # Now add HMM results if available
         if hmmfile:
-            logger.info(f"Adding HMM results to {subdir} summary")
-            hmm_results = {}
-            
-            # Collect HMM results from all samples
+            logger.info(f"Adding full HMM results to {subdir} summary")
+
+            # Helper: parse a HMMER tblout data line into a dict of all columns
+            def parse_hmm_tblout_line(data_line: str) -> dict:
+                # According to HMMER, first 18 tokens are fixed-width fields; the rest is description
+                tokens = data_line.rstrip('\n').split()
+                if len(tokens) < 18:
+                    return {}
+                # Some HMMER versions include accession columns (target acc, query acc) right after names
+                # We normalize by checking token count
+                # Layout with accessions: target, tacc, query, qacc, fs_e, fs_s, fs_b, bd_e, bd_s, bd_b, exp, reg, clu, ov, env, dom, rep, inc, desc...
+                # Layout without accessions: target, query, fs_e, fs_s, fs_b, bd_e, bd_s, bd_b, exp, reg, clu, ov, env, dom, rep, inc, desc...
+                has_accessions = False
+                # Heuristic: if tokens[1] != tokens[3] and tokens[1] contains characters like '.' or letters but not numeric-only lengths
+                if len(tokens) >= 20:  # generous threshold; tblout with accessions typically has >= 20 tokens before desc
+                    has_accessions = True
+                idx = 0
+                result = {}
+                result['target_name'] = tokens[idx]; idx += 1
+                if has_accessions:
+                    result['target_accession'] = tokens[idx]; idx += 1
+                result['query_name'] = tokens[idx]; idx += 1
+                if has_accessions:
+                    result['query_accession'] = tokens[idx]; idx += 1
+                # full sequence stats
+                result['full_evalue'] = tokens[idx]; idx += 1
+                result['full_score'] = tokens[idx]; idx += 1
+                result['full_bias'] = tokens[idx]; idx += 1
+                # best 1 domain stats
+                result['dom_evalue'] = tokens[idx]; idx += 1
+                result['dom_score'] = tokens[idx]; idx += 1
+                result['dom_bias'] = tokens[idx]; idx += 1
+                # domain number estimation
+                result['exp'] = tokens[idx]; idx += 1
+                result['reg'] = tokens[idx]; idx += 1
+                result['clu'] = tokens[idx]; idx += 1
+                result['ov'] = tokens[idx]; idx += 1
+                result['env'] = tokens[idx]; idx += 1
+                result['dom'] = tokens[idx]; idx += 1
+                result['rep'] = tokens[idx]; idx += 1
+                result['inc'] = tokens[idx]; idx += 1
+                # Remaining tokens (if any) form the description
+                desc = ' '.join(tokens[idx:]) if idx < len(tokens) else ''
+                result['description'] = desc
+                # Try to extract ID=... from description for robust joining
+                m = re.search(r'ID=([^;\s]+)', desc)
+                if m:
+                    result['gene_id'] = m.group(1)
+                else:
+                    # fall back to try extracting from target_name if it contains metadata
+                    m2 = re.search(r'ID=([^;\s]+)', result['target_name'])
+                    result['gene_id'] = m2.group(1) if m2 else None
+                return result
+
+            # Collect HMM results across samples, keyed by gene ID when available, else by target name
+            hmm_by_key = {}
             for file in os.listdir(annot_dir):
                 if file.endswith('.hmm.tsv'):
-                    sample_id = file.replace('.hmm.tsv', '')
-                    hmm_file = os.path.join(annot_dir, file)
-                    
-                    with open(hmm_file, 'r') as infile:
-                        for line in infile:
-                            if line.startswith('#'):
+                    hmm_path = os.path.join(annot_dir, file)
+                    with open(hmm_path, 'r') as fin:
+                        for raw in fin:
+                            if not raw or raw.startswith('#'):
                                 continue
-                            parts = line.strip().split()
-                            if len(parts) >= 5:
-                                target_name = parts[0]
-                                query_name = parts[2]
-                                evalue = parts[4]
-                                score = parts[5]
-                                
-                                if query_name not in hmm_results:
-                                    hmm_results[query_name] = []
-                                hmm_results[query_name].append(f"{target_name}:{evalue}:{score}")
-            
-            # Add HMM column to summary
-            if hmm_results:
-                # Read existing summary and add HMM column
+                            rec = parse_hmm_tblout_line(raw)
+                            if not rec:
+                                continue
+                            key = rec.get('gene_id') or rec['target_name']
+                            if key not in hmm_by_key:
+                                hmm_by_key[key] = []
+                            hmm_by_key[key].append(rec)
+
+            if hmm_by_key:
+                # Read existing summary and add all HMM columns
                 temp_summary = summary_file + '.tmp'
                 with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
-                    header = infile.readline().strip()
-                    outfile.write(f'{header}\thmm_hits\n')
-                    
-                    for line in infile:
-                        line = line.strip()
-                        if not line:
+                    header = infile.readline().rstrip('\n')
+                    hmm_cols = [
+                        'hmm_target_name',
+                        'hmm_target_accession',
+                        'hmm_query_name',
+                        'hmm_query_accession',
+                        'hmm_full_evalue', 'hmm_full_score', 'hmm_full_bias',
+                        'hmm_dom_evalue', 'hmm_dom_score', 'hmm_dom_bias',
+                        'hmm_exp', 'hmm_reg', 'hmm_clu', 'hmm_ov', 'hmm_env', 'hmm_dom', 'hmm_rep', 'hmm_inc',
+                        'hmm_description'
+                    ]
+                    outfile.write(f"{header}\t" + "\t".join(hmm_cols) + "\n")
+
+                    # Determine how to fetch the join key for each row
+                    # For non-euks we printed ID at column index 5
+                    # For euks we don't know; we try to detect 'ID' column by name, else fall back to contig-like column
+                    header_fields = header.split('\t')
+                    try:
+                        id_index = header_fields.index('ID')
+                    except ValueError:
+                        id_index = None
+                    # Common fallbacks
+                    contig_index = None
+                    for cand in ['contig_id', 'contig', 'sequence', 'seq_id']:
+                        if cand in header_fields:
+                            contig_index = header_fields.index(cand)
+                            break
+
+                    for row in infile:
+                        row = row.rstrip('\n')
+                        if not row:
                             continue
-                        
-                        # Extract query name from line to match with HMM results
-                        parts = line.split('\t')
-                        if subdir == 'eukaryotes':
-                            # For eukaryotes, need to extract query name from headersMap format
-                            # This depends on the actual format of your headersMap.tsv
-                            query_name = parts[1] if len(parts) > 1 else 'unknown'
+                        fields = row.split('\t')
+                        join_key = None
+                        if id_index is not None and id_index < len(fields):
+                            join_key = fields[id_index]
+                        elif contig_index is not None and contig_index < len(fields):
+                            join_key = fields[contig_index]
                         else:
-                            # For bacteria/viruses, query is contig_id
-                            query_name = parts[1] if len(parts) > 1 else 'unknown'
-                        
-                        hmm_hits = ';'.join(hmm_results.get(query_name, []))
-                        outfile.write(f'{line}\t{hmm_hits}\n')
-                
-                # Replace original with enhanced version
+                            # As a last resort, use the second column
+                            join_key = fields[1] if len(fields) > 1 else fields[0]
+
+                        hits = hmm_by_key.get(join_key, [])
+                        # Aggregate each column across hits using ';' join
+                        def agg(col):
+                            vals = []
+                            for h in hits:
+                                v = h.get(col)
+                                if v is None:
+                                    # ensure positions exist for accessions when missing
+                                    if col in ['hmm_target_accession', 'hmm_query_accession']:
+                                        vals.append('')
+                                    else:
+                                        continue
+                                else:
+                                    vals.append(str(v))
+                            return ';'.join(vals)
+
+                        # Prepare output columns in the same order as hmm_cols
+                        col_map = {
+                            'hmm_target_name': agg('target_name'),
+                            'hmm_target_accession': agg('target_accession'),
+                            'hmm_query_name': agg('query_name'),
+                            'hmm_query_accession': agg('query_accession'),
+                            'hmm_full_evalue': agg('full_evalue'),
+                            'hmm_full_score': agg('full_score'),
+                            'hmm_full_bias': agg('full_bias'),
+                            'hmm_dom_evalue': agg('dom_evalue'),
+                            'hmm_dom_score': agg('dom_score'),
+                            'hmm_dom_bias': agg('dom_bias'),
+                            'hmm_exp': agg('exp'),
+                            'hmm_reg': agg('reg'),
+                            'hmm_clu': agg('clu'),
+                            'hmm_ov': agg('ov'),
+                            'hmm_env': agg('env'),
+                            'hmm_dom': agg('dom'),
+                            'hmm_rep': agg('rep'),
+                            'hmm_inc': agg('inc'),
+                            'hmm_description': agg('description'),
+                        }
+                        outfile.write(row + '\t' + '\t'.join(col_map[c] for c in hmm_cols) + '\n')
+
                 os.replace(temp_summary, summary_file)
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
