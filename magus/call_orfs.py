@@ -9,6 +9,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import csv
 import glob
+import re
 # pandas is not required here
 
 # Configure logging
@@ -225,8 +226,12 @@ class ORFCaller:
         
         return faa_file, ffn_file, gff_file
 
-    def run_hmm_annotation(self, faa_file, output_dir, sample_id, hmmfile):
-        """Run HMM annotation on a protein file."""
+    def run_hmm_annotation(self, faa_file, output_dir, sample_id, hmmfile, hmm_suffix=None):
+        """Run HMM annotation on a protein file.
+
+        If hmm_suffix is provided, write tblout to
+        "{sample_id}.hmm.{suffix}.tsv" so multiple annotation sets can coexist.
+        """
         if not hmmfile:
             logger.warning(f"No HMM file provided for {sample_id}. Skipping annotation.")
             return None
@@ -235,7 +240,10 @@ class ORFCaller:
             logger.warning(f"Protein file {faa_file} does not exist. Skipping annotation.")
             return None
             
-        hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.tsv")
+        if hmm_suffix:
+            hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.{hmm_suffix}.tsv")
+        else:
+            hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.tsv")
         cmd = [
             'hmmsearch',
             '--tblout', hmm_out,
@@ -302,14 +310,21 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
         for genome_data in genomes_data:
             process_single_genome(genome_data)
 
-def create_comprehensive_summary(output_dir, hmmfile):
-    """Create ONE comprehensive summary file per domain with ALL information."""
+def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
+    """Create ONE comprehensive summary file per domain with ALL information.
+
+    If suffix is provided, domain summary is named with _{suffix} and HMM inputs
+    are read from .hmm.{suffix}.tsv files.
+    """
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
         annot_dir = os.path.join(output_dir, subdir, 'annot')
         if not os.path.exists(annot_dir):
             continue
             
-        summary_file = os.path.join(output_dir, f'{subdir}_orf_summary.tsv')
+        summary_file = os.path.join(
+            output_dir,
+            f"{subdir}_orf_summary_{suffix}.tsv" if suffix else f"{subdir}_orf_summary.tsv"
+        )
         logger.info(f"Creating comprehensive summary for {subdir}: {summary_file}")
         
         with open(summary_file, 'w') as summary:
@@ -335,7 +350,8 @@ def create_comprehensive_summary(output_dir, hmmfile):
                                     summary.write(f'{sample_id}\t{line}\n')
             else:
                 # Bacteria/Viruses/Metagenomes: parse Prodigal output
-                summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
+                # Include ID so we can correctly join HMM hits per ORF
+                summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
                 
                 for file in os.listdir(annot_dir):
                     if file.endswith('.faa'):
@@ -355,12 +371,15 @@ def create_comprehensive_summary(output_dir, hmmfile):
                                         
                                         # Parse the metadata part
                                         metadata = parts[4] if len(parts) > 4 else ''
+                                        gene_id = 'NA'
                                         partial = '00'
                                         start_type = 'ATG'
                                         rbs_motif = 'None'
                                         rbs_spacer = 'None'
                                         gc_cont = '0.500'
                                         
+                                        if 'ID=' in metadata:
+                                            gene_id = metadata.split('ID=')[1].split(';')[0]
                                         if 'partial=' in metadata:
                                             partial = metadata.split('partial=')[1].split(';')[0]
                                         if 'start_type=' in metadata:
@@ -372,61 +391,82 @@ def create_comprehensive_summary(output_dir, hmmfile):
                                         if 'gc_cont=' in metadata:
                                             gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
                                         
-                                        summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
+                                        summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{gene_id}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
         
         # Now add HMM results if available
         if hmmfile:
             logger.info(f"Adding HMM results to {subdir} summary")
-            hmm_results = {}
-            
-            # Collect HMM results from all samples
+            # Parse HMM tblout and join by gene ID extracted from target_name
+            def parse_tblout_row(row: str):
+                if not row or row.startswith('#'):
+                    return None
+                t = row.rstrip('\n').split()
+                # Expect at least 19 tokens as per HMMER --tblout
+                if len(t) < 19:
+                    return None
+                rec = {
+                    'target_name': t[0],
+                    'target_accession': t[1],
+                    'query_name': t[2],
+                    'query_accession': t[3],
+                    'full_evalue': t[4],
+                    'full_score': t[5],
+                    'full_bias': t[6],
+                    'dom_evalue': t[7],
+                    'dom_score': t[8],
+                    'dom_bias': t[9],
+                    'exp': t[10], 'reg': t[11], 'clu': t[12], 'ov': t[13], 'env': t[14], 'dom': t[15], 'rep': t[16], 'inc': t[17],
+                    'description': ' '.join(t[18:])
+                }
+                m = re.search(r'ID=([^;\s]+)', rec['target_name'])
+                rec['gene_id'] = m.group(1) if m else None
+                return rec
+
+            hmm_by_gene = {}
             for file in os.listdir(annot_dir):
-                if file.endswith('.hmm.tsv'):
-                    sample_id = file.replace('.hmm.tsv', '')
-                    hmm_file = os.path.join(annot_dir, file)
-                    
-                    with open(hmm_file, 'r') as infile:
-                        for line in infile:
-                            if line.startswith('#'):
+                if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
+                    hmm_path = os.path.join(annot_dir, file)
+                    with open(hmm_path, 'r') as fin:
+                        for raw in fin:
+                            rec = parse_tblout_row(raw)
+                            if not rec or not rec['gene_id']:
                                 continue
-                            parts = line.strip().split()
-                            if len(parts) >= 5:
-                                target_name = parts[0]
-                                query_name = parts[2]
-                                evalue = parts[4]
-                                score = parts[5]
-                                
-                                if query_name not in hmm_results:
-                                    hmm_results[query_name] = []
-                                hmm_results[query_name].append(f"{target_name}:{evalue}:{score}")
-            
-            # Add HMM column to summary
-            if hmm_results:
-                # Read existing summary and add HMM column
+                            hmm_by_gene.setdefault(rec['gene_id'], []).append(rec)
+
+            if hmm_by_gene:
                 temp_summary = summary_file + '.tmp'
                 with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
-                    header = infile.readline().strip()
-                    outfile.write(f'{header}\thmm_hits\n')
-                    
-                    for line in infile:
-                        line = line.strip()
-                        if not line:
+                    header = infile.readline().rstrip('\n')
+                    hmm_cols = [
+                        'hmm_target_name','hmm_target_accession','hmm_query_name','hmm_query_accession',
+                        'hmm_full_evalue','hmm_full_score','hmm_full_bias',
+                        'hmm_dom_evalue','hmm_dom_score','hmm_dom_bias',
+                        'hmm_exp','hmm_reg','hmm_clu','hmm_ov','hmm_env','hmm_dom','hmm_rep','hmm_inc','hmm_description'
+                    ]
+                    outfile.write(header + '\t' + '\t'.join(hmm_cols) + '\n')
+
+                    header_fields = header.split('\t')
+                    id_idx = header_fields.index('ID') if 'ID' in header_fields else None
+
+                    for row in infile:
+                        row = row.rstrip('\n')
+                        if not row:
                             continue
-                        
-                        # Extract query name from line to match with HMM results
-                        parts = line.split('\t')
-                        if subdir == 'eukaryotes':
-                            # For eukaryotes, need to extract query name from headersMap format
-                            # This depends on the actual format of your headersMap.tsv
-                            query_name = parts[1] if len(parts) > 1 else 'unknown'
-                        else:
-                            # For bacteria/viruses, query is contig_id
-                            query_name = parts[1] if len(parts) > 1 else 'unknown'
-                        
-                        hmm_hits = ';'.join(hmm_results.get(query_name, []))
-                        outfile.write(f'{line}\t{hmm_hits}\n')
-                
-                # Replace original with enhanced version
+                        cols = row.split('\t')
+                        gene_id = cols[id_idx] if id_idx is not None and id_idx < len(cols) else None
+                        hits = hmm_by_gene.get(gene_id, []) if gene_id else []
+
+                        def agg(key):
+                            return ';'.join(str(h.get(key, '')) for h in hits)
+
+                        values = [
+                            agg('target_name'), agg('target_accession'), agg('query_name'), agg('query_accession'),
+                            agg('full_evalue'), agg('full_score'), agg('full_bias'),
+                            agg('dom_evalue'), agg('dom_score'), agg('dom_bias'),
+                            agg('exp'), agg('reg'), agg('clu'), agg('ov'), agg('env'), agg('dom'), agg('rep'), agg('inc'), agg('description')
+                        ]
+                        outfile.write(row + '\t' + '\t'.join(values) + '\n')
+
                 os.replace(temp_summary, summary_file)
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
@@ -452,6 +492,7 @@ def main():
     parser.add_argument('--extension', type=str, default='fa', help='Extension of genome files (default: fa).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
+    parser.add_argument('--suffix', type=str, default=None, help='Suffix to tag outputs (e.g., kegg). Summaries and HMM tblout files include this suffix.')
     parser.add_argument('--eukdb', type=str, default='data/uniref90', help='Path to UniRef90 database for MetaEuk (default: data/uniref90).')
     parser.add_argument('--cleanup', action='store_true', help='Clean up annotation directories after processing.')
     
@@ -477,7 +518,7 @@ def main():
     # Handle restart modes
     if args.restart == 'create-summary':
         logger.info("Running in create-summary mode - generating comprehensive summaries")
-        create_comprehensive_summary(args.output_directory, args.hmmfile)
+        create_comprehensive_summary(args.output_directory, args.hmmfile, args.suffix)
         logger.info("Comprehensive summary creation completed successfully.")
         return
     elif args.restart == 'annotations':
@@ -517,12 +558,12 @@ def main():
         # Run HMM annotations in parallel
         if annotation_tasks:
             logger.info(f"Running HMM annotations on {len(annotation_tasks)} files with {args.max_workers} parallel workers")
-            
+
             def run_single_annotation(task):
                 faa_file, annot_dir, sample_id, hmmfile = task
                 try:
                     orf_caller = ORFCaller(args.output_directory, args.extension, args)
-                    orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, hmmfile)
+                    orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, hmmfile, args.suffix)
                     return True
                 except Exception as e:
                     logger.error(f"Error running HMM annotation for {sample_id}: {e}")
@@ -542,7 +583,7 @@ def main():
         
         # Create comprehensive summaries with new HMM results
         logger.info("Creating comprehensive summaries with updated HMM results")
-        create_comprehensive_summary(args.output_directory, args.hmmfile)
+        create_comprehensive_summary(args.output_directory, args.hmmfile, args.suffix)
         logger.info("Annotations restart completed successfully.")
         return
 
@@ -607,7 +648,7 @@ def main():
 
     # Stage 2: Create comprehensive summaries with HMM results
     logger.info("Stage 2: Creating comprehensive summaries")
-    create_comprehensive_summary(args.output_directory, args.hmmfile)
+    create_comprehensive_summary(args.output_directory, args.hmmfile, args.suffix)
 
     # Clean up annot directories
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
