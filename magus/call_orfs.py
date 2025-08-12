@@ -329,7 +329,9 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
         
         with open(summary_file, 'w') as summary:
             if subdir == 'eukaryotes':
-                # Eukaryotes: use headersMap.tsv files
+                # Eukaryotes: use headersMap.tsv files. Some runs have no header, so write a canonical one.
+                # Expected MetaEuk headersMap format:
+                # accession\tsample\tstrand\tscore\tevalue\tnum_exons\tstart\tend\texon_info (order inferred from MetaEuk docs)
                 header_written = False
                 for file in os.listdir(annot_dir):
                     if file.endswith('.headersMap.tsv'):
@@ -342,12 +344,13 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                                 if not line.strip():
                                     continue
                                 
-                                # Write header only once
-                                if i == 0 and not header_written:
-                                    summary.write(f'sample_id\t{line}\n')
+                                if not header_written:
+                                    # If the first non-empty line looks like data, still write a sane header
+                                    header = 'sample_id\taccession\tsample\tstrand\tscore\tevalue\tnum_exons\tstart\tend\texon_info'
+                                    summary.write(header + '\n')
                                     header_written = True
-                                elif i > 0 or header_written:
-                                    summary.write(f'{sample_id}\t{line}\n')
+                                
+                                summary.write(f'{sample_id}\t{line}\n')
             else:
                 # Bacteria/Viruses/Metagenomes: parse Prodigal output
                 # Include ID so we can correctly join HMM hits per ORF
@@ -445,16 +448,17 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
             if hmm_by_key:
                 temp_summary = summary_file + '.tmp'
                 with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
-                    header = infile.readline().rstrip('\n')
+                    original_header = infile.readline().rstrip('\n')
                     hmm_cols = [
                         'hmm_target_name','hmm_target_accession','hmm_query_name','hmm_query_accession',
                         'hmm_full_evalue','hmm_full_score','hmm_full_bias',
                         'hmm_dom_evalue','hmm_dom_score','hmm_dom_bias',
                         'hmm_exp','hmm_reg','hmm_clu','hmm_ov','hmm_env','hmm_dom','hmm_rep','hmm_inc','hmm_description'
                     ]
-                    outfile.write(header + '\t' + '\t'.join(hmm_cols) + '\n')
+                    # Write a single header row only once
+                    outfile.write(original_header + '\t' + '\t'.join(hmm_cols) + '\n')
 
-                    header_fields = header.split('\t')
+                    header_fields = original_header.split('\t')
                     if subdir == 'eukaryotes' and 'accession' in header_fields:
                         key_idx = header_fields.index('accession')
                     elif 'ID' in header_fields:
