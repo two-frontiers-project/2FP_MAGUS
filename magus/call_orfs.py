@@ -486,27 +486,59 @@ def main():
             logger.error("--hmmfile must be provided when using --restart annotations")
             return
         
-        # Run HMM annotations on existing ORF files
+        # Collect all HMM annotation tasks
+        annotation_tasks = []
         for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
             annot_dir = os.path.join(args.output_directory, subdir, 'annot')
             if not os.path.exists(annot_dir):
                 continue
             
-            logger.info(f"Running HMM annotations for {subdir}")
+            logger.info(f"Collecting HMM annotation tasks for {subdir}")
             for file in os.listdir(annot_dir):
-                if file.endswith('.faa') or file.endswith('.fas'):
-                    sample_id = file.replace('.faa', '').replace('.fas', '')
+                # For eukaryotes, use .fas files (protein sequences) but not .codon.fas
+                # For others, use .faa files (protein sequences)
+                if subdir == 'eukaryotes' and file.endswith('.fas') and not file.endswith('.codon.fas'):
+                    sample_id = file.replace('.fas', '')
                     faa_file = os.path.join(annot_dir, file)
-                    
-                    # Check if HMM results already exist
-                    hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
-                    if os.path.exists(hmm_file) and not args.force:
-                        logger.info(f"HMM results already exist for {sample_id} in {subdir}, skipping")
-                        continue
-                    
-                    # Run HMM annotation
+                elif subdir != 'eukaryotes' and file.endswith('.faa'):
+                    sample_id = file.replace('.faa', '')
+                    faa_file = os.path.join(annot_dir, file)
+                else:
+                    continue
+                
+                # Check if HMM results already exist
+                hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
+                if os.path.exists(hmm_file) and not args.force:
+                    logger.info(f"HMM results already exist for {sample_id} in {subdir}, skipping")
+                    continue
+                
+                annotation_tasks.append((faa_file, annot_dir, sample_id, args.hmmfile))
+        
+        # Run HMM annotations in parallel
+        if annotation_tasks:
+            logger.info(f"Running HMM annotations on {len(annotation_tasks)} files with {args.max_workers} parallel workers")
+            
+            def run_single_annotation(task):
+                faa_file, annot_dir, sample_id, hmmfile = task
+                try:
                     orf_caller = ORFCaller(args.output_directory, args.extension, args)
-                    orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, args.hmmfile)
+                    orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, hmmfile)
+                    return True
+                except Exception as e:
+                    logger.error(f"Error running HMM annotation for {sample_id}: {e}")
+                    return False
+            
+            if args.max_workers > 1 and len(annotation_tasks) > 1:
+                with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+                    results = list(executor.map(run_single_annotation, annotation_tasks))
+                successful = sum(results)
+                logger.info(f"Successfully annotated {successful}/{len(annotation_tasks)} files")
+            else:
+                logger.info(f"Running HMM annotations on {len(annotation_tasks)} files sequentially")
+                for task in annotation_tasks:
+                    run_single_annotation(task)
+        else:
+            logger.info("No files found that need HMM annotation")
         
         # Create comprehensive summaries with new HMM results
         logger.info("Creating comprehensive summaries with updated HMM results")
