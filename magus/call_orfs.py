@@ -359,6 +359,13 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 while len(pipe_fields) < 9:
                                     pipe_fields.append('')
                                 accession, sample_name, strand, score, evalue, num_exons, start, end, exon_info = pipe_fields[:9]
+                                # Early filter: ORF-calling evalue cutoff for eukaryotes
+                                if orfcalling_evalue_cutoff is not None:
+                                    try:
+                                        if evalue and float(evalue) > orfcalling_evalue_cutoff:
+                                            continue
+                                    except Exception:
+                                        pass
                                 summary.write('\t'.join([
                                     sample_id,
                                     accession,
@@ -464,6 +471,18 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 join_key = acc_from_name
                         else:
                             join_key = rec.get('gene_id') or rec.get('target_name')
+                        # Early filter: HMM E-value thresholds
+                        try:
+                            if hmm_fullseq_evalue_cutoff is not None:
+                                fev = float(rec.get('full_evalue', '')) if rec.get('full_evalue', '') else None
+                                if fev is not None and fev > hmm_fullseq_evalue_cutoff:
+                                    continue
+                            if hmm_domain_evalue_cutoff is not None:
+                                dev = float(rec.get('dom_evalue', '')) if rec.get('dom_evalue', '') else None
+                                if dev is not None and dev > hmm_domain_evalue_cutoff:
+                                    continue
+                        except Exception:
+                            pass
                         if not join_key:
                             continue
                         hmm_by_key.setdefault(join_key, []).append(rec)
@@ -564,9 +583,9 @@ def main():
     parser.add_argument('--extension', type=str, default='fa', help='Extension of genome files (default: fa).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
-    parser.add_argument('--orfcalling-evalue', '--oce', type=float, default=None, dest='orfcalling_evalue', help='Filter out ORFs whose calling evalue exceeds this cutoff (applies to eukaryote MetaEuk evalue column).')
-    parser.add_argument('--annotation-fullseq-evalue', '--afe', type=float, default=None, dest='annotation_fullseq_evalue', help='Filter out HMM hits with full-sequence E-value exceeding this cutoff.')
-    parser.add_argument('--annotation-domain-evalue', '--ade', type=float, default=None, dest='annotation_domain_evalue', help='Filter out HMM hits with best-domain E-value exceeding this cutoff.')
+    parser.add_argument('--orfcalling-evalue', '--oce', type=float, default=1e-2, dest='orfcalling_evalue', help='Filter out ORFs whose calling evalue exceeds this cutoff (applies to eukaryote MetaEuk evalue column). Default: 0.01')
+    parser.add_argument('--annotation-fullseq-evalue', '--afe', type=float, default=1e-2, dest='annotation_fullseq_evalue', help='Filter out HMM hits with full-sequence E-value exceeding this cutoff. Default: 0.01')
+    parser.add_argument('--annotation-domain-evalue', '--ade', type=float, default=1e-2, dest='annotation_domain_evalue', help='Filter out HMM hits with best-domain E-value exceeding this cutoff. Default: 0.01')
     parser.add_argument('--suffix', type=str, default=None, help='Suffix to tag outputs (e.g., kegg). Summaries and HMM tblout files include this suffix.')
     parser.add_argument('--eukdb', type=str, default='data/uniref90', help='Path to UniRef90 database for MetaEuk (default: data/uniref90).')
     parser.add_argument('--cleanup', action='store_true', help='Clean up annotation directories after processing.')
