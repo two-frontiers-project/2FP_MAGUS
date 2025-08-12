@@ -310,7 +310,10 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
         for genome_data in genomes_data:
             process_single_genome(genome_data)
 
-def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
+def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
+                                 orfcalling_evalue_cutoff: float | None = None,
+                                 hmm_fullseq_evalue_cutoff: float | None = None,
+                                 hmm_domain_evalue_cutoff: float | None = None):
     """Create ONE comprehensive summary file per domain with ALL information.
 
     If suffix is provided, domain summary is named with _{suffix} and HMM inputs
@@ -485,6 +488,15 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                     else:
                         key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
 
+                    # Determine euk evalue column index if present for ORF-calling evalue filtering
+                    euk_evalue_idx = header_fields.index('evalue') if 'evalue' in header_fields else None
+
+                    def parse_float_safe(value: str) -> float | None:
+                        try:
+                            return float(value)
+                        except Exception:
+                            return None
+
                     for row in infile:
                         row = row.rstrip('\n')
                         if not row:
@@ -495,6 +507,22 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                         # Long format: emit one row per HMM hit; also emit a blank-annotation row if there are no hits
                         if hits:
                             for h in hits:
+                                # Apply filters
+                                # 1) ORF-calling evalue (euk only)
+                                if subdir == 'eukaryotes' and orfcalling_evalue_cutoff is not None and euk_evalue_idx is not None:
+                                    ev = parse_float_safe(cols[euk_evalue_idx]) if euk_evalue_idx < len(cols) else None
+                                    if ev is not None and ev > orfcalling_evalue_cutoff:
+                                        continue
+                                # 2) HMM full-sequence evalue
+                                if hmm_fullseq_evalue_cutoff is not None:
+                                    fev = parse_float_safe(h.get('full_evalue', ''))
+                                    if fev is not None and fev > hmm_fullseq_evalue_cutoff:
+                                        continue
+                                # 3) HMM best-domain evalue
+                                if hmm_domain_evalue_cutoff is not None:
+                                    dev = parse_float_safe(h.get('dom_evalue', ''))
+                                    if dev is not None and dev > hmm_domain_evalue_cutoff:
+                                        continue
                                 values = [
                                     h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
                                     h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
@@ -503,7 +531,11 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                                 ]
                                 outfile.write(row + '\t' + '\t'.join(values) + '\n')
                         else:
-                            # No HMMs for this ORF: keep the row with empty HMM columns
+                            # No HMMs for this ORF: apply only ORF-calling evalue filter (if any); then keep with empty HMM columns
+                            if subdir == 'eukaryotes' and orfcalling_evalue_cutoff is not None and euk_evalue_idx is not None:
+                                ev = parse_float_safe(cols[euk_evalue_idx]) if euk_evalue_idx < len(cols) else None
+                                if ev is not None and ev > orfcalling_evalue_cutoff:
+                                    continue
                             outfile.write(row + '\t' + '\t'.join([''] * len(hmm_cols)) + '\n')
 
                 os.replace(temp_summary, summary_file)
@@ -531,6 +563,9 @@ def main():
     parser.add_argument('--extension', type=str, default='fa', help='Extension of genome files (default: fa).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
+    parser.add_argument('--orfcalling-evalue', '--oce', type=float, default=None, dest='orfcalling_evalue', help='Filter out ORFs whose calling evalue exceeds this cutoff (applies to eukaryote MetaEuk evalue column).')
+    parser.add_argument('--annotation-fullseq-evalue', '--afe', type=float, default=None, dest='annotation_fullseq_evalue', help='Filter out HMM hits with full-sequence E-value exceeding this cutoff.')
+    parser.add_argument('--annotation-domain-evalue', '--ade', type=float, default=None, dest='annotation_domain_evalue', help='Filter out HMM hits with best-domain E-value exceeding this cutoff.')
     parser.add_argument('--suffix', type=str, default=None, help='Suffix to tag outputs (e.g., kegg). Summaries and HMM tblout files include this suffix.')
     parser.add_argument('--eukdb', type=str, default='data/uniref90', help='Path to UniRef90 database for MetaEuk (default: data/uniref90).')
     parser.add_argument('--cleanup', action='store_true', help='Clean up annotation directories after processing.')
@@ -557,7 +592,12 @@ def main():
     # Handle restart modes
     if args.restart == 'create-summary':
         logger.info("Running in create-summary mode - generating comprehensive summaries")
-        create_comprehensive_summary(args.output_directory, args.hmmfile, args.suffix)
+        create_comprehensive_summary(
+            args.output_directory, args.hmmfile, args.suffix,
+            orfcalling_evalue_cutoff=args.orfcalling_evalue,
+            hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
+            hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+        )
         logger.info("Comprehensive summary creation completed successfully.")
         return
     elif args.restart == 'annotations':
@@ -622,7 +662,12 @@ def main():
         
         # Create comprehensive summaries with new HMM results
         logger.info("Creating comprehensive summaries with updated HMM results")
-        create_comprehensive_summary(args.output_directory, args.hmmfile, args.suffix)
+        create_comprehensive_summary(
+            args.output_directory, args.hmmfile, args.suffix,
+            orfcalling_evalue_cutoff=args.orfcalling_evalue,
+            hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
+            hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+        )
         logger.info("Annotations restart completed successfully.")
         return
 
@@ -687,7 +732,12 @@ def main():
 
     # Stage 2: Create comprehensive summaries with HMM results
     logger.info("Stage 2: Creating comprehensive summaries")
-    create_comprehensive_summary(args.output_directory, args.hmmfile, args.suffix)
+    create_comprehensive_summary(
+        args.output_directory, args.hmmfile, args.suffix,
+        orfcalling_evalue_cutoff=args.orfcalling_evalue,
+        hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
+        hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+    )
 
     # Clean up annot directories
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
