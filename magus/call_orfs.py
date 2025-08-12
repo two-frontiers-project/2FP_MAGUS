@@ -436,9 +436,13 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                             rec = parse_tblout_row(raw)
                             if not rec:
                                 continue
-                            # Choose join key: eukaryotes prefer target_accession; others prefer gene_id
+                            # Choose join key
                             if subdir == 'eukaryotes':
-                                join_key = rec.get('target_accession') if rec.get('target_accession') and rec.get('target_accession') != '-' else rec.get('target_name')
+                                # For MetaEuk targets, the accession is the first token before '|'
+                                # Example target_name: UniRef90_ID|sample|strand|...
+                                tn = rec.get('target_name', '')
+                                acc_from_name = tn.split('|', 1)[0] if '|' in tn else tn
+                                join_key = acc_from_name
                             else:
                                 join_key = rec.get('gene_id') or rec.get('target_name')
                             if not join_key:
