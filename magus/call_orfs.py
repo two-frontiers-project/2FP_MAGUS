@@ -492,15 +492,19 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                         cols = row.split('\t')
                         join_key = cols[key_idx] if key_idx < len(cols) else None
                         hits = hmm_by_key.get(join_key, []) if join_key else []
-                        # In long format, emit one row per hit; skip ORFs with no hits
-                        for h in hits:
-                            values = [
-                                h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
-                                h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
-                                h.get('dom_evalue',''), h.get('dom_score',''), h.get('dom_bias',''),
-                                h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
-                            ]
-                            outfile.write(row + '\t' + '\t'.join(values) + '\n')
+                        # Long format: emit one row per HMM hit; also emit a blank-annotation row if there are no hits
+                        if hits:
+                            for h in hits:
+                                values = [
+                                    h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
+                                    h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
+                                    h.get('dom_evalue',''), h.get('dom_score',''), h.get('dom_bias',''),
+                                    h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
+                                ]
+                                outfile.write(row + '\t' + '\t'.join(values) + '\n')
+                        else:
+                            # No HMMs for this ORF: keep the row with empty HMM columns
+                            outfile.write(row + '\t' + '\t'.join([''] * len(hmm_cols)) + '\n')
 
                 os.replace(temp_summary, summary_file)
         
