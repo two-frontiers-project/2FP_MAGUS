@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import csv
 import glob
 import re
+from typing import Optional
 # pandas is not required here
 
 # Configure logging
@@ -311,9 +312,9 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
             process_single_genome(genome_data)
 
 def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
-                                 orfcalling_evalue_cutoff: float | None = None,
-                                 hmm_fullseq_evalue_cutoff: float | None = None,
-                                 hmm_domain_evalue_cutoff: float | None = None):
+                                 orfcalling_evalue_cutoff: Optional[float] = None,
+                                 hmm_fullseq_evalue_cutoff: Optional[float] = None,
+                                 hmm_domain_evalue_cutoff: Optional[float] = None):
     """Create ONE comprehensive summary file per domain with ALL information.
 
     If suffix is provided, domain summary is named with _{suffix} and HMM inputs
@@ -491,7 +492,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                     # Determine euk evalue column index if present for ORF-calling evalue filtering
                     euk_evalue_idx = header_fields.index('evalue') if 'evalue' in header_fields else None
 
-                    def parse_float_safe(value: str) -> float | None:
+                    def parse_float_safe(value: str) -> Optional[float]:
                         try:
                             return float(value)
                         except Exception:
