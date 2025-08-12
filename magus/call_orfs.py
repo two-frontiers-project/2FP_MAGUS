@@ -329,28 +329,44 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
         
         with open(summary_file, 'w') as summary:
             if subdir == 'eukaryotes':
-                # Eukaryotes: use headersMap.tsv files. Some runs have no header, so write a canonical one.
-                # Expected MetaEuk headersMap format:
-                # accession\tsample\tstrand\tscore\tevalue\tnum_exons\tstart\tend\texon_info (order inferred from MetaEuk docs)
+                # Eukaryotes: parse MetaEuk headersMap.tsv lines and normalize columns.
+                # Each data line's last column is a pipe-delimited block:
+                # UniRefAcc|sample|strand|score|evalue|num_exons|start|end|exon_info
                 header_written = False
                 for file in os.listdir(annot_dir):
                     if file.endswith('.headersMap.tsv'):
                         sample_id = file.replace('.headersMap.tsv', '')
                         file_path = os.path.join(annot_dir, file)
-                        
+
                         with open(file_path, 'r') as infile:
-                            for i, line in enumerate(infile):
-                                line = line.rstrip('\n')
-                                if not line.strip():
+                            for raw in infile:
+                                raw = raw.rstrip('\n')
+                                if not raw.strip():
                                     continue
-                                
+                                # Prepare header once
                                 if not header_written:
-                                    # If the first non-empty line looks like data, still write a sane header
-                                    header = 'sample_id\taccession\tsample\tstrand\tscore\tevalue\tnum_exons\tstart\tend\texon_info'
-                                    summary.write(header + '\n')
+                                    summary.write('sample_id\taccession\tsample\tstrand\tscore\tevalue\tnum_exons\tstart\tend\texon_info\n')
                                     header_written = True
-                                
-                                summary.write(f'{sample_id}\t{line}\n')
+                                # Extract last column and parse
+                                parts = raw.split('\t')
+                                pipe_block = parts[-1] if parts else ''
+                                pipe_fields = pipe_block.split('|') if pipe_block else []
+                                # Pad to at least 9 fields
+                                while len(pipe_fields) < 9:
+                                    pipe_fields.append('')
+                                accession, sample_name, strand, score, evalue, num_exons, start, end, exon_info = pipe_fields[:9]
+                                summary.write('\t'.join([
+                                    sample_id,
+                                    accession,
+                                    sample_name,
+                                    strand,
+                                    score,
+                                    evalue,
+                                    num_exons,
+                                    start,
+                                    end,
+                                    exon_info
+                                ]) + '\n')
             else:
                 # Bacteria/Viruses/Metagenomes: parse Prodigal output
                 # Include ID so we can correctly join HMM hits per ORF
@@ -459,7 +475,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                         'hmm_dom_evalue','hmm_dom_score','hmm_dom_bias',
                         'hmm_exp','hmm_reg','hmm_clu','hmm_ov','hmm_env','hmm_dom','hmm_rep','hmm_inc','hmm_description'
                     ]
-                    # Write a single header row only once
+                    # Write a single header row only once (long format: one row per HMM hit)
                     outfile.write(original_header + '\t' + '\t'.join(hmm_cols) + '\n')
 
                     header_fields = original_header.split('\t')
@@ -468,7 +484,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                     elif 'ID' in header_fields:
                         key_idx = header_fields.index('ID')
                     else:
-                        # Fallback to contig_id for bacteria/viruses/metagenomes (not ideal but prevents crash)
                         key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
 
                     for row in infile:
@@ -478,17 +493,15 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                         cols = row.split('\t')
                         join_key = cols[key_idx] if key_idx < len(cols) else None
                         hits = hmm_by_key.get(join_key, []) if join_key else []
-
-                        def agg(key):
-                            return ';'.join(str(h.get(key, '')) for h in hits)
-
-                        values = [
-                            agg('target_name'), agg('target_accession'), agg('query_name'), agg('query_accession'),
-                            agg('full_evalue'), agg('full_score'), agg('full_bias'),
-                            agg('dom_evalue'), agg('dom_score'), agg('dom_bias'),
-                            agg('exp'), agg('reg'), agg('clu'), agg('ov'), agg('env'), agg('dom'), agg('rep'), agg('inc'), agg('description')
-                        ]
-                        outfile.write(row + '\t' + '\t'.join(values) + '\n')
+                        # In long format, emit one row per hit; skip ORFs with no hits
+                        for h in hits:
+                            values = [
+                                h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
+                                h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
+                                h.get('dom_evalue',''), h.get('dom_score',''), h.get('dom_bias',''),
+                                h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
+                            ]
+                            outfile.write(row + '\t' + '\t'.join(values) + '\n')
 
                 os.replace(temp_summary, summary_file)
         
