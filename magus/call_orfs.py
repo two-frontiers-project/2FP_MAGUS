@@ -396,12 +396,12 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
         # Now add HMM results if available
         if hmmfile:
             logger.info(f"Adding HMM results to {subdir} summary")
-            # Parse HMM tblout and join by gene ID extracted from target_name
+
+            # Parse HMM tblout and build records
             def parse_tblout_row(row: str):
                 if not row or row.startswith('#'):
                     return None
                 t = row.rstrip('\n').split()
-                # Expect at least 19 tokens as per HMMER --tblout
                 if len(t) < 19:
                     return None
                 rec = {
@@ -418,22 +418,31 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                     'exp': t[10], 'reg': t[11], 'clu': t[12], 'ov': t[13], 'env': t[14], 'dom': t[15], 'rep': t[16], 'inc': t[17],
                     'description': ' '.join(t[18:])
                 }
+                # Extract possible gene ID from target_name (for non-euks)
                 m = re.search(r'ID=([^;\s]+)', rec['target_name'])
                 rec['gene_id'] = m.group(1) if m else None
                 return rec
 
-            hmm_by_gene = {}
+            # Collect HMM records grouped by join key
+            hmm_by_key = {}
             for file in os.listdir(annot_dir):
                 if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
                     hmm_path = os.path.join(annot_dir, file)
                     with open(hmm_path, 'r') as fin:
                         for raw in fin:
                             rec = parse_tblout_row(raw)
-                            if not rec or not rec['gene_id']:
+                            if not rec:
                                 continue
-                            hmm_by_gene.setdefault(rec['gene_id'], []).append(rec)
+                            # Choose join key: eukaryotes prefer target_accession; others prefer gene_id
+                            if subdir == 'eukaryotes':
+                                join_key = rec.get('target_accession') if rec.get('target_accession') and rec.get('target_accession') != '-' else rec.get('target_name')
+                            else:
+                                join_key = rec.get('gene_id') or rec.get('target_name')
+                            if not join_key:
+                                continue
+                            hmm_by_key.setdefault(join_key, []).append(rec)
 
-            if hmm_by_gene:
+            if hmm_by_key:
                 temp_summary = summary_file + '.tmp'
                 with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
                     header = infile.readline().rstrip('\n')
@@ -446,15 +455,21 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                     outfile.write(header + '\t' + '\t'.join(hmm_cols) + '\n')
 
                     header_fields = header.split('\t')
-                    id_idx = header_fields.index('ID') if 'ID' in header_fields else None
+                    if subdir == 'eukaryotes' and 'accession' in header_fields:
+                        key_idx = header_fields.index('accession')
+                    elif 'ID' in header_fields:
+                        key_idx = header_fields.index('ID')
+                    else:
+                        # Fallback to contig_id for bacteria/viruses/metagenomes (not ideal but prevents crash)
+                        key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
 
                     for row in infile:
                         row = row.rstrip('\n')
                         if not row:
                             continue
                         cols = row.split('\t')
-                        gene_id = cols[id_idx] if id_idx is not None and id_idx < len(cols) else None
-                        hits = hmm_by_gene.get(gene_id, []) if gene_id else []
+                        join_key = cols[key_idx] if key_idx < len(cols) else None
+                        hits = hmm_by_key.get(join_key, []) if join_key else []
 
                         def agg(key):
                             return ';'.join(str(h.get(key, '')) for h in hits)
