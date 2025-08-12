@@ -412,12 +412,11 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                                         
                                         summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{gene_id}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
         
-        # Now add HMM results if available
-        if hmmfile:
-            logger.info(f"Adding HMM results to {subdir} summary")
+        # Now add HMM results from existing files (do not depend on --hmmfile being provided here)
+        logger.info(f"Adding HMM results to {subdir} summary (if present)")
 
-            # Parse HMM tblout and build records
-            def parse_tblout_row(row: str):
+        # Parse HMM tblout and build records
+        def parse_tblout_row(row: str):
                 if not row or row.startswith('#'):
                     return None
                 t = row.rstrip('\n').split()
@@ -442,28 +441,28 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None):
                 rec['gene_id'] = m.group(1) if m else None
                 return rec
 
-            # Collect HMM records grouped by join key
-            hmm_by_key = {}
-            for file in os.listdir(annot_dir):
-                if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
-                    hmm_path = os.path.join(annot_dir, file)
-                    with open(hmm_path, 'r') as fin:
-                        for raw in fin:
-                            rec = parse_tblout_row(raw)
-                            if not rec:
-                                continue
-                            # Choose join key
-                            if subdir == 'eukaryotes':
+        # Collect HMM records grouped by join key
+        hmm_by_key = {}
+        for file in os.listdir(annot_dir):
+            if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
+                hmm_path = os.path.join(annot_dir, file)
+                with open(hmm_path, 'r') as fin:
+                    for raw in fin:
+                        rec = parse_tblout_row(raw)
+                        if not rec:
+                            continue
+                        # Choose join key
+                        if subdir == 'eukaryotes':
                                 # For MetaEuk targets, the accession is the first token before '|'
                                 # Example target_name: UniRef90_ID|sample|strand|...
                                 tn = rec.get('target_name', '')
                                 acc_from_name = tn.split('|', 1)[0] if '|' in tn else tn
                                 join_key = acc_from_name
-                            else:
-                                join_key = rec.get('gene_id') or rec.get('target_name')
-                            if not join_key:
-                                continue
-                            hmm_by_key.setdefault(join_key, []).append(rec)
+                        else:
+                            join_key = rec.get('gene_id') or rec.get('target_name')
+                        if not join_key:
+                            continue
+                        hmm_by_key.setdefault(join_key, []).append(rec)
 
             if hmm_by_key:
                 temp_summary = summary_file + '.tmp'
