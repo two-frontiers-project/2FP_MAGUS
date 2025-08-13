@@ -58,7 +58,7 @@ def filter_hmm_hits(samples_data: Dict[str, List[Dict]],
                 continue
             
             # Keep best hit (lowest E-value) for this gene family in this sample
-            if query_name not in gene_best_hits or evalue < gene_best_hits[query_name]['evalue']:
+            if query_name not in gene_best_hits or evalue < gene_best_hits[query_name]['full_evalue']:
                 gene_best_hits[query_name] = {
                     'query_name': query_name,
                     'target_name': orf['target_name'],
