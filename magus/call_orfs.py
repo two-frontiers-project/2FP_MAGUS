@@ -504,7 +504,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 temp_caller = ORFCaller(output_dir, "fas", temp_args)
                 
                 # Write header once
-                header = ['sample_id', 'target_name', 'query_name', 'query_accession',
+                header = ['sample_id', 'target_name', 'query_accession',
                          'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
                          'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']
                 summary.write('\t'.join(header) + '\n')
@@ -541,7 +541,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             if target_name in sample_hmm_data:
                                 hmm_row = sample_hmm_data[target_name]
                                 row_data.extend([
-                                    hmm_row.get('query_name', ''),
                                     hmm_row.get('query_accession', ''),
                                     hmm_row.get('full_evalue', ''),
                                     hmm_row.get('full_score', ''),
@@ -561,7 +560,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 ])
                             else:
                                 # No HMM data for this target - add empty strings
-                                row_data.extend([''] * 17)
+                                row_data.extend([''] * 16)
                             
                             # WRITE THE ROW - this should happen for EVERY FASTA header
                             summary.write('\t'.join(str(field) for field in row_data) + '\n')
