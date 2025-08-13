@@ -26,7 +26,6 @@ def load_orf_summary(summary_file: str) -> Dict[str, List[Dict]]:
             sample_id = row['sample_id']
             samples_data[sample_id].append(row)
     
-    print(f"Loaded {len(samples_data)} samples from {summary_file}")
     return samples_data
 
 def filter_hmm_hits(samples_data: Dict[str, List[Dict]], 
@@ -111,24 +110,18 @@ def analyze_single_copy_candidates(candidates: Dict[str, List[str]],
                                  filtered_data: Dict[str, List[Dict]]) -> None:
     """Analyze and report single copy gene candidates."""
     
-    print("\n=== SINGLE COPY GENE CANDIDATES ===\n")
-    
     # Count total samples
     total_samples = len(filtered_data)
-    print(f"Total samples analyzed: {total_samples}")
     
     # Prepare CSV output
     csv_rows = []
     
     for family_name, genes in candidates.items():
-        print(f"\n{family_name}:")
-        
         # Count occurrences of each gene in this family
         gene_counts = Counter(genes)
         
         for gene, count in sorted(gene_counts.items()):
             percentage = (count / total_samples) * 100
-            print(f"  {gene}: {count}/{total_samples} samples ({percentage:.1f}%)")
             
             # Add to CSV data
             csv_rows.append({
@@ -138,33 +131,6 @@ def analyze_single_copy_candidates(candidates: Dict[str, List[str]],
                 'total_samples': total_samples,
                 'percentage': f"{percentage:.1f}%"
             })
-            
-            # Show which samples have this gene
-            samples_with_gene = []
-            for sample_id, sample_genes in filtered_data.items():
-                if any(g['query_name'] == gene for g in sample_genes):
-                    samples_with_gene.append(sample_id)
-            
-            if count <= 10:  # Only show sample names if count is small
-                print(f"    Samples: {', '.join(samples_with_gene)}")
-    
-    # Summary statistics
-    print(f"\n=== SUMMARY ===")
-    print(f"Total samples: {total_samples}")
-    
-    for family_name, genes in candidates.items():
-        unique_genes = set(genes)
-        print(f"{family_name}: {len(unique_genes)} unique genes found")
-        
-        # Find genes that appear in most samples (potential single copy)
-        gene_counts = Counter(genes)
-        high_frequency_genes = [(gene, count) for gene, count in gene_counts.items() 
-                               if count >= total_samples * 0.8]  # 80% or more samples
-        
-        if high_frequency_genes:
-            print(f"  High frequency genes (≥80% samples):")
-            for gene, count in sorted(high_frequency_genes, key=lambda x: x[1], reverse=True):
-                print(f"    {gene}: {count}/{total_samples}")
     
     # Write CSV output
     csv_filename = "eukaryotic_single_copy_genes.csv"
@@ -173,8 +139,6 @@ def analyze_single_copy_candidates(candidates: Dict[str, List[str]],
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(csv_rows)
-    
-    print(f"\nResults saved to: {csv_filename}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -195,15 +159,12 @@ def main():
     
     try:
         # Load ORF summary data
-        print(f"Loading ORF summary from: {args.summary_file}")
         samples_data = load_orf_summary(args.summary_file)
         
         # Filter for full sequence hits and keep best hit per gene per sample
-        print(f"Filtering HMM hits (E-value cutoff: {args.fullseq_evalue})")
         filtered_data = filter_hmm_hits(samples_data, args.fullseq_evalue)
         
         # Find single copy gene candidates
-        print("Identifying single copy gene candidates...")
         candidates = get_single_copy_candidates(filtered_data)
         
         # Analyze and report results
