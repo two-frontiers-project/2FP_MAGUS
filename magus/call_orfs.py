@@ -256,7 +256,7 @@ class ORFCaller:
         if hmm_suffix:
             hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.{hmm_suffix}.tsv")
         else:
-            hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.tsv")
+        hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.tsv")
         cmd = [
             'hmmsearch',
             '--tblout', hmm_out,
@@ -510,7 +510,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 summary.write('\t'.join(header) + '\n')
                 
                 # Process each sample: read FASTA, clean HMM, merge, write to final summary
-                for file in os.listdir(annot_dir):
+        for file in os.listdir(annot_dir):
                     if file.endswith('.fas') and not file.endswith('.codon.fas'):
                         sample_id = file.replace('.fas', '')
                         fas_file = os.path.join(annot_dir, file)
@@ -518,8 +518,8 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         # Read FASTA headers for this sample
                         fasta_headers = temp_caller.read_fasta_headers(fas_file)
                         if not fasta_headers:
-                            continue
-                        
+            continue
+            
                         # Check if HMM file exists and clean it
                         hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
                         sample_hmm_data = {}
@@ -564,13 +564,13 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             
                             # WRITE THE ROW - this should happen for EVERY FASTA header
                             summary.write('\t'.join(str(field) for field in row_data) + '\n')
-            else:
+                        else:
                 # Bacteria/Viruses/Metagenomes: parse Prodigal output
                 # Include ID so we can correctly join HMM hits per ORF
                 summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
                 
                 for file in os.listdir(annot_dir):
-                    if file.endswith('.faa'):
+                if file.endswith('.faa'):
                         sample_id = file.replace('.faa', '')
                         faa_file = os.path.join(annot_dir, file)
                         
@@ -684,7 +684,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         header_fields = original_header.split('\t')
                         if 'ID' in header_fields:
                             key_idx = header_fields.index('ID')
-                        else:
+                                else:
                             key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
 
                         def parse_float_safe(value: str) -> Optional[float]:
@@ -719,12 +719,12 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                         h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
                                     ]
                                     outfile.write(row + '\t' + '\t'.join(values) + '\n')
-                            else:
+                                        else:
                                 # No HMMs for this ORF: keep with empty HMM columns
                                 outfile.write(row + '\t' + '\t'.join([''] * len(hmm_cols)) + '\n')
 
                     os.replace(temp_summary, summary_file)
-        else:
+                                    else:
             logger.info(f"Skipping HMM merging for {subdir} - using individual summary files instead")
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
@@ -789,7 +789,7 @@ def main():
         logger.info("Running in annotations mode - running HMM annotations on existing ORF calls")
         if not args.hmmfile:
             logger.error("--hmmfile must be provided when using --restart annotations")
-            return
+        return
         
         # Collect all HMM annotation tasks
         annotation_tasks = []
