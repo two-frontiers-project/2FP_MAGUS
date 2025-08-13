@@ -283,7 +283,6 @@ class ORFCaller:
             return None
             
         logger.info(f"Parsing HMM file: {hmm_file}")
-        logger.info(f"E-value cutoff: {evalue_cutoff}")
         
         # HMM tblout columns (removing target_accession since it's just '-')
         columns = [
@@ -306,7 +305,6 @@ class ORFCaller:
                 parts = line.split()
                 
                 if len(parts) < 18:
-                    logger.warning(f"Skipping malformed line {total_lines}: {len(parts)} columns")
                     continue
                 
                 # Extract evalue for filtering
@@ -314,7 +312,6 @@ class ORFCaller:
                     full_evalue = float(parts[4])
                     dom_evalue = float(parts[7])
                 except (ValueError, IndexError):
-                    logger.warning(f"Could not parse evalue from line {total_lines}")
                     continue
                 
                 # Apply evalue filter immediately
@@ -333,16 +330,13 @@ class ORFCaller:
                 
                 rows.append(row)
         
-        logger.info(f"Total lines: {total_lines}")
-        logger.info(f"Lines after filtering: {filtered_lines}")
-        
         # Write to CSV
         with open(output_csv, 'w', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
             writer.writerows(rows)
         
-        logger.info(f"Wrote {len(rows)} rows to {output_csv}")
+        logger.info(f"Wrote {len(rows)} filtered HMM hits to {output_csv}")
         return rows
 
     def read_fasta_headers(self, fas_file):
@@ -351,8 +345,6 @@ class ORFCaller:
             logger.warning(f"FASTA file {fas_file} does not exist.")
             return set()
             
-        logger.info(f"Reading FASTA headers from: {fas_file}")
-        
         headers = set()
         with open(fas_file, 'r') as f:
             for line in f:
@@ -360,7 +352,6 @@ class ORFCaller:
                     header = line.strip()[1:]  # Remove '>'
                     headers.add(header)
         
-        logger.info(f"Found {len(headers)} FASTA headers")
         return headers
 
     def merge_eukaryotic_hmm_data(self, sample_id, fasta_headers, hmm_csv_file, output_file):
@@ -370,7 +361,6 @@ class ORFCaller:
         sample_id \t target_name \t hmm_annotation_data
         """
         if not os.path.exists(hmm_csv_file):
-            logger.warning(f"HMM CSV file {hmm_csv_file} does not exist. Creating summary without HMM data.")
             # Create summary with just FASTA headers and no HMM data
             with open(output_file, 'w', newline='') as f:
                 writer = csv.writer(f, delimiter='\t')
@@ -383,7 +373,7 @@ class ORFCaller:
                     row = [sample_id, target_name] + [''] * (len(header) - 2)
                     writer.writerow(row)
             
-            logger.info(f"Created eukaryotic summary without HMM data: {len(fasta_headers)} rows")
+            logger.info(f"Created summary for {sample_id}: {len(fasta_headers)} ORFs (no HMM data)")
             return len(fasta_headers), 0, len(fasta_headers)
         
         # Read HMM data from CSV
@@ -393,8 +383,6 @@ class ORFCaller:
             for row in reader:
                 target_name = row['target_name']
                 hmm_data[target_name] = row
-        
-        logger.info(f"Loaded {len(hmm_data)} HMM hits for merging")
         
         # HMM annotation columns (excluding target_name since it's in the merge)
         hmm_cols = [
@@ -430,9 +418,7 @@ class ORFCaller:
                     rows_without_hmm += 1
                 rows_written += 1
         
-        logger.info(f"Wrote {rows_written} rows to {output_file}")
-        logger.info(f"Rows with HMM hits: {rows_with_hmm}")
-        logger.info(f"Rows without HMM hits: {rows_without_hmm}")
+        logger.info(f"Created summary for {sample_id}: {rows_written} ORFs ({rows_with_hmm} with HMM hits, {rows_without_hmm} without)")
         
         return rows_written, rows_with_hmm, rows_without_hmm
 
@@ -509,8 +495,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
         
         with open(summary_file, 'w') as summary:
             if subdir == 'eukaryotes':
-                # Eukaryotes: use the new HMM parsing and merging approach
-                logger.info(f"Processing eukaryotes with new HMM approach")
+                logger.info("Processing eukaryotic samples")
                 
                 # Create temporary ORFCaller instance to use the methods
                 class TempArgs:
@@ -521,41 +506,89 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 temp_args = TempArgs()
                 temp_caller = ORFCaller(output_dir, "fas", temp_args)
                 
-                # Process ALL .fas files and create summaries (with or without HMM data)
+                # Step 1: Find all FASTA headers for each file
+                logger.info("Finding FASTA headers")
+                fasta_data = {}
                 for file in os.listdir(annot_dir):
                     if file.endswith('.fas'):
                         sample_id = file.replace('.fas', '')
                         fas_file = os.path.join(annot_dir, file)
-                        hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
-                        
-                        # Read FASTA headers and merge with HMM data (if HMM data exists)
                         fasta_headers = temp_caller.read_fasta_headers(fas_file)
                         if fasta_headers:
-                            summary_file = os.path.join(annot_dir, f"{sample_id}_summary.tsv")
-                            temp_caller.merge_eukaryotic_hmm_data(
-                                sample_id, fasta_headers, hmm_csv, summary_file
-                            )
+                            fasta_data[sample_id] = fasta_headers
                 
-                # Now combine all individual summaries into the main summary file
-                header_written = False
+                # Step 2: Clean HMM files to CSV
+                logger.info("Cleaning HMM annotations")
+                hmm_data = {}
                 for file in os.listdir(annot_dir):
-                    if file.endswith('_summary.tsv'):
-                        sample_id = file.replace('_summary.tsv', '')
-                        file_path = os.path.join(annot_dir, file)
+                    if file.endswith('.hmm.tsv'):
+                        sample_id = file.replace('.hmm.tsv', '')
+                        hmm_file = os.path.join(annot_dir, file)
+                        hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
                         
-                        with open(file_path, 'r') as infile:
-                            for i, line in enumerate(infile):
-                                if i == 0:  # Header line
-                                    if not header_written:
-                                        summary.write(line)  # Write header from first file
-                                        header_written = True
-                                    continue
-                                summary.write(line)  # Write data lines
+                        rows = temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, hmm_domain_evalue_cutoff)
+                        if rows:
+                            hmm_data[sample_id] = rows
+                
+                # Step 3: Left join HMM data onto FASTA headers and add sample ID
+                logger.info("Creating comprehensive summary file")
+                header_written = False
+                
+                for sample_id, fasta_headers in fasta_data.items():
+                    # Get HMM data for this sample (if it exists)
+                    sample_hmm_data = {}
+                    if sample_id in hmm_data:
+                        for row in hmm_data[sample_id]:
+                            target_name = row['target_name']
+                            sample_hmm_data[target_name] = row
+                    
+                    # Write rows for this sample
+                    for target_name in fasta_headers:
+                        if not header_written:
+                            # Write header once
+                            header = ['sample_id', 'target_name', 'query_name', 'query_accession',
+                                    'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
+                                    'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']
+                            summary.write('\t'.join(header) + '\n')
+                            header_written = True
+                        
+                        # Create row with sample_id and target_name
+                        row_data = [sample_id, target_name]
+                        
+                        # Add HMM data if it exists, otherwise empty strings
+                        if target_name in sample_hmm_data:
+                            hmm_row = sample_hmm_data[target_name]
+                            row_data.extend([
+                                hmm_row.get('query_name', ''),
+                                hmm_row.get('query_accession', ''),
+                                hmm_row.get('full_evalue', ''),
+                                hmm_row.get('full_score', ''),
+                                hmm_row.get('full_bias', ''),
+                                hmm_row.get('dom_evalue', ''),
+                                hmm_row.get('dom_score', ''),
+                                hmm_row.get('dom_bias', ''),
+                                hmm_row.get('exp', ''),
+                                hmm_row.get('reg', ''),
+                                hmm_row.get('clu', ''),
+                                hmm_row.get('ov', ''),
+                                hmm_row.get('env', ''),
+                                hmm_row.get('dom', ''),
+                                hmm_row.get('rep', ''),
+                                hmm_row.get('inc', ''),
+                                hmm_row.get('description', '')
+                            ])
+                        else:
+                            # No HMM data for this target - add empty strings
+                            row_data.extend([''] * 17)
+                        
+                        summary.write('\t'.join(str(field) for field in row_data) + '\n')
                 
                 if not header_written:
-                    logger.warning("No eukaryotic summary files found. Creating empty summary.")
-                    # Create minimal header if no files exist
-                    summary.write('sample_id\ttarget_name\tquery_name\tquery_accession\tfull_evalue\tfull_score\tfull_bias\tdom_evalue\tdom_score\tdom_bias\texp\treg\tclu\tov\tenv\tdom\trep\tinc\tdescription\n')
+                    logger.warning("No eukaryotic FASTA files found. Creating empty summary.")
+                    header = ['sample_id', 'target_name', 'query_name', 'query_accession',
+                             'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
+                             'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']
+                    summary.write('\t'.join(header) + '\n')
             else:
                 # Bacteria/Viruses/Metagenomes: parse Prodigal output
                 # Include ID so we can correctly join HMM hits per ORF
