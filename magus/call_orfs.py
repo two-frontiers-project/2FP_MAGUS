@@ -282,7 +282,7 @@ class ORFCaller:
             logger.warning(f"HMM file {hmm_file} does not exist. Skipping parsing.")
             return None
             
-        # HMM tblout columns (removing target_accession since it's just '-')
+        # HMM tblout columns (removing target_accession which is just '-')
         columns = [
             'target_name', 'query_name', 'query_accession',
             'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
@@ -302,7 +302,7 @@ class ORFCaller:
                 total_lines += 1
                 parts = line.split()
                 
-                if len(parts) < 18:
+                if len(parts) < 19:  # HMM tblout has 19 columns
                     continue
                 
                 # Extract evalue for filtering
@@ -318,13 +318,27 @@ class ORFCaller:
                     
                 filtered_lines += 1
                 
-                # Create row data (skip target_accession which is just '-')
+                # Create row data (skip target_accession which is parts[1] and always '-')
                 row = {}
-                for i, col in enumerate(columns):
-                    if i < len(parts):
-                        row[col] = parts[i]
-                    else:
-                        row[col] = ''
+                # Map columns to parts, skipping target_accession (parts[1])
+                row['target_name'] = parts[0]      # parts[0]
+                row['query_name'] = parts[2]       # parts[2] (skip parts[1] which is target_accession)
+                row['query_accession'] = parts[3]  # parts[3]
+                row['full_evalue'] = parts[4]      # parts[4]
+                row['full_score'] = parts[5]       # parts[5]
+                row['full_bias'] = parts[6]        # parts[6]
+                row['dom_evalue'] = parts[7]       # parts[7]
+                row['dom_score'] = parts[8]        # parts[8]
+                row['dom_bias'] = parts[9]         # parts[9]
+                row['exp'] = parts[10]             # parts[10]
+                row['reg'] = parts[11]             # parts[11]
+                row['clu'] = parts[12]             # parts[12]
+                row['ov'] = parts[13]              # parts[13]
+                row['env'] = parts[14]             # parts[14]
+                row['dom'] = parts[15]             # parts[15]
+                row['rep'] = parts[16]             # parts[16]
+                row['inc'] = parts[17]             # parts[17]
+                row['description'] = ' '.join(parts[18:])  # parts[18:] for description
                 
                 rows.append(row)
         
