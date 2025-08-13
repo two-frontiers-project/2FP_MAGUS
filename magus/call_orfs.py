@@ -737,8 +737,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
 
-# This function has been removed as it was redundant with create_comprehensive_summary
-
 def main():
     parser = argparse.ArgumentParser(description='Call ORFs in genomes using a config file or directory search.')
     
