@@ -511,7 +511,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 
                 # Process each sample: read FASTA, clean HMM, merge, write to final summary
                 for file in os.listdir(annot_dir):
-                    if file.endswith('.fas'):
+                    if file.endswith('.fas') and not file.endswith('.codon.fas'):
                         sample_id = file.replace('.fas', '')
                         fas_file = os.path.join(annot_dir, file)
                         
