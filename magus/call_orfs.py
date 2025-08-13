@@ -282,8 +282,6 @@ class ORFCaller:
             logger.warning(f"HMM file {hmm_file} does not exist. Skipping parsing.")
             return None
             
-        logger.info(f"Parsing HMM file: {hmm_file}")
-        
         # HMM tblout columns (removing target_accession since it's just '-')
         columns = [
             'target_name', 'query_name', 'query_accession',
@@ -336,7 +334,6 @@ class ORFCaller:
             writer.writeheader()
             writer.writerows(rows)
         
-        logger.info(f"Wrote {len(rows)} filtered HMM hits to {output_csv}")
         return rows
 
     def read_fasta_headers(self, fas_file):
