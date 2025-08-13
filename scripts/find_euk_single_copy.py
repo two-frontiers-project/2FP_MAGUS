@@ -107,7 +107,8 @@ def get_single_copy_candidates(filtered_data: Dict[str, List[Dict]]) -> Dict[str
     return candidates
 
 def analyze_single_copy_candidates(candidates: Dict[str, List[str]], 
-                                 filtered_data: Dict[str, List[Dict]]) -> None:
+                                 filtered_data: Dict[str, List[Dict]],
+                                 coverage_cutoff: float = 0.0) -> None:
     """Analyze and report single copy gene candidates."""
     
     # Count total samples
@@ -123,14 +124,16 @@ def analyze_single_copy_candidates(candidates: Dict[str, List[str]],
         for gene, count in sorted(gene_counts.items()):
             percentage = (count / total_samples) * 100
             
-            # Add to CSV data
-            csv_rows.append({
-                'gene_family': family_name,
-                'gene_name': gene,
-                'samples_with_gene': count,
-                'total_samples': total_samples,
-                'percentage': f"{percentage:.1f}%"
-            })
+            # Only include genes that meet the coverage cutoff
+            if percentage >= coverage_cutoff:
+                # Add to CSV data
+                csv_rows.append({
+                    'gene_family': family_name,
+                    'gene_name': gene,
+                    'samples_with_gene': count,
+                    'total_samples': total_samples,
+                    'percentage': f"{percentage:.1f}%"
+                })
     
     # Write CSV output
     csv_filename = "eukaryotic_single_copy_genes.csv"
@@ -154,8 +157,19 @@ def main():
         default=0.001,
         help='Full sequence E-value cutoff (default: 0.001)'
     )
+    parser.add_argument(
+        '--coverage-cutoff',
+        type=float,
+        default=0.0,
+        help='Minimum percentage of samples a gene must appear in (0-100, default: 0.0)'
+    )
     
     args = parser.parse_args()
+    
+    # Validate coverage cutoff
+    if args.coverage_cutoff < 0 or args.coverage_cutoff > 100:
+        print("Error: coverage-cutoff must be between 0 and 100", file=sys.stderr)
+        sys.exit(1)
     
     try:
         # Load ORF summary data
@@ -168,7 +182,7 @@ def main():
         candidates = get_single_copy_candidates(filtered_data)
         
         # Analyze and report results
-        analyze_single_copy_candidates(candidates, filtered_data)
+        analyze_single_copy_candidates(candidates, filtered_data, args.coverage_cutoff)
         
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
