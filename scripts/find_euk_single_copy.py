@@ -117,6 +117,9 @@ def analyze_single_copy_candidates(candidates: Dict[str, List[str]],
     total_samples = len(filtered_data)
     print(f"Total samples analyzed: {total_samples}")
     
+    # Prepare CSV output
+    csv_rows = []
+    
     for family_name, genes in candidates.items():
         print(f"\n{family_name}:")
         
@@ -126,6 +129,15 @@ def analyze_single_copy_candidates(candidates: Dict[str, List[str]],
         for gene, count in sorted(gene_counts.items()):
             percentage = (count / total_samples) * 100
             print(f"  {gene}: {count}/{total_samples} samples ({percentage:.1f}%)")
+            
+            # Add to CSV data
+            csv_rows.append({
+                'gene_family': family_name,
+                'gene_name': gene,
+                'samples_with_gene': count,
+                'total_samples': total_samples,
+                'percentage': f"{percentage:.1f}%"
+            })
             
             # Show which samples have this gene
             samples_with_gene = []
@@ -153,6 +165,16 @@ def analyze_single_copy_candidates(candidates: Dict[str, List[str]],
             print(f"  High frequency genes (≥80% samples):")
             for gene, count in sorted(high_frequency_genes, key=lambda x: x[1], reverse=True):
                 print(f"    {gene}: {count}/{total_samples}")
+    
+    # Write CSV output
+    csv_filename = "eukaryotic_single_copy_genes.csv"
+    with open(csv_filename, 'w', newline='') as csvfile:
+        fieldnames = ['gene_family', 'gene_name', 'samples_with_gene', 'total_samples', 'percentage']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(csv_rows)
+    
+    print(f"\nResults saved to: {csv_filename}")
 
 def main():
     parser = argparse.ArgumentParser(
