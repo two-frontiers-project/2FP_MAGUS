@@ -509,8 +509,48 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
         
         with open(summary_file, 'w') as summary:
             if subdir == 'eukaryotes':
-                # Eukaryotes: use the individual summary files created during ORF calling
-                # These already contain the merged FASTA headers + HMM data
+                # Eukaryotes: use the new HMM parsing and merging approach
+                logger.info(f"Processing eukaryotes with new HMM approach")
+                
+                # Create temporary ORFCaller instance to use the methods
+                class TempArgs:
+                    def __init__(self):
+                        self.annotation_domain_evalue = hmm_domain_evalue_cutoff or 0.01
+                        self.threads = 1
+                
+                temp_args = TempArgs()
+                temp_caller = ORFCaller(output_dir, "fas", temp_args)
+                
+                # First, process all HMM files to clean CSV
+                for file in os.listdir(annot_dir):
+                    if file.endswith('.hmm.tsv'):
+                        sample_id = file.replace('.hmm.tsv', '')
+                        hmm_file = os.path.join(annot_dir, file)
+                        hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                        
+                        logger.info(f"Processing HMM file for {sample_id}")
+                        temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, hmm_domain_evalue_cutoff)
+                
+                # Now create individual summaries for each sample
+                header_written = False
+                for file in os.listdir(annot_dir):
+                    if file.endswith('.fas'):
+                        sample_id = file.replace('.fas', '')
+                        fas_file = os.path.join(annot_dir, file)
+                        hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                        
+                        logger.info(f"Processing eukaryotic sample: {sample_id}")
+                        
+                        # Read FASTA headers and merge with HMM data
+                        fasta_headers = temp_caller.read_fasta_headers(fas_file)
+                        if fasta_headers:
+                            summary_file = os.path.join(annot_dir, f"{sample_id}_summary.tsv")
+                            rows, hmm_hits, no_hmm = temp_caller.merge_eukaryotic_hmm_data(
+                                sample_id, fasta_headers, hmm_csv, summary_file
+                            )
+                            logger.info(f"Created summary for {sample_id}: {rows} rows, {hmm_hits} with HMM, {no_hmm} without")
+                
+                # Now combine all individual summaries into the main summary file
                 header_written = False
                 for file in os.listdir(annot_dir):
                     if file.endswith('_summary.tsv'):
