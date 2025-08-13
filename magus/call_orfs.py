@@ -521,34 +521,20 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 temp_args = TempArgs()
                 temp_caller = ORFCaller(output_dir, "fas", temp_args)
                 
-                # First, process all HMM files to clean CSV
-                for file in os.listdir(annot_dir):
-                    if file.endswith('.hmm.tsv'):
-                        sample_id = file.replace('.hmm.tsv', '')
-                        hmm_file = os.path.join(annot_dir, file)
-                        hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
-                        
-                        logger.info(f"Processing HMM file for {sample_id}")
-                        temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, hmm_domain_evalue_cutoff)
-                
-                # Now create individual summaries for each sample
-                header_written = False
+                # Process ALL .fas files and create summaries (with or without HMM data)
                 for file in os.listdir(annot_dir):
                     if file.endswith('.fas'):
                         sample_id = file.replace('.fas', '')
                         fas_file = os.path.join(annot_dir, file)
                         hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
                         
-                        logger.info(f"Processing eukaryotic sample: {sample_id}")
-                        
-                        # Read FASTA headers and merge with HMM data
+                        # Read FASTA headers and merge with HMM data (if HMM data exists)
                         fasta_headers = temp_caller.read_fasta_headers(fas_file)
                         if fasta_headers:
                             summary_file = os.path.join(annot_dir, f"{sample_id}_summary.tsv")
-                            rows, hmm_hits, no_hmm = temp_caller.merge_eukaryotic_hmm_data(
+                            temp_caller.merge_eukaryotic_hmm_data(
                                 sample_id, fasta_headers, hmm_csv, summary_file
                             )
-                            logger.info(f"Created summary for {sample_id}: {rows} rows, {hmm_hits} with HMM, {no_hmm} without")
                 
                 # Now combine all individual summaries into the main summary file
                 header_written = False
@@ -556,8 +542,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                     if file.endswith('_summary.tsv'):
                         sample_id = file.replace('_summary.tsv', '')
                         file_path = os.path.join(annot_dir, file)
-                        
-                        logger.info(f"Processing eukaryotic summary for {sample_id}: {file_path}")
                         
                         with open(file_path, 'r') as infile:
                             for i, line in enumerate(infile):
