@@ -174,7 +174,19 @@ class ORFCaller:
         
         # HMM annotation (put results in annot directory for summary)
         if self.args.hmmfile:
-            self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
+            hmm_out = self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
+            
+            # Parse HMM output to clean CSV and merge with FASTA data
+            if hmm_out and os.path.exists(hmm_out):
+                # Parse HMM tblout to CSV with e-value filtering
+                hmm_csv = os.path.join(annot_dir, f"{FN}.hmm_clean.csv")
+                self.parse_hmm_tblout_to_csv(hmm_out, hmm_csv, self.args.annotation_domain_evalue)
+                
+                # Read FASTA headers and merge with HMM data
+                fasta_headers = self.read_fasta_headers(faa_file)
+                if fasta_headers:
+                    summary_file = os.path.join(annot_dir, f"{FN}_summary.tsv")
+                    self.merge_eukaryotic_hmm_data(FN, fasta_headers, hmm_csv, summary_file)
         
         return faa_file, ffn_file, None  # MetaEuk doesn't produce GFF
 
@@ -260,6 +272,170 @@ class ORFCaller:
         
         return hmm_out
 
+    def parse_hmm_tblout_to_csv(self, hmm_file, output_csv, evalue_cutoff=0.01):
+        """Parse HMM tblout output to clean CSV with e-value filtering.
+        
+        This function works for all domains (bacteria, viruses, eukaryotes, metagenomes).
+        It filters on both full-sequence and domain e-values immediately upon loading.
+        """
+        if not os.path.exists(hmm_file):
+            logger.warning(f"HMM file {hmm_file} does not exist. Skipping parsing.")
+            return None
+            
+        logger.info(f"Parsing HMM file: {hmm_file}")
+        logger.info(f"E-value cutoff: {evalue_cutoff}")
+        
+        # HMM tblout columns (removing target_accession since it's just '-')
+        columns = [
+            'target_name', 'query_name', 'query_accession',
+            'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
+            'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description'
+        ]
+        
+        rows = []
+        total_lines = 0
+        filtered_lines = 0
+        
+        with open(hmm_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                    
+                total_lines += 1
+                parts = line.split()
+                
+                if len(parts) < 18:
+                    logger.warning(f"Skipping malformed line {total_lines}: {len(parts)} columns")
+                    continue
+                
+                # Extract evalue for filtering
+                try:
+                    full_evalue = float(parts[4])
+                    dom_evalue = float(parts[7])
+                except (ValueError, IndexError):
+                    logger.warning(f"Could not parse evalue from line {total_lines}")
+                    continue
+                
+                # Apply evalue filter immediately
+                if full_evalue > evalue_cutoff and dom_evalue > evalue_cutoff:
+                    continue
+                    
+                filtered_lines += 1
+                
+                # Create row data (skip target_accession which is just '-')
+                row = {}
+                for i, col in enumerate(columns):
+                    if i < len(parts):
+                        row[col] = parts[i]
+                    else:
+                        row[col] = ''
+                
+                rows.append(row)
+        
+        logger.info(f"Total lines: {total_lines}")
+        logger.info(f"Lines after filtering: {filtered_lines}")
+        
+        # Write to CSV
+        with open(output_csv, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        logger.info(f"Wrote {len(rows)} rows to {output_csv}")
+        return rows
+
+    def read_fasta_headers(self, fas_file):
+        """Read FASTA headers from .fas file."""
+        if not os.path.exists(fas_file):
+            logger.warning(f"FASTA file {fas_file} does not exist.")
+            return set()
+            
+        logger.info(f"Reading FASTA headers from: {fas_file}")
+        
+        headers = set()
+        with open(fas_file, 'r') as f:
+            for line in f:
+                if line.startswith('>'):
+                    header = line.strip()[1:]  # Remove '>'
+                    headers.add(header)
+        
+        logger.info(f"Found {len(headers)} FASTA headers")
+        return headers
+
+    def merge_eukaryotic_hmm_data(self, sample_id, fasta_headers, hmm_csv_file, output_file):
+        """Merge eukaryotic FASTA headers with HMM data and write to output file.
+        
+        This creates the proper eukaryotic summary format:
+        sample_id \t target_name \t hmm_annotation_data
+        """
+        if not os.path.exists(hmm_csv_file):
+            logger.warning(f"HMM CSV file {hmm_csv_file} does not exist. Creating summary without HMM data.")
+            # Create summary with just FASTA headers and no HMM data
+            with open(output_file, 'w', newline='') as f:
+                writer = csv.writer(f, delimiter='\t')
+                header = ['sample_id', 'target_name', 'query_name', 'query_accession',
+                         'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
+                         'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']
+                writer.writerow(header)
+                
+                for target_name in fasta_headers:
+                    row = [sample_id, target_name] + [''] * (len(header) - 2)
+                    writer.writerow(row)
+            
+            logger.info(f"Created eukaryotic summary without HMM data: {len(fasta_headers)} rows")
+            return len(fasta_headers), 0, len(fasta_headers)
+        
+        # Read HMM data from CSV
+        hmm_data = {}
+        with open(hmm_csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                target_name = row['target_name']
+                hmm_data[target_name] = row
+        
+        logger.info(f"Loaded {len(hmm_data)} HMM hits for merging")
+        
+        # HMM annotation columns (excluding target_name since it's in the merge)
+        hmm_cols = [
+            'query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias',
+            'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env',
+            'dom', 'rep', 'inc', 'description'
+        ]
+        
+        # Write merged output
+        with open(output_file, 'w', newline='') as f:
+            writer = csv.writer(f, delimiter='\t')
+            header = ['sample_id', 'target_name'] + hmm_cols
+            writer.writerow(header)
+            
+            # Write data rows
+            rows_written = 0
+            rows_with_hmm = 0
+            rows_without_hmm = 0
+            
+            for target_name in fasta_headers:
+                if target_name in hmm_data:
+                    # This target has HMM hits
+                    hmm_info = hmm_data[target_name]
+                    row = [sample_id, target_name]
+                    for col in hmm_cols:
+                        row.append(hmm_info.get(col, ''))
+                    writer.writerow(row)
+                    rows_with_hmm += 1
+                else:
+                    # This target has no HMM hits
+                    row = [sample_id, target_name] + [''] * len(hmm_cols)
+                    writer.writerow(row)
+                    rows_without_hmm += 1
+                rows_written += 1
+        
+        logger.info(f"Wrote {rows_written} rows to {output_file}")
+        logger.info(f"Rows with HMM hits: {rows_with_hmm}")
+        logger.info(f"Rows without HMM hits: {rows_without_hmm}")
+        
+        return rows_written, rows_with_hmm, rows_without_hmm
+
 def find_genome_files(mag_dir, extension, wildcard):
     """Find genome files using directory and wildcard pattern, similar to dereplicate_genomes.py"""
     input_paths = [Path(p).resolve() for p in glob.glob(mag_dir, recursive=True)]
@@ -333,51 +509,29 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
         
         with open(summary_file, 'w') as summary:
             if subdir == 'eukaryotes':
-                # Eukaryotes: parse MetaEuk headersMap.tsv lines and normalize columns.
-                # Each data line's last column is a pipe-delimited block:
-                # UniRefAcc|sample|strand|score|evalue|num_exons|start|end|exon_info
+                # Eukaryotes: use the individual summary files created during ORF calling
+                # These already contain the merged FASTA headers + HMM data
                 header_written = False
                 for file in os.listdir(annot_dir):
-                    if file.endswith('.headersMap.tsv'):
-                        sample_id = file.replace('.headersMap.tsv', '')
+                    if file.endswith('_summary.tsv'):
+                        sample_id = file.replace('_summary.tsv', '')
                         file_path = os.path.join(annot_dir, file)
-
+                        
+                        logger.info(f"Processing eukaryotic summary for {sample_id}: {file_path}")
+                        
                         with open(file_path, 'r') as infile:
-                            for raw in infile:
-                                raw = raw.rstrip('\n')
-                                if not raw.strip():
+                            for i, line in enumerate(infile):
+                                if i == 0:  # Header line
+                                    if not header_written:
+                                        summary.write(line)  # Write header from first file
+                                        header_written = True
                                     continue
-                                # Prepare header once
-                                if not header_written:
-                                    summary.write('sample_id\taccession\tsample\tstrand\tscore\tevalue\tnum_exons\tstart\tend\texon_info\n')
-                                    header_written = True
-                                # Extract last column and parse
-                                parts = raw.split('\t')
-                                pipe_block = parts[-1] if parts else ''
-                                pipe_fields = pipe_block.split('|') if pipe_block else []
-                                # Pad to at least 9 fields
-                                while len(pipe_fields) < 9:
-                                    pipe_fields.append('')
-                                accession, sample_name, strand, score, evalue, num_exons, start, end, exon_info = pipe_fields[:9]
-                                # Early filter: ORF-calling evalue cutoff for eukaryotes
-                                if orfcalling_evalue_cutoff is not None:
-                                    try:
-                                        if evalue and float(evalue) > orfcalling_evalue_cutoff:
-                                            continue
-                                    except Exception:
-                                        pass
-                                summary.write('\t'.join([
-                                    sample_id,
-                                    accession,
-                                    sample_name,
-                                    strand,
-                                    score,
-                                    evalue,
-                                    num_exons,
-                                    start,
-                                    end,
-                                    exon_info
-                                ]) + '\n')
+                                summary.write(line)  # Write data lines
+                
+                if not header_written:
+                    logger.warning("No eukaryotic summary files found. Creating empty summary.")
+                    # Create minimal header if no files exist
+                    summary.write('sample_id\ttarget_name\tquery_name\tquery_accession\tfull_evalue\tfull_score\tfull_bias\tdom_evalue\tdom_score\tdom_bias\texp\treg\tclu\tov\tenv\tdom\trep\tinc\tdescription\n')
             else:
                 # Bacteria/Viruses/Metagenomes: parse Prodigal output
                 # Include ID so we can correctly join HMM hits per ORF
@@ -424,141 +578,122 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                         summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{gene_id}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
         
         # Now add HMM results from existing files (do not depend on --hmmfile being provided here)
-        logger.info(f"Adding HMM results to {subdir} summary (if present)")
+        # Skip eukaryotes since they're handled differently with individual summary files
+        if subdir != 'eukaryotes':
+            logger.info(f"Adding HMM results to {subdir} summary (if present)")
 
-        # Parse HMM tblout and build records
-        def parse_tblout_row(row: str):
-                if not row or row.startswith('#'):
-                    return None
-                t = row.rstrip('\n').split()
-                if len(t) < 19:
-                    return None
-                rec = {
-                    'target_name': t[0],
-                    'target_accession': t[1],
-                    'query_name': t[2],
-                    'query_accession': t[3],
-                    'full_evalue': t[4],
-                    'full_score': t[5],
-                    'full_bias': t[6],
-                    'dom_evalue': t[7],
-                    'dom_score': t[8],
-                    'dom_bias': t[9],
-                    'exp': t[10], 'reg': t[11], 'clu': t[12], 'ov': t[13], 'env': t[14], 'dom': t[15], 'rep': t[16], 'inc': t[17],
-                    'description': ' '.join(t[18:])
-                }
-                # Extract possible gene ID from target_name (for non-euks)
-                m = re.search(r'ID=([^;\s]+)', rec['target_name'])
-                rec['gene_id'] = m.group(1) if m else None
-                return rec
+            # Parse HMM tblout and build records
+            def parse_tblout_row(row: str):
+                    if not row or row.startswith('#'):
+                        return None
+                    t = row.rstrip('\n').split()
+                    if len(t) < 19:
+                        return None
+                    rec = {
+                        'target_name': t[0],
+                        'target_accession': t[1],
+                        'query_name': t[2],
+                        'query_accession': t[3],
+                        'full_evalue': t[4],
+                        'full_score': t[5],
+                        'full_bias': t[6],
+                        'dom_evalue': t[7],
+                        'dom_score': t[8],
+                        'dom_bias': t[9],
+                        'exp': t[10], 'reg': t[11], 'clu': t[12], 'ov': t[13], 'env': t[14], 'dom': t[15], 'rep': t[16], 'inc': t[17],
+                        'description': ' '.join(t[18:])
+                    }
+                    # Extract possible gene ID from target_name (for non-euks)
+                    m = re.search(r'ID=([^;\s]+)', rec['target_name'])
+                    rec['gene_id'] = m.group(1) if m else None
+                    return rec
 
-        # Collect HMM records grouped by join key
-        hmm_by_key = {}
-        for file in os.listdir(annot_dir):
-            if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
-                hmm_path = os.path.join(annot_dir, file)
-                with open(hmm_path, 'r') as fin:
-                    for raw in fin:
-                        rec = parse_tblout_row(raw)
-                        if not rec:
-                            continue
-                        # Choose join key
-                        if subdir == 'eukaryotes':
-                                # For MetaEuk targets, the accession is the first token before '|'
-                                # Example target_name: UniRef90_ID|sample|strand|...
-                                tn = rec.get('target_name', '')
-                                acc_from_name = tn.split('|', 1)[0] if '|' in tn else tn
-                                join_key = acc_from_name
-                        else:
+            # Collect HMM records grouped by join key
+            hmm_by_key = {}
+            for file in os.listdir(annot_dir):
+                if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
+                    hmm_path = os.path.join(annot_dir, file)
+                    with open(hmm_path, 'r') as fin:
+                        for raw in fin:
+                            rec = parse_tblout_row(raw)
+                            if not rec:
+                                continue
+                            # Choose join key (eukaryotes are handled separately)
                             join_key = rec.get('gene_id') or rec.get('target_name')
-                        # Early filter: HMM E-value thresholds
-                        try:
-                            if hmm_fullseq_evalue_cutoff is not None:
-                                fev = float(rec.get('full_evalue', '')) if rec.get('full_evalue', '') else None
-                                if fev is not None and fev > hmm_fullseq_evalue_cutoff:
-                                    continue
-                            if hmm_domain_evalue_cutoff is not None:
-                                dev = float(rec.get('dom_evalue', '')) if rec.get('dom_evalue', '') else None
-                                if dev is not None and dev > hmm_domain_evalue_cutoff:
-                                    continue
-                        except Exception:
-                            pass
-                        if not join_key:
-                            continue
-                        hmm_by_key.setdefault(join_key, []).append(rec)
-
-            if hmm_by_key:
-                temp_summary = summary_file + '.tmp'
-                with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
-                    original_header = infile.readline().rstrip('\n')
-                    hmm_cols = [
-                        'hmm_target_name','hmm_target_accession','hmm_query_name','hmm_query_accession',
-                        'hmm_full_evalue','hmm_full_score','hmm_full_bias',
-                        'hmm_dom_evalue','hmm_dom_score','hmm_dom_bias',
-                        'hmm_exp','hmm_reg','hmm_clu','hmm_ov','hmm_env','hmm_dom','hmm_rep','hmm_inc','hmm_description'
-                    ]
-                    # Write a single header row only once (long format: one row per HMM hit)
-                    outfile.write(original_header + '\t' + '\t'.join(hmm_cols) + '\n')
-
-                    header_fields = original_header.split('\t')
-                    if subdir == 'eukaryotes' and 'accession' in header_fields:
-                        key_idx = header_fields.index('accession')
-                    elif 'ID' in header_fields:
-                        key_idx = header_fields.index('ID')
-                    else:
-                        key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
-
-                    # Determine euk evalue column index if present for ORF-calling evalue filtering
-                    euk_evalue_idx = header_fields.index('evalue') if 'evalue' in header_fields else None
-
-                    def parse_float_safe(value: str) -> Optional[float]:
-                        try:
-                            return float(value)
-                        except Exception:
-                            return None
-
-                    for row in infile:
-                        row = row.rstrip('\n')
-                        if not row:
-                            continue
-                        cols = row.split('\t')
-                        join_key = cols[key_idx] if key_idx < len(cols) else None
-                        hits = hmm_by_key.get(join_key, []) if join_key else []
-                        # Long format: emit one row per HMM hit; also emit a blank-annotation row if there are no hits
-                        if hits:
-                            for h in hits:
-                                # Apply filters
-                                # 1) ORF-calling evalue (euk only)
-                                if subdir == 'eukaryotes' and orfcalling_evalue_cutoff is not None and euk_evalue_idx is not None:
-                                    ev = parse_float_safe(cols[euk_evalue_idx]) if euk_evalue_idx < len(cols) else None
-                                    if ev is not None and ev > orfcalling_evalue_cutoff:
-                                        continue
-                                # 2) HMM full-sequence evalue
+                            # Early filter: HMM E-value thresholds
+                            try:
                                 if hmm_fullseq_evalue_cutoff is not None:
-                                    fev = parse_float_safe(h.get('full_evalue', ''))
+                                    fev = float(rec.get('full_evalue', '')) if rec.get('full_evalue', '') else None
                                     if fev is not None and fev > hmm_fullseq_evalue_cutoff:
                                         continue
-                                # 3) HMM best-domain evalue
                                 if hmm_domain_evalue_cutoff is not None:
-                                    dev = parse_float_safe(h.get('dom_evalue', ''))
+                                    dev = float(rec.get('dom_evalue', '')) if rec.get('dom_evalue', '') else None
                                     if dev is not None and dev > hmm_domain_evalue_cutoff:
                                         continue
-                                values = [
-                                    h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
-                                    h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
-                                    h.get('dom_evalue',''), h.get('dom_score',''), h.get('dom_bias',''),
-                                    h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
-                                ]
-                                outfile.write(row + '\t' + '\t'.join(values) + '\n')
-                        else:
-                            # No HMMs for this ORF: apply only ORF-calling evalue filter (if any); then keep with empty HMM columns
-                            if subdir == 'eukaryotes' and orfcalling_evalue_cutoff is not None and euk_evalue_idx is not None:
-                                ev = parse_float_safe(cols[euk_evalue_idx]) if euk_evalue_idx < len(cols) else None
-                                if ev is not None and ev > orfcalling_evalue_cutoff:
-                                    continue
-                            outfile.write(row + '\t' + '\t'.join([''] * len(hmm_cols)) + '\n')
+                            except Exception:
+                                pass
+                            if not join_key:
+                                continue
+                            hmm_by_key.setdefault(join_key, []).append(rec)
 
-                os.replace(temp_summary, summary_file)
+                if hmm_by_key:
+                    temp_summary = summary_file + '.tmp'
+                    with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
+                        original_header = infile.readline().rstrip('\n')
+                        hmm_cols = [
+                            'hmm_target_name','hmm_target_accession','hmm_query_name','hmm_query_accession',
+                            'hmm_full_evalue','hmm_full_score','hmm_full_bias',
+                            'hmm_dom_evalue','hmm_dom_score','hmm_dom_bias',
+                            'hmm_exp','hmm_reg','hmm_clu','hmm_ov','hmm_env','hmm_dom','hmm_rep','hmm_inc','hmm_description'
+                        ]
+                        # Write a single header row only once (long format: one row per HMM hit)
+                        outfile.write(original_header + '\t' + '\t'.join(hmm_cols) + '\n')
+
+                        header_fields = original_header.split('\t')
+                        if 'ID' in header_fields:
+                            key_idx = header_fields.index('ID')
+                        else:
+                            key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
+
+                        def parse_float_safe(value: str) -> Optional[float]:
+                            try:
+                                return float(value)
+                            except Exception:
+                                return None
+
+                        for row in infile:
+                            row = row.rstrip('\n')
+                            if not row:
+                                continue
+                            cols = row.split('\t')
+                            join_key = cols[key_idx] if key_idx < len(cols) else None
+                            hits = hmm_by_key.get(join_key, []) if join_key else []
+                            # Long format: emit one row per HMM hit; also emit a blank-annotation row if there are no hits
+                            if hits:
+                                for h in hits:
+                                    # Apply HMM e-value filters
+                                    if hmm_fullseq_evalue_cutoff is not None:
+                                        fev = parse_float_safe(h.get('full_evalue', ''))
+                                        if fev is not None and fev > hmm_fullseq_evalue_cutoff:
+                                            continue
+                                    if hmm_domain_evalue_cutoff is not None:
+                                        dev = parse_float_safe(h.get('dom_evalue', ''))
+                                        if dev is not None and dev > hmm_domain_evalue_cutoff:
+                                            continue
+                                    values = [
+                                        h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
+                                        h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
+                                        h.get('dom_evalue',''), h.get('dom_score',''), h.get('dom_bias',''),
+                                        h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
+                                    ]
+                                    outfile.write(row + '\t' + '\t'.join(values) + '\n')
+                            else:
+                                # No HMMs for this ORF: keep with empty HMM columns
+                                outfile.write(row + '\t' + '\t'.join([''] * len(hmm_cols)) + '\n')
+
+                    os.replace(temp_summary, summary_file)
+        else:
+            logger.info(f"Skipping HMM merging for {subdir} - using individual summary files instead")
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
 
