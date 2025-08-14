@@ -19,6 +19,7 @@ import tempfile
 from collections import defaultdict, Counter
 from typing import Dict, List, Set, Tuple
 import logging
+from Bio import SeqIO
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -57,6 +58,25 @@ def load_orf_summary(summary_file: str) -> Dict[str, Dict[str, Dict]]:
     
     logger.info(f"Loaded ORF data for {len(samples_data)} samples")
     return samples_data
+
+def load_fasta_sequences(fasta_dir: str, sample_id: str) -> Dict[str, str]:
+    """Load protein sequences from a sample's .fas file using Biopython."""
+    fas_file = os.path.join(fasta_dir, f"{sample_id}.fas")
+    
+    if not os.path.exists(fas_file):
+        logger.warning(f"FASTA file not found: {fas_file}")
+        return {}
+    
+    sequences = {}
+    try:
+        for record in SeqIO.parse(fas_file, "fasta"):
+            sequences[record.id] = str(record.seq)
+        logger.info(f"Loaded {len(sequences)} sequences from {fas_file}")
+    except Exception as e:
+        logger.error(f"Error loading FASTA file {fas_file}: {e}")
+        return {}
+    
+    return sequences
 
 def check_overall_genome_coverage(gene_families: Dict[str, List[str]], 
                                  samples_data: Dict[str, Dict[str, Dict]],
@@ -98,7 +118,9 @@ def check_overall_genome_coverage(gene_families: Dict[str, List[str]],
 
 def extract_and_concatenate_sequences(all_genes: List[str],
                                     genome_gene_coverage: Dict[str, Set[str]],
-                                    samples_data: Dict[str, Dict[str, Dict]]) -> Dict[str, str]:
+                                    samples_data: Dict[str, Dict[str, Dict]],
+                                    fasta_dir: str,
+                                    evalue_cutoff: float = 0.001) -> Dict[str, Dict]:
     """Extract and concatenate all gene sequences for each genome."""
     concatenated_sequences = {}
     
@@ -108,8 +130,13 @@ def extract_and_concatenate_sequences(all_genes: List[str],
     for sample_id, genes_in_genome in genome_gene_coverage.items():
         if not genes_in_genome:  # Skip genomes with no genes
             continue
+        
+        # Load this sample's FASTA sequences
+        sample_sequences = load_fasta_sequences(fasta_dir, sample_id)
+        if not sample_sequences:
+            continue
             
-        # For each gene, find the best hit (lowest E-value)
+        # For each gene, find the best hit (lowest E-value) and extract sequence
         concatenated_seq = []
         gene_order = []
         
@@ -118,25 +145,31 @@ def extract_and_concatenate_sequences(all_genes: List[str],
                 # Find best hit for this gene in this genome
                 best_hit = None
                 best_evalue = float('inf')
+                best_target_name = None
                 
                 for target_name, orf_data in samples_data[sample_id].items():
                     if orf_data.get('query_name') == gene_name:
                         try:
                             evalue = float(orf_data.get('full_evalue', float('inf')))
-                            if evalue < best_evalue:
-                                best_evalue = best_evalue
+                            if evalue < evalue_cutoff and evalue < best_evalue:
+                                best_evalue = evalue
                                 best_hit = orf_data
+                                best_target_name = target_name
                         except ValueError:
                             continue
                 
-                if best_hit:
-                    concatenated_seq.append(best_hit['target_name'])
+                if best_hit and best_target_name in sample_sequences:
+                    # Extract the actual protein sequence
+                    protein_seq = sample_sequences[best_target_name]
+                    concatenated_seq.append(protein_seq)
                     gene_order.append(gene_name)
+                    logger.debug(f"Added {gene_name} sequence (length: {len(protein_seq)}) for {sample_id}")
                 else:
-                    concatenated_seq.append('N' * 100)  # Placeholder for missing gene
+                    # No valid hit found
+                    concatenated_seq.append('X' * 100)  # Placeholder for missing gene
                     gene_order.append(f"{gene_name}_MISSING")
             else:
-                concatenated_seq.append('N' * 100)  # Placeholder for missing gene
+                concatenated_seq.append('X' * 100)  # Placeholder for missing gene
                 gene_order.append(f"{gene_name}_MISSING")
         
         # Join all sequences with a separator
@@ -213,10 +246,20 @@ def main():
         help='Path to eukaryotic ORF summary file (e.g., eukaryotes_orf_summary.tsv)'
     )
     parser.add_argument(
+        'fasta_dir',
+        help='Directory containing the .fas files for each sample'
+    )
+    parser.add_argument(
         '--coverage-threshold',
         type=float,
         default=100.0,
         help='Minimum percentage of genomes that must have at least one gene (0-100, default: 100.0)'
+    )
+    parser.add_argument(
+        '--evalue-cutoff',
+        type=float,
+        default=0.001,
+        help='E-value cutoff for filtering gene hits (default: 0.001)'
     )
     parser.add_argument(
         '--output-dir',
@@ -250,7 +293,9 @@ def main():
         
         # Extract and concatenate sequences
         logger.info("Extracting and concatenating sequences...")
-        concatenated_sequences = extract_and_concatenate_sequences(all_genes, genome_gene_coverage, samples_data)
+        concatenated_sequences = extract_and_concatenate_sequences(
+            all_genes, genome_gene_coverage, samples_data, args.fasta_dir, args.evalue_cutoff
+        )
         
         # Create concatenated FASTA file
         logger.info("Creating concatenated FASTA file...")
