@@ -3,11 +3,11 @@
 Build phylogenetic trees from eukaryotic single copy genes.
 
 This script takes the output from find_euk_single_copy.py and:
-1. Identifies genes with sufficient genome coverage
+1. Identifies genes with sufficient overall genome coverage
 2. Extracts ORF sequences from the original summary
-3. Concatenates sequences per genome
-4. Runs MAFFT for alignment
-5. Runs FastTree to build phylogenetic trees
+3. Concatenates ALL genes per genome into single sequences
+4. Runs MAFFT for alignment on concatenated sequences
+5. Runs FastTree to build ONE phylogenetic tree
 """
 
 import argparse
@@ -58,91 +58,122 @@ def load_orf_summary(summary_file: str) -> Dict[str, Dict[str, Dict]]:
     logger.info(f"Loaded ORF data for {len(samples_data)} samples")
     return samples_data
 
-def check_genome_coverage(gene_families: Dict[str, List[str]], 
-                         samples_data: Dict[str, Dict[str, Dict]],
-                         coverage_threshold: float = 100.0) -> Dict[str, List[str]]:
-    """Check which genes have sufficient genome coverage."""
+def check_overall_genome_coverage(gene_families: Dict[str, List[str]], 
+                                 samples_data: Dict[str, Dict[str, Dict]],
+                                 coverage_threshold: float = 100.0) -> Tuple[List[str], Dict[str, Set[str]]]:
+    """Check overall genome coverage across ALL genes combined."""
     total_genomes = len(samples_data)
     min_genomes = int(total_genomes * coverage_threshold / 100.0)
     
     logger.info(f"Total genomes: {total_genomes}")
     logger.info(f"Minimum genomes required: {min_genomes} ({coverage_threshold}%)")
     
-    # Check coverage for each gene family
-    genes_with_coverage = defaultdict(list)
+    # Get all unique genes
+    all_genes = []
+    for genes in gene_families.values():
+        all_genes.extend(genes)
     
-    for family_name, genes in gene_families.items():
-        for gene_name in genes:
-            # Count how many genomes have this gene
-            genomes_with_gene = 0
-            for sample_id, sample_orfs in samples_data.items():
-                # Check if any ORF in this sample has this gene name
-                for target_name, orf_data in sample_orfs.items():
-                    if orf_data.get('query_name') == gene_name:
-                        genomes_with_gene += 1
-                        break
-            
-            if genomes_with_gene >= min_genomes:
-                genes_with_coverage[family_name].append(gene_name)
-                logger.info(f"{gene_name}: {genomes_with_gene}/{total_genomes} genomes ({genomes_with_gene/total_genomes*100:.1f}%)")
+    logger.info(f"Total genes to analyze: {len(all_genes)}")
     
-    return genes_with_coverage
+    # For each genome, check which genes it has
+    genome_gene_coverage = {}
+    for sample_id, sample_orfs in samples_data.items():
+        genes_in_genome = set()
+        for target_name, orf_data in sample_orfs.items():
+            query_name = orf_data.get('query_name', '')
+            if query_name in all_genes:
+                genes_in_genome.add(query_name)
+        genome_gene_coverage[sample_id] = genes_in_genome
+    
+    # Count how many genomes have at least one gene
+    genomes_with_any_gene = sum(1 for genes in genome_gene_coverage.values() if len(genes) > 0)
+    
+    logger.info(f"Genomes with at least one gene: {genomes_with_any_gene}/{total_genomes}")
+    
+    if genomes_with_any_gene < min_genomes:
+        logger.warning(f"Insufficient genome coverage: {genomes_with_any_gene}/{total_genomes} < {min_genomes}")
+        return [], {}
+    
+    return all_genes, genome_gene_coverage
 
-def extract_sequences(genes_with_coverage: Dict[str, List[str]],
-                     samples_data: Dict[str, Dict[str, Dict]]) -> Dict[str, Dict[str, str]]:
-    """Extract protein sequences for genes with sufficient coverage."""
-    sequences = defaultdict(dict)
+def extract_and_concatenate_sequences(all_genes: List[str],
+                                    genome_gene_coverage: Dict[str, Set[str]],
+                                    samples_data: Dict[str, Dict[str, Dict]]) -> Dict[str, str]:
+    """Extract and concatenate all gene sequences for each genome."""
+    concatenated_sequences = {}
     
-    for family_name, genes in genes_with_coverage.items():
-        for gene_name in genes:
-            # For each genome, find the best hit for this gene
-            for sample_id, sample_orfs in samples_data.items():
+    # Sort genes to ensure consistent concatenation order
+    sorted_genes = sorted(all_genes)
+    
+    for sample_id, genes_in_genome in genome_gene_coverage.items():
+        if not genes_in_genome:  # Skip genomes with no genes
+            continue
+            
+        # For each gene, find the best hit (lowest E-value)
+        concatenated_seq = []
+        gene_order = []
+        
+        for gene_name in sorted_genes:
+            if gene_name in genes_in_genome:
+                # Find best hit for this gene in this genome
                 best_hit = None
                 best_evalue = float('inf')
                 
-                for target_name, orf_data in sample_orfs.items():
+                for target_name, orf_data in samples_data[sample_id].items():
                     if orf_data.get('query_name') == gene_name:
                         try:
                             evalue = float(orf_data.get('full_evalue', float('inf')))
                             if evalue < best_evalue:
-                                best_evalue = evalue
+                                best_evalue = best_evalue
                                 best_hit = orf_data
                         except ValueError:
                             continue
                 
                 if best_hit:
-                    # Store the target_name as the sequence identifier
-                    sequences[gene_name][sample_id] = best_hit['target_name']
+                    concatenated_seq.append(best_hit['target_name'])
+                    gene_order.append(gene_name)
+                else:
+                    concatenated_seq.append('N' * 100)  # Placeholder for missing gene
+                    gene_order.append(f"{gene_name}_MISSING")
+            else:
+                concatenated_seq.append('N' * 100)  # Placeholder for missing gene
+                gene_order.append(f"{gene_name}_MISSING")
+        
+        # Join all sequences with a separator
+        concatenated_sequences[sample_id] = {
+            'sequence': '|'.join(concatenated_seq),
+            'gene_order': gene_order,
+            'genes_present': len([g for g in genes_in_genome if g in sorted_genes])
+        }
     
-    return sequences
+    return concatenated_sequences
 
-def create_fasta_files(sequences: Dict[str, Dict[str, str]],
-                      samples_data: Dict[str, Dict[str, Dict]],
-                      output_dir: str) -> Dict[str, str]:
-    """Create FASTA files for each gene family."""
+def create_concatenated_fasta(concatenated_sequences: Dict[str, Dict],
+                             output_dir: str) -> str:
+    """Create a single FASTA file with concatenated sequences."""
     os.makedirs(output_dir, exist_ok=True)
     
-    fasta_files = {}
+    fasta_file = os.path.join(output_dir, "concatenated_genes.fasta")
     
-    for gene_name, genome_hits in sequences.items():
-        fasta_file = os.path.join(output_dir, f"{gene_name}.fasta")
-        
-        with open(fasta_file, 'w') as f:
-            for sample_id, target_name in genome_hits.items():
-                # Get the actual sequence from the original FASTA files
-                # For now, we'll use the target_name as a placeholder
-                # In a real implementation, you'd need to load the actual sequences
-                f.write(f">{sample_id}\n{target_name}\n")
-        
-        fasta_files[gene_name] = fasta_file
-        logger.info(f"Created FASTA file for {gene_name}: {len(genome_hits)} sequences")
+    with open(fasta_file, 'w') as f:
+        for sample_id, data in concatenated_sequences.items():
+            f.write(f">{sample_id}\n{data['sequence']}\n")
     
-    return fasta_files
+    # Also save gene order info
+    info_file = os.path.join(output_dir, "gene_order.txt")
+    with open(info_file, 'w') as f:
+        f.write("Gene order in concatenated sequences:\n")
+        for i, gene in enumerate(concatenated_sequences[list(concatenated_sequences.keys())[0]]['gene_order']):
+            f.write(f"{i+1}: {gene}\n")
+    
+    logger.info(f"Created concatenated FASTA: {fasta_file}")
+    logger.info(f"Gene order info: {info_file}")
+    
+    return fasta_file
 
 def run_mafft(fasta_file: str, output_dir: str) -> str:
-    """Run MAFFT alignment on a FASTA file."""
-    base_name = os.path.splitext(os.path.basename(fasta_file))[0]
-    aligned_file = os.path.join(output_dir, f"{base_name}_aligned.fasta")
+    """Run MAFFT alignment on concatenated FASTA file."""
+    aligned_file = os.path.join(output_dir, "concatenated_genes_aligned.fasta")
     
     cmd = ['mafft', '--auto', fasta_file]
     
@@ -152,13 +183,12 @@ def run_mafft(fasta_file: str, output_dir: str) -> str:
         logger.info(f"MAFFT alignment completed: {aligned_file}")
         return aligned_file
     except subprocess.CalledProcessError as e:
-        logger.error(f"MAFFT failed for {fasta_file}: {e}")
+        logger.error(f"MAFFT failed: {e}")
         return None
 
 def run_fasttree(aligned_file: str, output_dir: str) -> str:
-    """Run FastTree on an aligned FASTA file."""
-    base_name = os.path.splitext(os.path.basename(aligned_file))[0].replace('_aligned', '')
-    tree_file = os.path.join(output_dir, f"{base_name}.tree")
+    """Run FastTree on aligned concatenated sequences."""
+    tree_file = os.path.join(output_dir, "eukaryotic_phylogeny.tree")
     
     cmd = ['fasttree', '-out', tree_file, aligned_file]
     
@@ -167,12 +197,12 @@ def run_fasttree(aligned_file: str, output_dir: str) -> str:
         logger.info(f"FastTree completed: {tree_file}")
         return tree_file
     except subprocess.CalledProcessError as e:
-        logger.error(f"FastTree failed for {aligned_file}: {e}")
+        logger.error(f"FastTree failed: {e}")
         return None
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Build phylogenetic trees from eukaryotic single copy genes'
+        description='Build phylogenetic trees from concatenated eukaryotic single copy genes'
     )
     parser.add_argument(
         'single_copy_csv',
@@ -186,7 +216,7 @@ def main():
         '--coverage-threshold',
         type=float,
         default=100.0,
-        help='Minimum percentage of genomes a gene must appear in (0-100, default: 100.0)'
+        help='Minimum percentage of genomes that must have at least one gene (0-100, default: 100.0)'
     )
     parser.add_argument(
         '--output-dir',
@@ -210,37 +240,38 @@ def main():
         logger.info("Loading ORF summary...")
         samples_data = load_orf_summary(args.orf_summary)
         
-        # Check genome coverage
-        logger.info("Checking genome coverage...")
-        genes_with_coverage = check_genome_coverage(gene_families, samples_data, args.coverage_threshold)
+        # Check overall genome coverage across all genes
+        logger.info("Checking overall genome coverage...")
+        all_genes, genome_gene_coverage = check_overall_genome_coverage(gene_families, samples_data, args.coverage_threshold)
         
-        if not genes_with_coverage:
+        if not all_genes:
             logger.warning("No genes meet the coverage threshold")
             sys.exit(0)
         
-        # Extract sequences
-        logger.info("Extracting sequences...")
-        sequences = extract_sequences(genes_with_coverage, samples_data)
+        # Extract and concatenate sequences
+        logger.info("Extracting and concatenating sequences...")
+        concatenated_sequences = extract_and_concatenate_sequences(all_genes, genome_gene_coverage, samples_data)
         
-        # Create output directory
-        os.makedirs(args.output_dir, exist_ok=True)
+        # Create concatenated FASTA file
+        logger.info("Creating concatenated FASTA file...")
+        fasta_file = create_concatenated_fasta(concatenated_sequences, args.output_dir)
         
-        # Create FASTA files
-        logger.info("Creating FASTA files...")
-        fasta_files = create_fasta_files(sequences, samples_data, args.output_dir)
+        # Run MAFFT on concatenated sequences
+        logger.info("Running MAFFT alignment...")
+        aligned_file = run_mafft(fasta_file, args.output_dir)
         
-        # Run MAFFT and FastTree for each gene
-        logger.info("Running alignments and tree building...")
-        for gene_name, fasta_file in fasta_files.items():
-            # Run MAFFT
-            aligned_file = run_mafft(fasta_file, args.output_dir)
-            if aligned_file:
-                # Run FastTree
-                tree_file = run_fasttree(aligned_file, args.output_dir)
-                if tree_file:
-                    logger.info(f"Successfully created tree for {gene_name}: {tree_file}")
-        
-        logger.info(f"Tree building completed. Results in: {args.output_dir}")
+        if aligned_file:
+            # Run FastTree on aligned concatenated sequences
+            logger.info("Running FastTree...")
+            tree_file = run_fasttree(aligned_file, args.output_dir)
+            
+            if tree_file:
+                logger.info(f"Successfully created phylogenetic tree: {tree_file}")
+                logger.info(f"Tree building completed. Results in: {args.output_dir}")
+            else:
+                logger.error("FastTree failed")
+        else:
+            logger.error("MAFFT alignment failed")
         
     except Exception as e:
         logger.error(f"Error: {e}")
