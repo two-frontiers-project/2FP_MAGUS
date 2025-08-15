@@ -42,8 +42,25 @@ def load_single_copy_genes(csv_file: str) -> Dict[str, List[str]]:
     logger.info(f"Loaded {sum(len(genes) for genes in gene_families.values())} genes from {len(gene_families)} families")
     return gene_families
 
-def load_orf_summary(summary_file: str) -> Dict[str, Dict[str, Dict]]:
-    """Load ORF summary file and organize by sample_id and target_name."""
+def load_genome_list(genome_list_file: str = None) -> Set[str]:
+    """Load list of genomes to include in analysis."""
+    if not genome_list_file:
+        return set()
+    
+    if not os.path.exists(genome_list_file):
+        raise FileNotFoundError(f"Genome list file not found: {genome_list_file}")
+    
+    genomes = set()
+    with open(genome_list_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                genomes.add(line)
+    
+    return genomes
+
+def load_orf_summary(summary_file: str, genome_list: Set[str] = None) -> Dict[str, Dict[str, Dict]]:
+    """Load ORF summary file and organize by sample_id and target_name, optionally filtering by genome list."""
     if not os.path.exists(summary_file):
         raise FileNotFoundError(f"ORF summary file not found: {summary_file}")
     
@@ -53,6 +70,11 @@ def load_orf_summary(summary_file: str) -> Dict[str, Dict[str, Dict]]:
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
             sample_id = row['sample_id']
+            
+            # Skip if genome list is provided and this sample is not in it
+            if genome_list and sample_id not in genome_list:
+                continue
+                
             target_name = row['target_name']
             samples_data[sample_id][target_name] = row
     
@@ -266,6 +288,10 @@ def main():
         default='eukaryotic_trees',
         help='Output directory for trees and alignments (default: eukaryotic_trees)'
     )
+    parser.add_argument(
+        '--genome-list',
+        help='File containing list of genome IDs to include (one per line, # for comments)'
+    )
     
     args = parser.parse_args()
     
@@ -275,13 +301,18 @@ def main():
         sys.exit(1)
     
     try:
+        # Load genome list if provided
+        genome_list = load_genome_list(args.genome_list)
+        if genome_list:
+            logger.info(f"Filtering to {len(genome_list)} specified genomes")
+        
         # Load single copy genes
         logger.info("Loading single copy genes...")
         gene_families = load_single_copy_genes(args.single_copy_csv)
         
         # Load ORF summary
         logger.info("Loading ORF summary...")
-        samples_data = load_orf_summary(args.orf_summary)
+        samples_data = load_orf_summary(args.orf_summary, genome_list)
         
         # Check overall genome coverage across all genes
         logger.info("Checking overall genome coverage...")

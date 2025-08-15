@@ -13,8 +13,25 @@ import sys
 from collections import defaultdict, Counter
 from typing import Dict, List, Set, Tuple
 
-def load_orf_summary(summary_file: str) -> Dict[str, List[Dict]]:
-    """Load ORF summary file and group by sample_id."""
+def load_genome_list(genome_list_file: str = None) -> Set[str]:
+    """Load list of genomes to include in analysis."""
+    if not genome_list_file:
+        return set()
+    
+    if not os.path.exists(genome_list_file):
+        raise FileNotFoundError(f"Genome list file not found: {genome_list_file}")
+    
+    genomes = set()
+    with open(genome_list_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                genomes.add(line)
+    
+    return genomes
+
+def load_orf_summary(summary_file: str, genome_list: Set[str] = None) -> Dict[str, List[Dict]]:
+    """Load ORF summary file and group by sample_id, optionally filtering by genome list."""
     if not os.path.exists(summary_file):
         raise FileNotFoundError(f"Summary file not found: {summary_file}")
     
@@ -24,6 +41,11 @@ def load_orf_summary(summary_file: str) -> Dict[str, List[Dict]]:
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
             sample_id = row['sample_id']
+            
+            # Skip if genome list is provided and this sample is not in it
+            if genome_list and sample_id not in genome_list:
+                continue
+                
             samples_data[sample_id].append(row)
     
     return samples_data
@@ -163,6 +185,10 @@ def main():
         default=0.0,
         help='Minimum percentage of samples a gene must appear in (0-100, default: 0.0)'
     )
+    parser.add_argument(
+        '--genome-list',
+        help='File containing list of genome IDs to include (one per line, # for comments)'
+    )
     
     args = parser.parse_args()
     
@@ -172,8 +198,13 @@ def main():
         sys.exit(1)
     
     try:
+        # Load genome list if provided
+        genome_list = load_genome_list(args.genome_list)
+        if genome_list:
+            print(f"Filtering to {len(genome_list)} specified genomes")
+        
         # Load ORF summary data
-        samples_data = load_orf_summary(args.summary_file)
+        samples_data = load_orf_summary(args.summary_file, genome_list)
         
         # Filter for full sequence hits and keep best hit per gene per sample
         filtered_data = filter_hmm_hits(samples_data, args.fullseq_evalue)
