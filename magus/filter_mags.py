@@ -58,8 +58,7 @@ class MAGFilter:
         
         with open(all_perq_data_path, 'w') as outfile:
             for perq_file in perq_files:
-                # Extract sample ID by removing .perq extension
-                sample_id = perq_file.name.replace('.perq', '')
+                sample_id = perq_file.stem  # filename without .perq extension
                 
                 try:
                     with open(perq_file, 'r') as infile:
@@ -127,17 +126,10 @@ class MAGFilter:
         total_contigs_removed = 0
         
         for sample_id, contigs_to_remove in to_remove.items():
-            # Look for the corresponding MAG file
-            mag_file = None
+            # Look for the corresponding MAG file - it should have the exact same name
+            mag_file = self.mag_dir / sample_id
             
-            # Try different possible extensions
-            for ext in ['.fa', '.fasta', '.fna']:
-                potential_file = self.mag_dir / f"{sample_id}{ext}"
-                if potential_file.exists():
-                    mag_file = potential_file
-                    break
-            
-            if not mag_file:
+            if not mag_file.exists():
                 logger.warning(f"MAG file not found for sample {sample_id}")
                 continue
             
