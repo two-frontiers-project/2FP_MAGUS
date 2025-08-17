@@ -685,6 +685,13 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
 
             if hmm_by_key:
                 temp_summary = summary_file + '.tmp'
+                
+                def parse_float_safe(value: str) -> Optional[float]:
+                    try:
+                        return float(value)
+                    except Exception:
+                        return None
+                
                 with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
                     original_header = infile.readline().rstrip('\n')
                     hmm_cols = [
@@ -701,12 +708,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         key_idx = header_fields.index('ID')
                     else:
                         key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
-
-                    def parse_float_safe(value: str) -> Optional[float]:
-                        try:
-                            return float(value)
-                        except Exception:
-                            return None
 
                     for row in infile:
                         row = row.rstrip('\n')
