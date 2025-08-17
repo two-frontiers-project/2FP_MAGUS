@@ -27,7 +27,9 @@ def main():
         'find-viruses': 'find-viruses.py',
         'find-euks': 'find-euks.py',
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
-        'call-orfs': 'call_orfs.py'
+        'call-orfs': 'call_orfs.py',
+        'build-gene-catalog': 'build_gene_catalog.py',
+        'filter-mags': 'filter_mags.py'
   }
 
     # Check for valid command
@@ -42,6 +44,8 @@ def main():
 
     # Run the appropriate script
     subprocess.run(['python', script_path] + args)
+
+
 
 if __name__ == '__main__':
     main()
