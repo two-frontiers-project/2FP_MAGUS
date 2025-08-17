@@ -58,7 +58,8 @@ class MAGFilter:
         
         with open(all_perq_data_path, 'w') as outfile:
             for perq_file in perq_files:
-                sample_id = perq_file.stem  # filename without .perq extension
+                # Extract sample ID by removing .perq extension
+                sample_id = perq_file.name.replace('.perq', '')
                 
                 try:
                     with open(perq_file, 'r') as infile:
