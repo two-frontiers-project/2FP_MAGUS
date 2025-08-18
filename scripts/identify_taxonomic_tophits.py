@@ -64,12 +64,13 @@ def main():
 
         # Genome size: look for .fa then .fa.gz
         fa_base = os.path.basename(ref_path)[:-4]  # remove ".ref"
-        fa_path = os.path.join(fa_dir, fa_base)
+        fa_file = os.path.join(fa_dir, fa_base + ".fa")
+        fa_gz_file = os.path.join(fa_dir, fa_base + ".fa.gz")
         genome_size = None
-        if os.path.isfile(fa_path):
-            genome_size = count_genome_bases(fa_path+'.fa')
-        elif os.path.isfile(fa_path + ".fa.gz"):
-            genome_size = count_genome_bases(fa_path + ".fa.gz")
+        if os.path.isfile(fa_file):
+            genome_size = count_genome_bases(fa_file)
+        elif os.path.isfile(fa_gz_file):
+            genome_size = count_genome_bases(fa_gz_file)
 
         genome_size_str = str(genome_size) if genome_size is not None else "NA"
 
