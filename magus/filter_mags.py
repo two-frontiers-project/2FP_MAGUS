@@ -141,7 +141,7 @@ class MAGFilter:
                 
                 # Write filtered output
                 output_file = self.output_dir / f"filtered_{mag_file.name}"
-                SeqIO.write(kept, output_file, "fasta")
+                SeqIO.write(kept, output_file, "fasta", wrap=None)
                 
                 filtered_count += 1
                 total_contigs_removed += removed

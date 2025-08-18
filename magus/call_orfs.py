@@ -485,7 +485,6 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
             process_single_genome(genome_data)
 
 def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
-                                 orfcalling_evalue_cutoff: Optional[float] = None,
                                  hmm_fullseq_evalue_cutoff: Optional[float] = None,
                                  hmm_domain_evalue_cutoff: Optional[float] = None):
     """Create ONE comprehensive summary file per domain with ALL information.
@@ -764,7 +763,7 @@ def main():
     parser.add_argument('--extension', type=str, default='fa', help='Extension of genome files (default: fa).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
-    parser.add_argument('--orfcalling-evalue', '--oce', type=float, default=1e-2, dest='orfcalling_evalue', help='Filter out ORFs whose calling evalue exceeds this cutoff (applies to eukaryote MetaEuk evalue column). Default: 0.01')
+
     parser.add_argument('--annotation-fullseq-evalue', '--afe', type=float, default=1e-2, dest='annotation_fullseq_evalue', help='Filter out HMM hits with full-sequence E-value exceeding this cutoff. Default: 0.01')
     parser.add_argument('--annotation-domain-evalue', '--ade', type=float, default=1e-2, dest='annotation_domain_evalue', help='Filter out HMM hits with best-domain E-value exceeding this cutoff. Default: 0.01')
     parser.add_argument('--suffix', type=str, default=None, help='Suffix to tag outputs (e.g., kegg). Summaries and HMM tblout files include this suffix.')
@@ -795,7 +794,6 @@ def main():
         logger.info("Running in create-summary mode - generating comprehensive summaries")
         create_comprehensive_summary(
             args.output_directory, args.hmmfile, args.suffix,
-            orfcalling_evalue_cutoff=args.orfcalling_evalue,
             hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
             hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
         )
@@ -865,7 +863,6 @@ def main():
         logger.info("Creating comprehensive summaries with updated HMM results")
         create_comprehensive_summary(
             args.output_directory, args.hmmfile, args.suffix,
-            orfcalling_evalue_cutoff=args.orfcalling_evalue,
             hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
             hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
         )
@@ -935,7 +932,6 @@ def main():
     logger.info("Stage 2: Creating comprehensive summaries")
     create_comprehensive_summary(
         args.output_directory, args.hmmfile, args.suffix,
-        orfcalling_evalue_cutoff=args.orfcalling_evalue,
         hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
         hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
     )
