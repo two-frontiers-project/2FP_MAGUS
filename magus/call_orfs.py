@@ -583,7 +583,50 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             # Include ID so we can correctly join HMM hits per ORF
                             logger.info(f"Processing {subdir} samples")
                             
-                            # First, collect all ORF data from manicure files
+                            # First, collect HMM data
+                            hmm_by_key = {}
+                            hmm_files_found = []
+                            
+                            # Read clean CSV files
+                            for file in os.listdir(annot_dir):
+                                if file.endswith('.hmm_clean.csv'):
+                                    hmm_path = os.path.join(annot_dir, file)
+                                    hmm_files_found.append(file)
+                                    with open(hmm_path, 'r') as fin:
+                                        reader = csv.DictReader(fin)
+                                        for row in reader:
+                                            # Extract sequence_id from target_name (first part before space)
+                                            sequence_id = row['target_name'].split()[0]
+                                            row['sequence_id'] = sequence_id
+                                            
+                                            # Apply e-value filtering
+                                            try:
+                                                if hmm_fullseq_evalue_cutoff is not None:
+                                                    fev = float(row.get('full_evalue', '')) if row.get('full_evalue', '') else None
+                                                    if fev is not None and fev > hmm_fullseq_evalue_cutoff:
+                                                        continue
+                                                if hmm_domain_evalue_cutoff is not None:
+                                                    dev = float(row.get('dom_evalue', '')) if row.get('dom_evalue', '') else None
+                                                    if dev is not None and dev > hmm_domain_evalue_cutoff:
+                                                        continue
+                                            except Exception:
+                                                pass
+                                            
+                                            hmm_by_key.setdefault(sequence_id, []).append(row)
+                            
+                            # Create a mapping from base sequence ID to HMM data for fuzzy matching
+                            hmm_by_base_id = {}
+                            for sequence_id, hmm_records in hmm_by_key.items():
+                                # Extract base ID (everything before the last underscore numbers)
+                                base_id = '_'.join(sequence_id.split('_')[:-2]) if sequence_id.count('_') >= 2 else sequence_id
+                                hmm_by_base_id.setdefault(base_id, []).extend(hmm_records)
+                            
+                            print(f"DEBUG: Found {len(hmm_files_found)} clean HMM files")
+                            print(f"DEBUG: Collected {len(hmm_by_key)} HMM records")
+                            if hmm_by_key:
+                                print(f"DEBUG: Sample keys: {list(hmm_by_key.keys())[:5]}")
+                            
+                            # Now collect all ORF data from manicure files
                             orf_data = {}  # {sequence_id: [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]}
                             
                             manicure_dir = os.path.join(annot_dir, '..', 'manicure')
