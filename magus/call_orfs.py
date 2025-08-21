@@ -583,50 +583,56 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             # Include ID so we can correctly join HMM hits per ORF
                             logger.info(f"Processing {subdir} samples")
                             
-                            # First, collect all ORF data from Prodigal output
+                                                        # First, collect all ORF data from manicure files
                             orf_data = {}  # {sequence_id: [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]}
                             
-                            for file in os.listdir(annot_dir):
-                                if file.endswith('.faa'):
-                                    sample_id = file.replace('.faa', '')
-                                    faa_file = os.path.join(annot_dir, file)
-                                    
-                                    with open(faa_file, 'r') as infile:
-                                        for line in infile:
-                                            if line.startswith('>'):
-                                                # Parse Prodigal header: >contig_1 # 1 # 279 # 1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500
-                                                parts = line.strip().split(' # ')
-                                                if len(parts) >= 4:
-                                                    contig_id = parts[0].replace('>', '')
-                                                    start = parts[1]
-                                                    end = parts[2]
-                                                    strand = parts[3]
-                                                    
-                                                    # Parse the metadata part
-                                                    metadata = parts[4] if len(parts) > 4 else ''
-                                                    gene_id = 'NA'
-                                                    partial = '00'
-                                                    start_type = 'ATG'
-                                                    rbs_motif = 'None'
-                                                    rbs_spacer = 'None'
-                                                    gc_cont = '0.500'
-                                                    
-                                                    if 'ID=' in metadata:
-                                                        gene_id = metadata.split('ID=')[1].split(';')[0]
-                                                    if 'partial=' in metadata:
-                                                        partial = metadata.split('partial=')[1].split(';')[0]
-                                                    if 'start_type=' in metadata:
-                                                        start_type = metadata.split('start_type=')[1].split(';')[0]
-                                                    if 'rbs_motif=' in metadata:
-                                                        rbs_motif = metadata.split('rbs_motif=')[1].split(';')[0]
-                                                    if 'rbs_spacer=' in metadata:
-                                                        rbs_spacer = metadata.split('rbs_spacer=')[1].split(';')[0]
-                                                    if 'gc_cont=' in metadata:
-                                                        gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
-                                                    
-                                                                                # Store ORF data keyed by sequence_id (the part before first #) for HMM merging
-                                                    sequence_id = contig_id  # This is the full sequence identifier
-                                                    orf_data[sequence_id] = [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]
+                            manicure_dir = os.path.join(annot_dir, '..', 'manicure')
+                            if os.path.exists(manicure_dir):
+                                for file in os.listdir(manicure_dir):
+                                    if file.endswith('.faa'):
+                                        sample_id = file.replace('.faa', '')
+                                        faa_file = os.path.join(manicure_dir, file)
+                                        
+                                        with open(faa_file, 'r') as infile:
+                                            for line in infile:
+                                                if line.startswith('>'):
+                                                    # Parse manicure header: >TFID_0051BF.B.MID.neg.Light.EC-----TFID_0051BF.B.MID.neg.Light.EC_singleassembly_k333_2395_1-----1+507+-1+ID=1_1;partial=10;start_type=ATG;rbs_motif=GGAG/GAGG;rbs_spacer=5-10bp;gc_cont=0.606
+                                                    parts = line.strip().split('-----')
+                                                    if len(parts) >= 3:
+                                                        # Extract the full sequence identifier (second part after first -----)
+                                                        sequence_id = parts[1]
+                                                        
+                                                        # Parse the metadata part (third part after second -----)
+                                                        metadata_parts = parts[2].split('+')
+                                                        if len(metadata_parts) >= 4:
+                                                            start = metadata_parts[0]
+                                                            end = metadata_parts[1]
+                                                            strand = metadata_parts[2]
+                                                            metadata = metadata_parts[3]
+                                                            
+                                                            # Parse the metadata
+                                                            gene_id = 'NA'
+                                                            partial = '00'
+                                                            start_type = 'ATG'
+                                                            rbs_motif = 'None'
+                                                            rbs_spacer = 'None'
+                                                            gc_cont = '0.500'
+                                                            
+                                                            if 'ID=' in metadata:
+                                                                gene_id = metadata.split('ID=')[1].split(';')[0]
+                                                            if 'partial=' in metadata:
+                                                                partial = metadata.split('partial=')[1].split(';')[0]
+                                                            if 'start_type=' in metadata:
+                                                                start_type = metadata.split('start_type=')[1].split(';')[0]
+                                                            if 'rbs_motif=' in metadata:
+                                                                rbs_motif = metadata.split('rbs_motif=')[1].split(';')[0]
+                                                            if 'rbs_spacer=' in metadata:
+                                                                rbs_spacer = metadata.split('rbs_spacer=')[1].split(';')[0]
+                                                            if 'gc_cont=' in metadata:
+                                                                gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
+                                                            
+                                                            # Store ORF data keyed by sequence_id for HMM merging
+                                                            orf_data[sequence_id] = [sample_id, sequence_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]
             
             print(f"DEBUG: Collected {len(orf_data)} ORF records")
             if orf_data:
