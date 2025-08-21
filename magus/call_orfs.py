@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import csv
 import glob
 import re
+from typing import Optional
 # pandas is not required here
 
 # Configure logging
@@ -49,33 +50,25 @@ class ORFCaller:
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
 
-        # Ensure manicured files exist (even if ORF calling was skipped previously)
-        source_faa = os.path.join(annot_dir, f"{FN}.faa")
-        source_ffn = os.path.join(annot_dir, f"{FN}.ffn")
-        manicure_faa = os.path.join(manicure_dir, f"{FN}.faa")
-        manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
+            # Manicure the output files
+            manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
+            with open(os.path.join(annot_dir, f"{FN}.faa"), 'r') as infile, open(manicure_file, 'w') as outfile:
+                for line in infile:
+                    if line.startswith('>'):
+                        outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                    else:
+                        outfile.write(line)
 
-        if os.path.exists(source_faa) and os.path.getsize(source_faa) > 0:
-            if not os.path.exists(manicure_faa) or self.args.force:
-                with open(source_faa, 'r') as infile, open(manicure_faa, 'w') as outfile:
-                    for line in infile:
-                        if line.startswith('>'):
-                            outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
-                        else:
-                            outfile.write(line)
-        else:
-            logger.warning(f"Expected protein file missing for manicure: {source_faa}")
+            manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
+            with open(os.path.join(annot_dir, f"{FN}.ffn"), 'r') as infile, open(manicure_ffn, 'w') as outfile:
+                for line in infile:
+                    if line.startswith('>'):
+                        outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                    else:
+                        outfile.write(line)
 
-        if os.path.exists(source_ffn) and os.path.getsize(source_ffn) > 0:
-            if not os.path.exists(manicure_ffn) or self.args.force:
-                with open(source_ffn, 'r') as infile, open(manicure_ffn, 'w') as outfile:
-                    for line in infile:
-                        if line.startswith('>'):
-                            outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
-                        else:
-                            outfile.write(line)
-        else:
-            logger.warning(f"Expected nucleotide file missing for manicure: {source_ffn}")
+            # Keep the annot files for the comprehensive summary
+            # (Files are kept in annot directory for summary generation)
 
         # HMM annotation (put results in annot directory for summary)
         manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
@@ -91,7 +84,9 @@ class ORFCaller:
     def call_viral_orfs(self, genome_file, sample_id=None):
         """Call ORFs in viral genomes using prodigal-gv."""
         annot_dir = os.path.join(self.output_dir, 'viruses', 'annot')
+        manicure_dir = os.path.join(self.output_dir, 'viruses', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
+        os.makedirs(manicure_dir, exist_ok=True)
 
         FN = sample_id if sample_id else os.path.basename(genome_file).replace(self.extension, '')
         
@@ -112,6 +107,23 @@ class ORFCaller:
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
         
+        # Manicure the output files (same as bacteria since it's also Prodigal)
+        manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
+        with open(faa_file, 'r') as infile, open(manicure_file, 'w') as outfile:
+            for line in infile:
+                if line.startswith('>'):
+                    outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                else:
+                    outfile.write(line)
+
+        manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
+        with open(ffn_file, 'r') as infile, open(manicure_ffn, 'w') as outfile:
+            for line in infile:
+                if line.startswith('>'):
+                    outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                else:
+                    outfile.write(line)
+
         # HMM annotation (put results in annot directory for summary)
         if self.args.hmmfile:
             self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
@@ -121,7 +133,9 @@ class ORFCaller:
     def call_eukaryotic_orfs(self, genome_file, sample_id=None):
         """Call ORFs in eukaryotic genomes using MetaEuk."""
         annot_dir = os.path.join(self.output_dir, 'eukaryotes', 'annot')
+        manicure_dir = os.path.join(self.output_dir, 'eukaryotes', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
+        os.makedirs(manicure_dir, exist_ok=True)
 
         FN = sample_id if sample_id else os.path.basename(genome_file).replace(self.extension, '')
         
@@ -140,16 +154,48 @@ class ORFCaller:
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
         
+        # Symlink MetaEuk output to manicure directory
+        manicure_faa = os.path.join(manicure_dir, f"{FN}.faa")
+        manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
+        
+        # Create symlinks (or copy if symlink fails)
+        try:
+            if os.path.exists(manicure_faa):
+                os.remove(manicure_faa)
+            if os.path.exists(manicure_ffn):
+                os.remove(manicure_ffn)
+            os.symlink(faa_file, manicure_faa)
+            os.symlink(ffn_file, manicure_ffn)
+        except OSError:
+            # Fallback to copying if symlink fails
+            import shutil
+            shutil.copy2(faa_file, manicure_faa)
+            shutil.copy2(ffn_file, manicure_ffn)
+        
         # HMM annotation (put results in annot directory for summary)
         if self.args.hmmfile:
-            self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
+            hmm_out = self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
+            
+            # Parse HMM output to clean CSV and merge with FASTA data
+            if hmm_out and os.path.exists(hmm_out):
+                # Parse HMM tblout to CSV with e-value filtering
+                hmm_csv = os.path.join(annot_dir, f"{FN}.hmm_clean.csv")
+                self.parse_hmm_tblout_to_csv(hmm_out, hmm_csv, self.args.annotation_domain_evalue)
+                
+                # Read FASTA headers and merge with HMM data
+                fasta_headers = self.read_fasta_headers(faa_file)
+                if fasta_headers:
+                    summary_file = os.path.join(annot_dir, f"{FN}_summary.tsv")
+                    self.merge_eukaryotic_hmm_data(FN, fasta_headers, hmm_csv, summary_file)
         
         return faa_file, ffn_file, None  # MetaEuk doesn't produce GFF
 
     def call_metagenome_orfs(self, genome_file, sample_id=None):
         """Call ORFs in metagenome mode using prodigal."""
         annot_dir = os.path.join(self.output_dir, 'metagenomes', 'annot')
+        manicure_dir = os.path.join(self.output_dir, 'metagenomes', 'manicure')
         os.makedirs(annot_dir, exist_ok=True)
+        os.makedirs(manicure_dir, exist_ok=True)
 
         FN = sample_id if sample_id else os.path.basename(genome_file).replace(self.extension, '')
         
@@ -170,14 +216,35 @@ class ORFCaller:
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
         
+        # Manicure the output files (same as bacteria since it's also Prodigal)
+        manicure_file = os.path.join(manicure_dir, f"{FN}.faa")
+        with open(faa_file, 'r') as infile, open(manicure_file, 'w') as outfile:
+            for line in infile:
+                if line.startswith('>'):
+                    outfile.write(line.replace('>',f'>{FN}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                else:
+                    outfile.write(line)
+
+        manicure_ffn = os.path.join(manicure_dir, f"{FN}.ffn")
+        with open(ffn_file, 'r') as infile, open(manicure_ffn, 'w') as outfile:
+            for line in infile:
+                if line.startswith('>'):
+                    outfile.write(line.replace('>',f'>{FN}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
+                else:
+                    outfile.write(line)
+
         # HMM annotation (put results in annot directory for summary)
         if self.args.hmmfile:
             self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
         
         return faa_file, ffn_file, gff_file
 
-    def run_hmm_annotation(self, faa_file, output_dir, sample_id, hmmfile):
-        """Run HMM annotation on a protein file."""
+    def run_hmm_annotation(self, faa_file, output_dir, sample_id, hmmfile, hmm_suffix=None):
+        """Run HMM annotation on a protein file.
+
+        If hmm_suffix is provided, write tblout to
+        "{sample_id}.hmm.{suffix}.tsv" so multiple annotation sets can coexist.
+        """
         if not hmmfile:
             logger.warning(f"No HMM file provided for {sample_id}. Skipping annotation.")
             return None
@@ -186,7 +253,10 @@ class ORFCaller:
             logger.warning(f"Protein file {faa_file} does not exist. Skipping annotation.")
             return None
             
-        hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.tsv")
+        if hmm_suffix:
+            hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.{hmm_suffix}.tsv")
+        else:
+            hmm_out = os.path.join(output_dir, f"{sample_id}.hmm.tsv")
         cmd = [
             'hmmsearch',
             '--tblout', hmm_out,
@@ -201,6 +271,167 @@ class ORFCaller:
             subprocess.run(cmd, check=True, stdout=log, stderr=log)
         
         return hmm_out
+
+    def parse_hmm_tblout_to_csv(self, hmm_file, output_csv, evalue_cutoff=0.01):
+        """Parse HMM tblout output to clean CSV with e-value filtering.
+        
+        This function works for all domains (bacteria, viruses, eukaryotes, metagenomes).
+        It filters on both full-sequence and domain e-values immediately upon loading.
+        """
+        if not os.path.exists(hmm_file):
+            logger.warning(f"HMM file {hmm_file} does not exist. Skipping parsing.")
+            return None
+            
+        # HMM tblout columns (removing target_accession which is just '-')
+        columns = [
+            'target_name', 'query_name', 'query_accession',
+            'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
+            'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description'
+        ]
+        
+        rows = []
+        total_lines = 0
+        filtered_lines = 0
+        
+        with open(hmm_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                    
+                total_lines += 1
+                parts = line.split()
+                
+                if len(parts) < 19:  # HMM tblout has 19 columns
+                    continue
+                
+                # Extract evalue for filtering
+                try:
+                    full_evalue = float(parts[4])
+                    dom_evalue = float(parts[7])
+                except (ValueError, IndexError):
+                    continue
+                
+                # Apply evalue filter immediately
+                if full_evalue > evalue_cutoff and dom_evalue > evalue_cutoff:
+                    continue
+                    
+                filtered_lines += 1
+                
+                # Create row data (skip target_accession which is parts[1] and always '-')
+                row = {}
+                # Map columns to parts, skipping target_accession (parts[1])
+                row['target_name'] = parts[0]      # parts[0]
+                row['query_name'] = parts[2]       # parts[2] (skip parts[1] which is target_accession)
+                row['query_accession'] = parts[3]  # parts[3]
+                row['full_evalue'] = parts[4]      # parts[4]
+                row['full_score'] = parts[5]       # parts[5]
+                row['full_bias'] = parts[6]        # parts[6]
+                row['dom_evalue'] = parts[7]       # parts[7]
+                row['dom_score'] = parts[8]        # parts[8]
+                row['dom_bias'] = parts[9]         # parts[9]
+                row['exp'] = parts[10]             # parts[10]
+                row['reg'] = parts[11]             # parts[11]
+                row['clu'] = parts[12]             # parts[12]
+                row['ov'] = parts[13]              # parts[13]
+                row['env'] = parts[14]             # parts[14]
+                row['dom'] = parts[15]             # parts[15]
+                row['rep'] = parts[16]             # parts[16]
+                row['inc'] = parts[17]             # parts[17]
+                row['description'] = ' '.join(parts[18:])  # parts[18:] for description
+                
+                rows.append(row)
+        
+        # Write to CSV
+        with open(output_csv, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        return rows
+
+    def read_fasta_headers(self, fas_file):
+        """Read FASTA headers from .fas file."""
+        if not os.path.exists(fas_file):
+            logger.warning(f"FASTA file {fas_file} does not exist.")
+            return set()
+            
+        headers = set()
+        with open(fas_file, 'r') as f:
+            for line in f:
+                if line.startswith('>'):
+                    header = line.strip()[1:]  # Remove '>'
+                    headers.add(header)
+        
+        return headers
+
+    def merge_eukaryotic_hmm_data(self, sample_id, fasta_headers, hmm_csv_file, output_file):
+        """Merge eukaryotic FASTA headers with HMM data and write to output file.
+        
+        This creates the proper eukaryotic summary format:
+        sample_id \t target_name \t hmm_annotation_data
+        """
+        if not os.path.exists(hmm_csv_file):
+            # Create summary with just FASTA headers and no HMM data
+            with open(output_file, 'w', newline='') as f:
+                writer = csv.writer(f, delimiter='\t')
+                header = ['sample_id', 'target_name', 'query_name', 'query_accession',
+                         'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
+                         'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']
+                writer.writerow(header)
+                
+                for target_name in fasta_headers:
+                    row = [sample_id, target_name] + [''] * (len(header) - 2)
+                    writer.writerow(row)
+            
+            logger.info(f"Created summary for {sample_id}: {len(fasta_headers)} ORFs (no HMM data)")
+            return len(fasta_headers), 0, len(fasta_headers)
+        
+        # Read HMM data from CSV
+        hmm_data = {}
+        with open(hmm_csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                target_name = row['target_name']
+                hmm_data[target_name] = row
+        
+        # HMM annotation columns (excluding target_name since it's in the merge)
+        hmm_cols = [
+            'query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias',
+            'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env',
+            'dom', 'rep', 'inc', 'description'
+        ]
+        
+        # Write merged output
+        with open(output_file, 'w', newline='') as f:
+            writer = csv.writer(f, delimiter='\t')
+            header = ['sample_id', 'target_name'] + hmm_cols
+            writer.writerow(header)
+            
+            # Write data rows
+            rows_written = 0
+            rows_with_hmm = 0
+            rows_without_hmm = 0
+            
+            for target_name in fasta_headers:
+                if target_name in hmm_data:
+                    # This target has HMM hits
+                    hmm_info = hmm_data[target_name]
+                    row = [sample_id, target_name]
+                    for col in hmm_cols:
+                        row.append(hmm_info.get(col, ''))
+                    writer.writerow(row)
+                    rows_with_hmm += 1
+                else:
+                    # This target has no HMM hits
+                    row = [sample_id, target_name] + [''] * len(hmm_cols)
+                    writer.writerow(row)
+                    rows_without_hmm += 1
+                rows_written += 1
+        
+        logger.info(f"Created summary for {sample_id}: {rows_written} ORFs ({rows_with_hmm} with HMM hits, {rows_without_hmm} without)")
+        
+        return rows_written, rows_with_hmm, rows_without_hmm
 
 def find_genome_files(mag_dir, extension, wildcard):
     """Find genome files using directory and wildcard pattern, similar to dereplicate_genomes.py"""
@@ -253,398 +484,292 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
         for genome_data in genomes_data:
             process_single_genome(genome_data)
 
-def create_comprehensive_summary(output_dir, hmmfile):
-    """Create ONE comprehensive summary file per domain with ALL information."""
+def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
+                                 hmm_fullseq_evalue_cutoff: Optional[float] = None,
+                                 hmm_domain_evalue_cutoff: Optional[float] = None):
+    """Create ONE comprehensive summary file per domain with ALL information.
+
+    If suffix is provided, domain summary is named with _{suffix} and HMM inputs
+    are read from .hmm.{suffix}.tsv files.
+    """
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
         annot_dir = os.path.join(output_dir, subdir, 'annot')
         if not os.path.exists(annot_dir):
             continue
             
-        summary_file = os.path.join(output_dir, f'{subdir}_orf_summary.tsv')
+        summary_file = os.path.join(
+            output_dir,
+            f"{subdir}_orf_summary_{suffix}.tsv" if suffix else f"{subdir}_orf_summary.tsv"
+        )
         logger.info(f"Creating comprehensive summary for {subdir}: {summary_file}")
         
         with open(summary_file, 'w') as summary:
             if subdir == 'eukaryotes':
-                # Eukaryotes: use headersMap.tsv files
-                header_written = False
-                for file in os.listdir(annot_dir):
-                    if file.endswith('.headersMap.tsv'):
-                        sample_id = file.replace('.headersMap.tsv', '')
-                        file_path = os.path.join(annot_dir, file)
-                        
-                        with open(file_path, 'r') as infile:
-                            for i, line in enumerate(infile):
-                                line = line.rstrip('\n')
-                                if not line.strip():
-                                    continue
-                                
-                                # Write header only once
-                                if i == 0 and not header_written:
-                                    summary.write(f'sample_id\t{line}\n')
-                                    header_written = True
-                                elif i > 0 or header_written:
-                                    summary.write(f'{sample_id}\t{line}\n')
-            else:
-                # Bacteria/Viruses/Metagenomes: parse Prodigal output
-                # Include ID in the summary so we can join HMM hits reliably
-                summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
+                logger.info("Processing eukaryotic samples")
                 
+                # Create temporary ORFCaller instance to use the methods
+                class TempArgs:
+                    def __init__(self):
+                        self.annotation_domain_evalue = hmm_domain_evalue_cutoff or 0.01
+                        self.threads = 1
+                
+                temp_args = TempArgs()
+                temp_caller = ORFCaller(output_dir, "fas", temp_args)
+                
+                # Write header once
+                header = ['sample_id', 'target_name', 'query_name', 'query_accession',
+                         'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 
+                         'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']
+                summary.write('\t'.join(header) + '\n')
+                
+                # Process each sample: read FASTA, clean HMM, merge, write to final summary
                 for file in os.listdir(annot_dir):
-                    if file.endswith('.faa'):
-                        sample_id = file.replace('.faa', '')
-                        faa_file = os.path.join(annot_dir, file)
+                    if file.endswith('.fas') and not file.endswith('.codon.fas'):
+                        sample_id = file.replace('.fas', '')
+                        fas_file = os.path.join(annot_dir, file)
                         
-                        with open(faa_file, 'r') as infile:
-                            for line in infile:
-                                if line.startswith('>'):
-                                    # Parse Prodigal header: >contig_1 # 1 # 279 # 1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500
-                                    parts = line.strip().split(' # ')
-                                    if len(parts) >= 4:
-                                        contig_id = parts[0].replace('>', '')
-                                        start = parts[1]
-                                        end = parts[2]
-                                        strand = parts[3]
-                                        
-                                        # Parse the metadata part
-                                        metadata = parts[4] if len(parts) > 4 else ''
-                                        gene_id = 'NA'
-                                        partial = '00'
-                                        start_type = 'ATG'
-                                        rbs_motif = 'None'
-                                        rbs_spacer = 'None'
-                                        gc_cont = '0.500'
-                                        
-                                        if 'ID=' in metadata:
-                                            gene_id = metadata.split('ID=')[1].split(';')[0]
-                                        if 'partial=' in metadata:
-                                            partial = metadata.split('partial=')[1].split(';')[0]
-                                        if 'start_type=' in metadata:
-                                            start_type = metadata.split('start_type=')[1].split(';')[0]
-                                        if 'rbs_motif=' in metadata:
-                                            rbs_motif = metadata.split('rbs_motif=')[1].split(';')[0]
-                                        if 'rbs_spacer=' in metadata:
-                                            rbs_spacer = metadata.split('rbs_spacer=')[1].split(';')[0]
-                                        if 'gc_cont=' in metadata:
-                                            gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
-                                        
-                                        summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{gene_id}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
+                        # Read FASTA headers for this sample
+                        fasta_headers = temp_caller.read_fasta_headers(fas_file)
+                        if not fasta_headers:
+                            continue
+                        
+                        # Check if HMM file exists and clean it
+                        hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
+                        sample_hmm_data = {}
+                        
+                        if os.path.exists(hmm_file):
+                            hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                            rows = temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, hmm_domain_evalue_cutoff)
+                            if rows:
+                                for row in rows:
+                                    target_name = row['target_name']
+                                    sample_hmm_data[target_name] = row
+                        
+                        # Write all rows for this sample to the final summary
+                        for target_name in fasta_headers:
+                            # ALWAYS write a row for every FASTA header (left join)
+                            row_data = [sample_id, target_name]
+                            
+                            # Add HMM data if it exists, otherwise empty strings
+                            if target_name in sample_hmm_data:
+                                hmm_row = sample_hmm_data[target_name]
+                                row_data.extend([
+                                    hmm_row.get('query_name', ''),
+                                    hmm_row.get('query_accession', ''),
+                                    hmm_row.get('full_evalue', ''),
+                                    hmm_row.get('full_score', ''),
+                                    hmm_row.get('full_bias', ''),
+                                    hmm_row.get('dom_evalue', ''),
+                                    hmm_row.get('dom_score', ''),
+                                    hmm_row.get('dom_bias', ''),
+                                    hmm_row.get('exp', ''),
+                                    hmm_row.get('reg', ''),
+                                    hmm_row.get('clu', ''),
+                                    hmm_row.get('ov', ''),
+                                    hmm_row.get('env', ''),
+                                    hmm_row.get('dom', ''),
+                                    hmm_row.get('rep', ''),
+                                    hmm_row.get('inc', ''),
+                                    hmm_row.get('description', '')
+                                ])
+                            else:
+                                # No HMM data for this target - add empty strings
+                                row_data.extend([''] * 17)
+                            
+                            # WRITE THE ROW - this should happen for EVERY FASTA header
+                            summary.write('\t'.join(str(field) for field in row_data) + '\n')
+                        else:
+                            # Bacteria/Viruses/Metagenomes: parse Prodigal output
+                            # Include ID so we can correctly join HMM hits per ORF
+                            # Write header with HMM columns for proper merging
+                            summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
+                            
+                            for file in os.listdir(annot_dir):
+                                if file.endswith('.faa'):
+                                    sample_id = file.replace('.faa', '')
+                                    faa_file = os.path.join(annot_dir, file)
+                                    
+                                    with open(faa_file, 'r') as infile:
+                                        for line in infile:
+                                            if line.startswith('>'):
+                                                # Parse Prodigal header: >contig_1 # 1 # 279 # 1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500
+                                                parts = line.strip().split(' # ')
+                                                if len(parts) >= 4:
+                                                    contig_id = parts[0].replace('>', '')
+                                                    start = parts[1]
+                                                    end = parts[2]
+                                                    strand = parts[3]
+                                                    
+                                                    # Parse the metadata part
+                                                    metadata = parts[4] if len(parts) > 4 else ''
+                                                    gene_id = 'NA'
+                                                    partial = '00'
+                                                    start_type = 'ATG'
+                                                    rbs_motif = 'None'
+                                                    rbs_spacer = 'None'
+                                                    gc_cont = '0.500'
+                                                    
+                                                    if 'ID=' in metadata:
+                                                        gene_id = metadata.split('ID=')[1].split(';')[0]
+                                                    if 'partial=' in metadata:
+                                                        partial = metadata.split('partial=')[1].split(';')[0]
+                                                    if 'start_type=' in metadata:
+                                                        start_type = metadata.split('start_type=')[1].split(';')[0]
+                                                    if 'rbs_motif=' in metadata:
+                                                        rbs_motif = metadata.split('rbs_motif=')[1].split(';')[0]
+                                                    if 'rbs_spacer=' in metadata:
+                                                        rbs_spacer = metadata.split('rbs_spacer=')[1].split(';')[0]
+                                                    if 'gc_cont=' in metadata:
+                                                        gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
+                                                    
+                                                    summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{gene_id}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
         
-        # Now add HMM results if available
-        if hmmfile:
-            logger.info(f"Adding full HMM results to {subdir} summary")
+        # Now add HMM results from existing files (do not depend on --hmmfile being provided here)
+        # Skip eukaryotes since they're handled differently with individual summary files
+        if subdir != 'eukaryotes':
+            logger.info(f"Adding HMM results to {subdir} summary (if present)")
 
-            # Helper: parse a HMMER tblout data line into a dict of all columns
-            def parse_hmm_tblout_line(data_line: str) -> dict:
-                # According to HMMER, first 18 tokens are fixed-width fields; the rest is description
-                tokens = data_line.rstrip('\n').split()
-                if len(tokens) < 18:
-                    return {}
-                # Some HMMER versions include accession columns (target acc, query acc) right after names
-                # We normalize by checking token count
-                # Layout with accessions: target, tacc, query, qacc, fs_e, fs_s, fs_b, bd_e, bd_s, bd_b, exp, reg, clu, ov, env, dom, rep, inc, desc...
-                # Layout without accessions: target, query, fs_e, fs_s, fs_b, bd_e, bd_s, bd_b, exp, reg, clu, ov, env, dom, rep, inc, desc...
-                has_accessions = False
-                # Heuristic: if tokens[1] != tokens[3] and tokens[1] contains characters like '.' or letters but not numeric-only lengths
-                if len(tokens) >= 20:  # generous threshold; tblout with accessions typically has >= 20 tokens before desc
-                    has_accessions = True
-                idx = 0
-                result = {}
-                result['target_name'] = tokens[idx]; idx += 1
-                if has_accessions:
-                    result['target_accession'] = tokens[idx]; idx += 1
-                result['query_name'] = tokens[idx]; idx += 1
-                if has_accessions:
-                    result['query_accession'] = tokens[idx]; idx += 1
-                # full sequence stats
-                result['full_evalue'] = tokens[idx]; idx += 1
-                result['full_score'] = tokens[idx]; idx += 1
-                result['full_bias'] = tokens[idx]; idx += 1
-                # best 1 domain stats
-                result['dom_evalue'] = tokens[idx]; idx += 1
-                result['dom_score'] = tokens[idx]; idx += 1
-                result['dom_bias'] = tokens[idx]; idx += 1
-                # domain number estimation
-                result['exp'] = tokens[idx]; idx += 1
-                result['reg'] = tokens[idx]; idx += 1
-                result['clu'] = tokens[idx]; idx += 1
-                result['ov'] = tokens[idx]; idx += 1
-                result['env'] = tokens[idx]; idx += 1
-                result['dom'] = tokens[idx]; idx += 1
-                result['rep'] = tokens[idx]; idx += 1
-                result['inc'] = tokens[idx]; idx += 1
-                # Remaining tokens (if any) form the description
-                desc = ' '.join(tokens[idx:]) if idx < len(tokens) else ''
-                result['description'] = desc
-                # Try to extract ID=... from description for robust joining
-                m = re.search(r'ID=([^;\s]+)', desc)
+            # Parse HMM tblout and build records
+            def parse_tblout_row(row: str):
+                if not row or row.startswith('#'):
+                    return None
+                t = row.rstrip('\n').split()
+                if len(t) < 19:
+                    return None
+                rec = {
+                    'target_name': t[0],
+                    'target_accession': t[1],
+                    'query_name': t[2],
+                    'query_accession': t[3],
+                    'full_evalue': t[4],
+                    'full_score': t[5],
+                    'full_bias': t[6],
+                    'dom_evalue': t[7],
+                    'dom_score': t[8],
+                    'dom_bias': t[9],
+                    'exp': t[10], 'reg': t[11], 'clu': t[12], 'ov': t[13], 'env': t[14], 'dom': t[15], 'rep': t[16], 'inc': t[17],
+                    'description': ' '.join(t[18:])
+                }
+                # Extract possible gene ID from target_name (for non-euks)
+                # For Prodigal output, target_name is the protein sequence name
+                # We need to extract the gene ID from the sequence name
+                m = re.search(r'ID=([^;\s]+)', rec['target_name'])
                 if m:
-                    result['gene_id'] = m.group(1)
+                    rec['gene_id'] = m.group(1)
                 else:
-                    # fall back to try extracting from target_name if it contains metadata
-                    m2 = re.search(r'ID=([^;\s]+)', result['target_name'])
-                    result['gene_id'] = m2.group(1) if m2 else None
-                return result
+                    # If no ID= found, try to extract from the sequence name itself
+                    # Prodigal format: sample-----contig_1 # 1 # 279 # 1 # ID=1_1;partial=00;...
+                    parts = rec['target_name'].split('-----')
+                    if len(parts) > 1:
+                        # Extract the ID from the contig part
+                        contig_part = parts[1]
+                        id_match = re.search(r'ID=([^;\s]+)', contig_part)
+                        if id_match:
+                            rec['gene_id'] = id_match.group(1)
+                        else:
+                            rec['gene_id'] = None
+                    else:
+                        rec['gene_id'] = None
+                return rec
 
-            # Collect HMM results across samples, keyed by gene ID when available, else by target name
+            # Collect HMM records grouped by join key
             hmm_by_key = {}
+            hmm_files_found = []
             for file in os.listdir(annot_dir):
-                if file.endswith('.hmm.tsv'):
+                if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
                     hmm_path = os.path.join(annot_dir, file)
+                    hmm_files_found.append(file)
+                    logger.info(f"Processing HMM file: {file}")
                     with open(hmm_path, 'r') as fin:
                         for raw in fin:
-                            if not raw or raw.startswith('#'):
-                                continue
-                            rec = parse_hmm_tblout_line(raw)
+                            rec = parse_tblout_row(raw)
                             if not rec:
                                 continue
-                            key = rec.get('gene_id') or rec['target_name']
-                            if key not in hmm_by_key:
-                                hmm_by_key[key] = []
-                            hmm_by_key[key].append(rec)
+                            # Choose join key (eukaryotes are handled separately)
+                            join_key = rec.get('gene_id') or rec.get('target_name')
+                            if not join_key:
+                                logger.debug(f"Skipping HMM record with no join key: target_name={rec.get('target_name')}, gene_id={rec.get('gene_id')}")
+                                continue
+                            
+                            # Early filter: HMM E-value thresholds
+                            try:
+                                if hmm_fullseq_evalue_cutoff is not None:
+                                    fev = float(rec.get('full_evalue', '')) if rec.get('full_evalue', '') else None
+                                    if fev is not None and fev > hmm_fullseq_evalue_cutoff:
+                                        continue
+                                if hmm_domain_evalue_cutoff is not None:
+                                    dev = float(rec.get('dom_evalue', '')) if rec.get('dom_evalue', '') else None
+                                    if dev is not None and dev > hmm_domain_evalue_cutoff:
+                                        continue
+                            except Exception:
+                                pass
+                            
+                            hmm_by_key.setdefault(join_key, []).append(rec)
+            
+            logger.info(f"Found {len(hmm_files_found)} HMM files: {hmm_files_found}")
+            logger.info(f"Collected {len(hmm_by_key)} HMM records for merging")
 
             if hmm_by_key:
-                # Read existing summary and add all HMM columns
                 temp_summary = summary_file + '.tmp'
-                with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
-                    header = infile.readline().rstrip('\n')
-                    hmm_cols = [
-                        'hmm_target_name',
-                        'hmm_target_accession',
-                        'hmm_query_name',
-                        'hmm_query_accession',
-                        'hmm_full_evalue', 'hmm_full_score', 'hmm_full_bias',
-                        'hmm_dom_evalue', 'hmm_dom_score', 'hmm_dom_bias',
-                        'hmm_exp', 'hmm_reg', 'hmm_clu', 'hmm_ov', 'hmm_env', 'hmm_dom', 'hmm_rep', 'hmm_inc',
-                        'hmm_description'
-                    ]
-                    outfile.write(f"{header}\t" + "\t".join(hmm_cols) + "\n")
-
-                    # Determine how to fetch the join key for each row
-                    # For non-euks we printed ID at column index 5
-                    # For euks we don't know; we try to detect 'ID' column by name, else fall back to contig-like column
-                    header_fields = header.split('\t')
+                
+                def parse_float_safe(value: str) -> Optional[float]:
                     try:
-                        id_index = header_fields.index('ID')
-                    except ValueError:
-                        id_index = None
-                    # Common fallbacks
-                    contig_index = None
-                    for cand in ['contig_id', 'contig', 'sequence', 'seq_id']:
-                        if cand in header_fields:
-                            contig_index = header_fields.index(cand)
-                            break
+                        return float(value)
+                    except Exception:
+                        return None
+                
+                with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
+                    original_header = infile.readline().rstrip('\n')
+                    hmm_cols = [
+                        'hmm_target_name','hmm_target_accession','hmm_query_name','hmm_query_accession',
+                        'hmm_full_evalue','hmm_full_score','hmm_full_bias',
+                        'hmm_dom_evalue','hmm_dom_score','hmm_dom_bias',
+                        'hmm_exp','hmm_reg','hmm_clu','hmm_ov','hmm_env','hmm_dom','hmm_rep','hmm_inc','hmm_description'
+                    ]
+                    # Write a single header row only once (long format: one row per HMM hit)
+                    outfile.write(original_header + '\t' + '\t'.join(hmm_cols) + '\n')
+
+                    header_fields = original_header.split('\t')
+                    if 'ID' in header_fields:
+                        key_idx = header_fields.index('ID')
+                    else:
+                        key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
 
                     for row in infile:
                         row = row.rstrip('\n')
                         if not row:
                             continue
-                        fields = row.split('\t')
-                        join_key = None
-                        if id_index is not None and id_index < len(fields):
-                            join_key = fields[id_index]
-                        elif contig_index is not None and contig_index < len(fields):
-                            join_key = fields[contig_index]
-                        else:
-                            # As a last resort, use the second column
-                            join_key = fields[1] if len(fields) > 1 else fields[0]
-
-                        hits = hmm_by_key.get(join_key, [])
-                        # Aggregate each column across hits using ';' join
-                        def agg(col):
-                            vals = []
+                        cols = row.split('\t')
+                        join_key = cols[key_idx] if key_idx < len(cols) else None
+                        hits = hmm_by_key.get(join_key, []) if join_key else []
+                        # Long format: emit one row per HMM hit; also emit a blank-annotation row if there are no hits
+                        if hits:
                             for h in hits:
-                                v = h.get(col)
-                                if v is None:
-                                    # ensure positions exist for accessions when missing
-                                    if col in ['hmm_target_accession', 'hmm_query_accession']:
-                                        vals.append('')
-                                    else:
+                                # Apply HMM e-value filters
+                                if hmm_fullseq_evalue_cutoff is not None:
+                                    fev = parse_float_safe(h.get('full_evalue', ''))
+                                    if fev is not None and fev > hmm_fullseq_evalue_cutoff:
                                         continue
-                                else:
-                                    vals.append(str(v))
-                            return ';'.join(vals)
-
-                        # Prepare output columns in the same order as hmm_cols
-                        col_map = {
-                            'hmm_target_name': agg('target_name'),
-                            'hmm_target_accession': agg('target_accession'),
-                            'hmm_query_name': agg('query_name'),
-                            'hmm_query_accession': agg('query_accession'),
-                            'hmm_full_evalue': agg('full_evalue'),
-                            'hmm_full_score': agg('full_score'),
-                            'hmm_full_bias': agg('full_bias'),
-                            'hmm_dom_evalue': agg('dom_evalue'),
-                            'hmm_dom_score': agg('dom_score'),
-                            'hmm_dom_bias': agg('dom_bias'),
-                            'hmm_exp': agg('exp'),
-                            'hmm_reg': agg('reg'),
-                            'hmm_clu': agg('clu'),
-                            'hmm_ov': agg('ov'),
-                            'hmm_env': agg('env'),
-                            'hmm_dom': agg('dom'),
-                            'hmm_rep': agg('rep'),
-                            'hmm_inc': agg('inc'),
-                            'hmm_description': agg('description'),
-                        }
-                        outfile.write(row + '\t' + '\t'.join(col_map[c] for c in hmm_cols) + '\n')
+                                if hmm_domain_evalue_cutoff is not None:
+                                    dev = parse_float_safe(h.get('dom_evalue', ''))
+                                    if dev is not None and dev > hmm_domain_evalue_cutoff:
+                                        continue
+                                values = [
+                                    h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
+                                    h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
+                                    h.get('dom_evalue',''), h.get('dom_score',''), h.get('dom_bias',''),
+                                    h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
+                                ]
+                                outfile.write(row + '\t' + '\t'.join(values) + '\n')
+                        else:
+                            # No HMMs for this ORF: keep with empty HMM columns
+                            outfile.write(row + '\t' + '\t'.join([''] * len(hmm_cols)) + '\n')
 
                 os.replace(temp_summary, summary_file)
+            else:
+                logger.info(f"Skipping HMM merging for {subdir} - using individual summary files instead")
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
-
-def summarize_annotations(output_dir):
-    """Create manicured files and final summary with annotations."""
-    for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
-        annot_dir = os.path.join(output_dir, subdir, 'annot')
-        manicure_dir = os.path.join(output_dir, subdir, 'manicure')
-        os.makedirs(manicure_dir, exist_ok=True)
-        
-        if not os.path.exists(annot_dir):
-            continue
-        
-        # Special handling for eukaryotes: concatenate MetaEuk headers maps with a sample column
-        if subdir == 'eukaryotes':
-            summary_file = os.path.join(output_dir, f'{subdir}_final_summary.tsv')
-            header_written = False
-            with open(summary_file, 'w') as summary:
-                for file in os.listdir(annot_dir):
-                    if file.endswith('.headersMap.tsv'):
-                        sample_id = file.replace('.headersMap.tsv', '')
-                        file_path = os.path.join(annot_dir, file)
-                        with open(file_path, 'r') as infile:
-                            for i, line in enumerate(infile):
-                                line = line.rstrip('\n')
-                                if not line.strip():
-                                    continue
-                                
-                                # Write header only once (first line of first file)
-                                if i == 0 and not header_written:
-                                    summary.write(f'sample_id\t{line}\n')
-                                    header_written = True
-                                elif i > 0 or header_written:  # Skip header lines from subsequent files
-                                    summary.write(f'{sample_id}\t{line}\n')
-            logger.info(f"Created {subdir} calls summary: {summary_file}")
-            
-            # Also create manicured FASTA files for eukaryotes
-            for file in os.listdir(annot_dir):
-                if file.endswith('.fas'):
-                    sample_id = file.replace('.fas', '')
-                    faa_file = os.path.join(annot_dir, file)
-                    manicure_file = os.path.join(manicure_dir, f"{sample_id}.faa")
-                    
-                    # Manicure the protein file
-                    with open(faa_file, 'r') as infile, open(manicure_file, 'w') as outfile:
-                        for line in infile:
-                            if line.startswith('>'):
-                                # Handle MetaEuk header format: >UniRef90_ID|sample|strand|score|evalue|num_exons|start|end|exon_info
-                                parts = line.strip().split('|')
-                                if len(parts) >= 7:
-                                    uniref_id = parts[0].replace('>', '')
-                                    contig_id = parts[1]
-                                    strand = parts[2]
-                                    start = parts[6]
-                                    end = parts[7]
-                                    # Create simplified header format for MetaEuk
-                                    new_header = f">{sample_id}-----{contig_id}-----{start}+{end}+{strand}+ID={uniref_id};partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500\n"
-                                    outfile.write(new_header)
-                                else:
-                                    outfile.write(line)
-                            else:
-                                outfile.write(line)
-                    
-                    # Also manicure the nucleotide file if it exists
-                    ffn_file = faa_file.replace('.fas', '.codon.fas')
-                    if os.path.exists(ffn_file):
-                        manicure_ffn = os.path.join(manicure_dir, f"{sample_id}.ffn")
-                        with open(ffn_file, 'r') as infile, open(manicure_ffn, 'w') as outfile:
-                            for line in infile:
-                                if line.startswith('>'):
-                                    # Handle MetaEuk header format for nucleotide sequences
-                                    parts = line.strip().split('|')
-                                    if len(parts) >= 7:
-                                        uniref_id = parts[0].replace('>', '')
-                                        contig_id = parts[1]
-                                        strand = parts[2]
-                                        start = parts[6]
-                                        end = parts[7]
-                                        # Create simplified header format for MetaEuk
-                                        new_header = f">{sample_id}-----{contig_id}-----{start}+{end}+{strand}+ID={uniref_id};partial=00;start_type=ATG;rbs_motif=None;rbs_spacer=None;gc_cont=0.500\n"
-                                        outfile.write(new_header)
-                                    else:
-                                        outfile.write(line)
-                                else:
-                                    outfile.write(line)
-            
-            # Skip the generic manicure/summarization logic for eukaryotes
-            continue
-            
-        for file in os.listdir(annot_dir):
-            if file.endswith('.faa') or file.endswith('.fas'):
-                sample_id = file.replace('.faa', '').replace('.fas', '')
-                faa_file = os.path.join(annot_dir, file)
-                manicure_file = os.path.join(manicure_dir, f"{sample_id}.faa")
-                
-                # Manicure the protein file
-                with open(faa_file, 'r') as infile, open(manicure_file, 'w') as outfile:
-                    for line in infile:
-                        if line.startswith('>'):
-                            # Handle Prodigal header format
-                            outfile.write(line.replace('>',f'>{sample_id}-----').replace(' # ', '-----', 1).replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
-                        else:
-                            outfile.write(line)
-                
-                # Also manicure the nucleotide file if it exists
-                if file.endswith('.faa'):
-                    ffn_file = faa_file.replace('.faa', '.ffn')
-                    if os.path.exists(ffn_file):
-                        manicure_ffn = os.path.join(manicure_dir, f"{sample_id}.ffn")
-                        with open(ffn_file, 'r') as infile, open(manicure_ffn, 'w') as outfile:
-                            for line in infile:
-                                if line.startswith('>'):
-                                    outfile.write(line.replace('>',f'>{sample_id}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
-                                else:
-                                    outfile.write(line)
-                elif file.endswith('.fas'):
-                    ffn_file = faa_file.replace('.fas', '.codon.fas')
-                    if os.path.exists(ffn_file):
-                        manicure_ffn = os.path.join(manicure_dir, f"{sample_id}.ffn")
-                        with open(ffn_file, 'r') as infile, open(manicure_ffn, 'w') as outfile:
-                            for line in infile:
-                                if line.startswith('>'):
-                                    outfile.write(line.replace('>',f'>{sample_id}-----').replace('+', '-----+').replace('*', 'X').replace(' # ', '+').replace(' # ', '-'))
-                                else:
-                                    outfile.write(line)
-        
-        # Create final summary for this domain (non-eukaryotes)
-        summary_file = os.path.join(output_dir, f'{subdir}_final_summary.tsv')
-        with open(summary_file, 'w') as summary:
-            summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\tmode\n')
-            manicure_dir = os.path.join(output_dir, subdir, 'manicure')
-            if os.path.exists(manicure_dir):
-                for file in os.listdir(manicure_dir):
-                    if file.endswith('.faa'):
-                        with open(os.path.join(manicure_dir, file), 'r') as infile:
-                            for line in infile:
-                                if line.startswith('>'):
-                                    parts = line.strip().split('-----')
-                                    if len(parts) >= 3:
-                                        sample_id = parts[0].replace('>', '')
-                                        contig_id = parts[1]
-                                        metadata = parts[2]
-                                        metadata_parts = metadata.split('+')
-                                        if len(metadata_parts) >= 4:
-                                            start = metadata_parts[0]
-                                            end = metadata_parts[1]
-                                            strand = metadata_parts[2]
-                                            additional_info = metadata_parts[3].split(';')
-                                            id_part = additional_info[0].split('=')[1]
-                                            partial_part = additional_info[1].split('=')[1]
-                                            start_type_part = additional_info[2].split('=')[1]
-                                            rbs_motif_part = additional_info[3].split('=')[1]
-                                            rbs_spacer_part = additional_info[4].split('=')[1]
-                                            gc_cont_part = additional_info[5].split('=')[1]
-                                            mode = subdir
-                                            summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{id_part}\t{partial_part}\t{start_type_part}\t{rbs_motif_part}\t{rbs_spacer_part}\t{gc_cont_part}\t{mode}\n')
 
 def main():
     parser = argparse.ArgumentParser(description='Call ORFs in genomes using a config file or directory search.')
@@ -665,12 +790,16 @@ def main():
     parser.add_argument('--extension', type=str, default='fa', help='Extension of genome files (default: fa).')
     parser.add_argument('--force', action='store_true', help='Force rewriting of output files even if they already exist.')
     parser.add_argument('--hmmfile', type=str, default=None, help='Path to HMM file for annotation (optional).')
+
+    parser.add_argument('--annotation-fullseq-evalue', '--afe', type=float, default=1e-2, dest='annotation_fullseq_evalue', help='Filter out HMM hits with full-sequence E-value exceeding this cutoff. Default: 0.01')
+    parser.add_argument('--annotation-domain-evalue', '--ade', type=float, default=1e-2, dest='annotation_domain_evalue', help='Filter out HMM hits with best-domain E-value exceeding this cutoff. Default: 0.01')
+    parser.add_argument('--suffix', type=str, default=None, help='Suffix to tag outputs (e.g., kegg). Summaries and HMM tblout files include this suffix.')
     parser.add_argument('--eukdb', type=str, default='data/uniref90', help='Path to UniRef90 database for MetaEuk (default: data/uniref90).')
     parser.add_argument('--cleanup', action='store_true', help='Clean up annotation directories after processing.')
     
     # Restart functionality
-    parser.add_argument('--restart', type=str, choices=['create-summary'], 
-                        help='Restart from specific stage: create-summary')
+    parser.add_argument('--restart', type=str, choices=['create-summary', 'annotations'], 
+                        help='Restart from specific stage: create-summary or annotations')
     
     args = parser.parse_args()
 
@@ -690,8 +819,81 @@ def main():
     # Handle restart modes
     if args.restart == 'create-summary':
         logger.info("Running in create-summary mode - generating comprehensive summaries")
-        create_comprehensive_summary(args.output_directory, args.hmmfile)
+        create_comprehensive_summary(
+            args.output_directory, args.hmmfile, args.suffix,
+            hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
+            hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+        )
         logger.info("Comprehensive summary creation completed successfully.")
+        return
+    elif args.restart == 'annotations':
+        logger.info("Running in annotations mode - running HMM annotations on existing ORF calls")
+        if not args.hmmfile:
+            logger.error("--hmmfile must be provided when using --restart annotations")
+            return
+        
+        # Collect all HMM annotation tasks
+        annotation_tasks = []
+        for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
+            annot_dir = os.path.join(args.output_directory, subdir, 'annot')
+            if not os.path.exists(annot_dir):
+                continue
+            
+            logger.info(f"Collecting HMM annotation tasks for {subdir}")
+            for file in os.listdir(annot_dir):
+                # For eukaryotes, use .fas files (protein sequences) but not .codon.fas
+                # For others, use .faa files (protein sequences)
+                if subdir == 'eukaryotes' and file.endswith('.fas') and not file.endswith('.codon.fas'):
+                    sample_id = file.replace('.fas', '')
+                    faa_file = os.path.join(annot_dir, file)
+                elif subdir != 'eukaryotes' and file.endswith('.faa'):
+                    sample_id = file.replace('.faa', '')
+                    faa_file = os.path.join(annot_dir, file)
+                else:
+                    continue
+                
+                # Check if HMM results already exist
+                hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
+                if os.path.exists(hmm_file) and not args.force:
+                    logger.info(f"HMM results already exist for {sample_id} in {subdir}, skipping")
+                    continue
+                
+                annotation_tasks.append((faa_file, annot_dir, sample_id, args.hmmfile))
+        
+        # Run HMM annotations in parallel
+        if annotation_tasks:
+            logger.info(f"Running HMM annotations on {len(annotation_tasks)} files with {args.max_workers} parallel workers")
+
+            def run_single_annotation(task):
+                faa_file, annot_dir, sample_id, hmmfile = task
+                try:
+                    orf_caller = ORFCaller(args.output_directory, args.extension, args)
+                    orf_caller.run_hmm_annotation(faa_file, annot_dir, sample_id, hmmfile, args.suffix)
+                    return True
+                except Exception as e:
+                    logger.error(f"Error running HMM annotation for {sample_id}: {e}")
+                    return False
+            
+            if args.max_workers > 1 and len(annotation_tasks) > 1:
+                with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+                    results = list(executor.map(run_single_annotation, annotation_tasks))
+                successful = sum(results)
+                logger.info(f"Successfully annotated {successful}/{len(annotation_tasks)} files")
+            else:
+                logger.info(f"Running HMM annotations on {len(annotation_tasks)} files sequentially")
+                for task in annotation_tasks:
+                    run_single_annotation(task)
+        else:
+            logger.info("No files found that need HMM annotation")
+        
+        # Create comprehensive summaries with new HMM results
+        logger.info("Creating comprehensive summaries with updated HMM results")
+        create_comprehensive_summary(
+            args.output_directory, args.hmmfile, args.suffix,
+            hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
+            hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+        )
+        logger.info("Annotations restart completed successfully.")
         return
 
     genomes_data = []
@@ -755,7 +957,11 @@ def main():
 
     # Stage 2: Create comprehensive summaries with HMM results
     logger.info("Stage 2: Creating comprehensive summaries")
-    create_comprehensive_summary(args.output_directory, args.hmmfile)
+    create_comprehensive_summary(
+        args.output_directory, args.hmmfile, args.suffix,
+        hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
+        hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+    )
 
     # Clean up annot directories
     for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:

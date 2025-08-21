@@ -36,7 +36,7 @@ def filter_reads(perq_file: str, fastq_file: str, output_file: str, min_kmers: i
     
     cmd = f"grep -v 'No matches found' {perq_file} | awk -F'\t' '$6 > {min_kmers} {{print $1}}' > {tofilter}"
     subprocess.run(cmd, shell=True, check=True)
-    cmd = f"seqkit grep -f {tofilter} -v {fastq_file} -j {threads} > {uncompressed_output}"
+    cmd = f"seqkit grep -f {tofilter} -v {fastq_file} -j {threads} -w 0 > {uncompressed_output}"
     subprocess.run(cmd, shell=True, check=True)
     cmd = f"gzip {uncompressed_output}"
     subprocess.run(cmd, shell=True, check=True)
