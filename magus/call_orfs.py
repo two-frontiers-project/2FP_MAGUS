@@ -633,6 +633,9 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                                             
                                                             # Store ORF data keyed by sequence_id for HMM merging
                                                             orf_data[sequence_id] = [sample_id, sequence_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]
+                            else:
+                                # If no manicure directory exists, create empty orf_data
+                                orf_data = {}
             
             print(f"DEBUG: Collected {len(orf_data)} ORF records")
             if orf_data:
