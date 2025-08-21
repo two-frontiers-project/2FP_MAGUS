@@ -6,7 +6,6 @@ import argparse
 import logging
 import subprocess
 import tempfile
-import shutil
 from pathlib import Path
 from collections import defaultdict
 import pandas as pd
@@ -16,20 +15,22 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class GeneCatalogBuilder:
-    def __init__(self, call_orfs_output_dir, output_dir, threads=1, 
+    def __init__(self, summary_file, faa_dir, output_dir, threads=1, 
                  evalue_cutoff=0.01, identity_threshold=0.9, coverage_threshold=0.8):
         """
         Initialize the gene catalog builder.
         
         Args:
-            call_orfs_output_dir: Directory containing call-orfs output (annotations and fasta files)
+            summary_file: Path to call_orfs summary file with annotation data
+            faa_dir: Directory containing .faa files where filenames match IDs in summary
             output_dir: Output directory for the gene catalog
             threads: Number of threads for MMseqs2
             evalue_cutoff: E-value cutoff for HMM annotations
             identity_threshold: Identity threshold for MMseqs2 clustering
             coverage_threshold: Coverage threshold for MMseqs2 clustering
         """
-        self.call_orfs_output_dir = Path(call_orfs_output_dir)
+        self.summary_file = Path(summary_file)
+        self.faa_dir = Path(faa_dir)
         self.output_dir = Path(output_dir)
         self.threads = threads
         self.evalue_cutoff = evalue_cutoff
@@ -41,6 +42,9 @@ class GeneCatalogBuilder:
         
         # Check if MMseqs2 is available
         self._check_mmseqs2()
+        
+        # Store gene sequences
+        self.gene_sequences = {}
     
     def _check_mmseqs2(self):
         """Check if MMseqs2 is available in PATH."""
@@ -50,151 +54,96 @@ class GeneCatalogBuilder:
             logger.error("MMseqs2 not found in PATH. Please install MMseqs2.")
             sys.exit(1)
     
-    def _get_annotation_files(self):
-        """Get all annotation files from call-orfs output."""
-        annotation_files = []
+    def _parse_summary_file(self):
+        """Parse the call_orfs summary file to get annotated vs unannotated genes."""
+        logger.info(f"Parsing summary file: {self.summary_file}")
         
-        # Look for summary files in the main output directory
-        for summary_file in self.call_orfs_output_dir.glob("*_orf_summary*.tsv"):
-            annotation_files.append(summary_file)
+        # Read the summary file
+        df = pd.read_csv(self.summary_file, sep='\t')
         
-        # Also look in subdirectories for individual annotation files
-        for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
-            annot_dir = self.call_orfs_output_dir / subdir / 'annot'
-            if annot_dir.exists():
-                for hmm_file in annot_dir.glob("*.hmm.tsv"):
-                    annotation_files.append(hmm_file)
-        
-        return annotation_files
-    
-    def _parse_annotations(self):
-        """Parse HMM annotations and create gene-to-annotation mapping."""
-        # Dictionary to store all annotations per gene: {gene_id: [(evalue, annotation), ...]}
-        gene_all_annotations = defaultdict(list)
-        annotated_genes = set()
-        unannotated_genes = set()
-        
-        annotation_files = self._get_annotation_files()
-        
-        for annotation_file in annotation_files:
-            logger.info(f"Processing annotation file: {annotation_file}")
+        # Determine the format based on columns
+        if 'target_name' in df.columns and 'query_name' in df.columns:
+            # Eukaryotic format
+            annotated_genes = set()
+            unannotated_genes = set()
+            gene_annotations = {}
             
-            try:
-                if annotation_file.name.endswith('_orf_summary.tsv'):
-                    # This is a comprehensive summary file
-                    df = pd.read_csv(annotation_file, sep='\t')
-                    
-                    # Check if this is the eukaryotic format or bacterial/viral format
-                    if 'target_name' in df.columns:
-                        # Eukaryotic format
-                        for _, row in df.iterrows():
-                            sample_id = row['sample_id']
-                            gene_id = row['target_name']
-                            query_name = row.get('query_name', '')
-                            full_evalue = row.get('full_evalue', '')
-                            
-                            if pd.notna(query_name) and query_name != '' and pd.notna(full_evalue):
-                                try:
-                                    evalue = float(full_evalue)
-                                    if evalue <= self.evalue_cutoff:
-                                        full_gene_id = f"{sample_id}-----{gene_id}"
-                                        gene_all_annotations[full_gene_id].append((evalue, query_name))
-                                        annotated_genes.add(full_gene_id)
-                                    else:
-                                        full_gene_id = f"{sample_id}-----{gene_id}"
-                                        unannotated_genes.add(full_gene_id)
-                                except (ValueError, TypeError):
-                                    # If evalue can't be parsed, treat as unannotated
-                                    full_gene_id = f"{sample_id}-----{gene_id}"
-                                    unannotated_genes.add(full_gene_id)
-                            else:
-                                full_gene_id = f"{sample_id}-----{gene_id}"
-                                unannotated_genes.add(full_gene_id)
-                    else:
-                        # Bacterial/viral format - need to check for HMM data
-                        # This would require additional parsing logic
-                        logger.warning(f"Skipping {annotation_file} - bacterial/viral format not yet implemented")
-                        continue
-                        
-                elif annotation_file.name.endswith('.hmm.tsv'):
-                    # This is an individual HMM annotation file
-                    sample_id = annotation_file.stem.replace('.hmm', '')
-                    
-                    with open(annotation_file, 'r') as f:
-                        for line in f:
-                            if line.startswith('#'):
-                                continue
-                            parts = line.strip().split()
-                            if len(parts) >= 5:
-                                query_name = parts[0]  # HMM name
-                                gene_id = parts[2]    # Gene name
-                                try:
-                                    evalue = float(parts[4])
-                                    if evalue <= self.evalue_cutoff:
-                                        full_gene_id = f"{sample_id}-----{gene_id}"
-                                        gene_all_annotations[full_gene_id].append((evalue, query_name))
-                                        annotated_genes.add(full_gene_id)
-                                    else:
-                                        full_gene_id = f"{sample_id}-----{gene_id}"
-                                        unannotated_genes.add(full_gene_id)
-                                except (ValueError, TypeError):
-                                    full_gene_id = f"{sample_id}-----{gene_id}"
-                                    unannotated_genes.add(full_gene_id)
-                            else:
-                                full_gene_id = f"{sample_id}-----{gene_id}"
-                                unannotated_genes.add(full_gene_id)
-            
-            except Exception as e:
-                logger.warning(f"Error processing {annotation_file}: {e}")
-                continue
+            for _, row in df.iterrows():
+                sample_id = row['sample_id']
+                gene_id = row['target_name']
+                query_name = row.get('query_name', '')
+                full_evalue = row.get('full_evalue', '')
+                
+                if pd.notna(query_name) and query_name != '' and pd.notna(full_evalue):
+                    try:
+                        evalue = float(full_evalue)
+                        if evalue <= self.evalue_cutoff:
+                            full_gene_id = f"{sample_id}-----{gene_id}"
+                            gene_annotations[full_gene_id] = query_name
+                            annotated_genes.add(full_gene_id)
+                        else:
+                            full_gene_id = f"{sample_id}-----{gene_id}"
+                            unannotated_genes.add(full_gene_id)
+                    except (ValueError, TypeError):
+                        full_gene_id = f"{sample_id}-----{gene_id}"
+                        unannotated_genes.add(full_gene_id)
+                else:
+                    full_gene_id = f"{sample_id}-----{gene_id}"
+                    unannotated_genes.add(full_gene_id)
         
-        # Now find the BEST annotation per gene (lowest e-value)
-        gene_annotations = {}
-        for gene_id, annotations in gene_all_annotations.items():
-            if annotations:
-                # Sort by e-value (ascending) and take the first (lowest e-value)
-                best_annotation = min(annotations, key=lambda x: x[0])
-                gene_annotations[gene_id] = best_annotation[1]
+        elif 'ID' in df.columns and 'query_name' in df.columns:
+            # Bacterial/viral format
+            annotated_genes = set()
+            unannotated_genes = set()
+            gene_annotations = {}
+            
+            for _, row in df.iterrows():
+                sample_id = row['sample_id']
+                gene_id = row['ID']
+                query_name = row.get('query_name', '')
+                full_evalue = row.get('full_evalue', '')
+                
+                if pd.notna(query_name) and query_name != '' and pd.notna(full_evalue):
+                    try:
+                        evalue = float(full_evalue)
+                        if evalue <= self.evalue_cutoff:
+                            full_gene_id = f"{sample_id}-----{gene_id}"
+                            gene_annotations[full_gene_id] = query_name
+                            annotated_genes.add(full_gene_id)
+                        else:
+                            full_gene_id = f"{sample_id}-----{gene_id}"
+                            unannotated_genes.add(full_gene_id)
+                    except (ValueError, TypeError):
+                        full_gene_id = f"{sample_id}-----{gene_id}"
+                        unannotated_genes.add(full_gene_id)
+                else:
+                    full_gene_id = f"{sample_id}-----{gene_id}"
+                    unannotated_genes.add(full_gene_id)
+        
+        else:
+            logger.error("Unrecognized summary file format")
+            sys.exit(1)
         
         logger.info(f"Found {len(annotated_genes)} annotated genes and {len(unannotated_genes)} unannotated genes")
         return gene_annotations, annotated_genes, unannotated_genes
     
-    def _get_fasta_files(self):
-        """Get all fasta files from the call-orfs output directory."""
-        fasta_files = []
+    def _load_faa_sequences(self):
+        """Load all .faa sequences from the specified directory."""
+        logger.info(f"Loading .faa sequences from: {self.faa_dir}")
         
-        # Look for .faa files (protein sequences) in manicure and annot directories
-        for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
-            manicure_dir = self.call_orfs_output_dir / subdir / 'manicure'
-            annot_dir = self.call_orfs_output_dir / subdir / 'annot'
+        for faa_file in self.faa_dir.glob("*.faa"):
+            sample_id = faa_file.stem  # filename without .faa extension
             
-            if manicure_dir.exists():
-                for fasta_file in manicure_dir.glob("*.faa"):
-                    fasta_files.append(fasta_file)
-            
-            if annot_dir.exists():
-                for fasta_file in annot_dir.glob("*.fas"):
-                    if not fasta_file.name.endswith('.codon.fas'):
-                        fasta_files.append(fasta_file)
-        
-        return fasta_files
-    
-    def _create_unannotated_fasta(self, unannotated_genes, fasta_files):
-        """Create a fasta file containing only unannotated genes."""
-        unannotated_fasta = self.output_dir / "unannotated_genes.faa"
-        
-        gene_to_file = {}
-        for fasta_file in fasta_files:
-            sample_id = fasta_file.parent.name if fasta_file.parent.name in ['manicure', 'annot'] else fasta_file.stem
-            
-            with open(fasta_file, 'r') as f:
+            with open(faa_file, 'r') as f:
                 current_gene = None
                 current_sequence = []
                 
                 for line in f:
                     if line.startswith('>'):
                         if current_gene and current_sequence:
-                            gene_to_file[current_gene] = (current_gene, ''.join(current_sequence))
+                            # Store the full gene ID and sequence
+                            full_gene_id = f"{sample_id}-----{current_gene}"
+                            self.gene_sequences[full_gene_id] = ''.join(current_sequence)
                         
                         current_gene = line.strip()[1:]  # Remove '>'
                         current_sequence = []
@@ -202,14 +151,20 @@ class GeneCatalogBuilder:
                         current_sequence.append(line.strip())
                 
                 if current_gene and current_sequence:
-                    gene_to_file[current_gene] = (current_gene, ''.join(current_sequence))
+                    full_gene_id = f"{sample_id}-----{current_gene}"
+                    self.gene_sequences[full_gene_id] = ''.join(current_sequence)
         
-        # Write unannotated genes to fasta
+        logger.info(f"Loaded {len(self.gene_sequences)} gene sequences")
+    
+    def _create_unannotated_fasta(self, unannotated_genes):
+        """Create a fasta file containing only unannotated genes."""
+        unannotated_fasta = self.output_dir / "unannotated_genes.faa"
+        
         with open(unannotated_fasta, 'w') as out_f:
             for gene_id in unannotated_genes:
-                if gene_id in gene_to_file:
-                    header, sequence = gene_to_file[gene_id]
-                    out_f.write(f">{header}\n{sequence}\n")
+                if gene_id in self.gene_sequences:
+                    sequence = self.gene_sequences[gene_id]
+                    out_f.write(f">{gene_id}\n{sequence}\n")
         
         return unannotated_fasta
     
@@ -267,9 +222,6 @@ class GeneCatalogBuilder:
         cluster_mapping = self.output_dir / "gene_clusters.tsv"
         singleton_mapping = self.output_dir / "gene_singletons.tsv"
         
-        # Track which genes have been processed
-        processed_genes = set()
-        
         with open(cluster_mapping, 'w') as cluster_f, open(singleton_mapping, 'w') as singleton_f:
             # Write headers
             cluster_f.write("sampleid\tgene\tclusterid\n")
@@ -281,7 +233,6 @@ class GeneCatalogBuilder:
                     sample_id, gene = gene_id.split('-----', 1)
                     cluster_id = gene_annotations[gene_id]
                     cluster_f.write(f"{sample_id}\t{gene}\t{cluster_id}\n")
-                    processed_genes.add(gene_id)
             
             # Process unannotated genes
             for gene_id in unannotated_genes:
@@ -289,37 +240,76 @@ class GeneCatalogBuilder:
                     sample_id, gene = gene_id.split('-----', 1)
                     cluster_id = gene_clusters[gene_id]
                     cluster_f.write(f"{sample_id}\t{gene}\t{cluster_id}\n")
-                    processed_genes.add(gene_id)
                 else:
                     # This is a singleton
                     sample_id, gene = gene_id.split('-----', 1)
                     singleton_f.write(f"{sample_id}\t{gene}\t{sample_id}\n")
-                    processed_genes.add(gene_id)
         
         logger.info(f"Created gene cluster mapping: {cluster_mapping}")
         logger.info(f"Created gene singleton mapping: {singleton_mapping}")
         
-        # Count statistics
-        cluster_count = len(set(gene_annotations.values())) + len(set(gene_clusters.values()))
-        singleton_count = len(unannotated_genes - set(gene_clusters.keys()))
-        
-        logger.info(f"Total clusters: {cluster_count}")
-        logger.info(f"Total singletons: {singleton_count}")
-        
         return cluster_mapping, singleton_mapping
+    
+    def _create_nonredundant_fastas(self, gene_annotations, annotated_genes, unannotated_genes, gene_clusters):
+        """Create non-redundant FASTA files for clusters and singletons."""
+        logger.info("Creating non-redundant FASTA files")
+        
+        # Files to create
+        cluster_faa = self.output_dir / "gene_catalog_clusters.faa"
+        singleton_faa = self.output_dir / "gene_catalog_singletons.faa"
+        
+        # Group genes by their cluster/annotation
+        cluster_groups = defaultdict(list)
+        singleton_genes = set()
+        
+        # Process annotated genes (functional groups)
+        for gene_id in annotated_genes:
+            if gene_id in gene_annotations:
+                cluster_id = gene_annotations[gene_id]
+                cluster_groups[cluster_id].append(gene_id)
+        
+        # Process unannotated genes
+        for gene_id in unannotated_genes:
+            if gene_id in gene_clusters:
+                cluster_id = gene_clusters[gene_id]
+                cluster_groups[cluster_id].append(gene_id)
+            else:
+                singleton_genes.add(gene_id)
+        
+        # Write cluster FASTA with representative sequences
+        with open(cluster_faa, 'w') as out_f:
+            for cluster_id, gene_list in cluster_groups.items():
+                if gene_list:
+                    # Find the longest sequence as representative
+                    representative_gene = max(gene_list, key=lambda g: len(self.gene_sequences.get(g, '')))
+                    sequence = self.gene_sequences.get(representative_gene, '')
+                    if sequence:
+                        out_f.write(f">{cluster_id}\n{sequence}\n")
+        
+        # Write singleton FASTA
+        with open(singleton_faa, 'w') as out_f:
+            for gene_id in singleton_genes:
+                sequence = self.gene_sequences.get(gene_id, '')
+                if sequence:
+                    out_f.write(f">{gene_id}\n{sequence}\n")
+        
+        logger.info(f"Created cluster FASTA: {cluster_faa}")
+        logger.info(f"Created singleton FASTA: {singleton_faa}")
+        
+        return cluster_faa, singleton_faa
     
     def build_catalog(self):
         """Main method to build the gene catalog."""
         logger.info("Starting gene catalog construction")
         
-        # Parse annotations
-        gene_annotations, annotated_genes, unannotated_genes = self._parse_annotations()
+        # Parse summary file
+        gene_annotations, annotated_genes, unannotated_genes = self._parse_summary_file()
         
-        # Get fasta files
-        fasta_files = self._get_fasta_files()
+        # Load .faa sequences
+        self._load_faa_sequences()
         
         # Create unannotated genes fasta
-        unannotated_fasta = self._create_unannotated_fasta(unannotated_genes, fasta_files)
+        unannotated_fasta = self._create_unannotated_fasta(unannotated_genes)
         
         # Cluster unannotated genes
         gene_clusters = self._cluster_unannotated_genes(unannotated_fasta)
@@ -329,8 +319,13 @@ class GeneCatalogBuilder:
             gene_annotations, annotated_genes, unannotated_genes, gene_clusters
         )
         
+        # Create non-redundant FASTA files
+        cluster_faa, singleton_faa = self._create_nonredundant_fastas(
+            gene_annotations, annotated_genes, unannotated_genes, gene_clusters
+        )
+        
         logger.info("Gene catalog construction completed successfully")
-        return cluster_mapping, singleton_mapping
+        return cluster_mapping, singleton_mapping, cluster_faa, singleton_faa
 
 def main():
     parser = argparse.ArgumentParser(
@@ -338,12 +333,16 @@ def main():
     )
     
     parser.add_argument(
-        '--call-orfs-output',
+        '--summary-file',
         required=True,
-        help='Directory containing call-orfs output (annotations and fasta files)'
+        help='Path to call_orfs summary file with annotation data'
     )
     
-
+    parser.add_argument(
+        '--faa-dir',
+        required=True,
+        help='Directory containing .faa files where filenames match IDs in summary'
+    )
     
     parser.add_argument(
         '--output-dir',
@@ -383,7 +382,8 @@ def main():
     
     # Create and run the gene catalog builder
     builder = GeneCatalogBuilder(
-        call_orfs_output_dir=args.call_orfs_output,
+        summary_file=args.summary_file,
+        faa_dir=args.faa_dir,
         output_dir=args.output_dir,
         threads=args.threads,
         evalue_cutoff=args.evalue_cutoff,
@@ -399,4 +399,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-ƒ

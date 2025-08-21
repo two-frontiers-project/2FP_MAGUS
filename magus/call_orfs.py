@@ -584,7 +584,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             logger.info(f"Processing {subdir} samples")
                             
                             # First, collect all ORF data from Prodigal output
-                            orf_data = {}  # {gene_id: [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]}
+                            orf_data = {}  # {sequence_id: [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]}
                             
                             for file in os.listdir(annot_dir):
                                 if file.endswith('.faa'):
@@ -624,17 +624,18 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                                     if 'gc_cont=' in metadata:
                                                         gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
                                                     
-                                                    # Store ORF data keyed by gene_id for HMM merging
-                                                    orf_data[gene_id] = [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]
+                                                    # Store ORF data keyed by sequence_id (the part before first #) for HMM merging
+                                                    sequence_id = contig_id  # This is the full sequence identifier
+                                                    orf_data[sequence_id] = [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]
                             
                             # Now write the summary with HMM data merged in
                             # Write header with HMM columns
                             summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\tquery_name\tquery_accession\tfull_evalue\tfull_score\tfull_bias\tdom_evalue\tdom_score\tdom_bias\texp\treg\tclu\tov\tenv\tdom\trep\tinc\tdescription\n')
                             
                             # Process each ORF and merge with HMM data
-                            for gene_id, orf_row in orf_data.items():
-                                # Check if we have HMM data for this gene
-                                hmm_data = hmm_by_key.get(gene_id, [])
+                            for sequence_id, orf_row in orf_data.items():
+                                # Check if we have HMM data for this sequence
+                                hmm_data = hmm_by_key.get(sequence_id, [])
                                 
                                 if hmm_data:
                                     # Write one row per HMM hit
@@ -660,7 +661,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                         ]
                                         summary.write('\t'.join(str(field) for field in orf_row + hmm_values) + '\n')
                                 else:
-                                    # No HMM data for this gene - write with empty HMM columns
+                                    # No HMM data for this sequence - write with empty HMM columns
                                     empty_hmm = [''] * 17
                                     summary.write('\t'.join(str(field) for field in orf_row + empty_hmm) + '\n')
         
@@ -690,26 +691,11 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                     'exp': t[10], 'reg': t[11], 'clu': t[12], 'ov': t[13], 'env': t[14], 'dom': t[15], 'rep': t[16], 'inc': t[17],
                     'description': ' '.join(t[18:])
                 }
-                # Extract possible gene ID from target_name (for non-euks)
+                # Extract sequence identifier from target_name (for non-euks)
                 # For Prodigal output, target_name is the protein sequence name
-                # We need to extract the gene ID from the sequence name
-                m = re.search(r'ID=([^;\s]+)', rec['target_name'])
-                if m:
-                    rec['gene_id'] = m.group(1)
-                else:
-                    # If no ID= found, try to extract from the sequence name itself
-                    # Prodigal format: sample-----contig_1 # 1 # 279 # 1 # ID=1_1;partial=00;...
-                    parts = rec['target_name'].split('-----')
-                    if len(parts) > 1:
-                        # Extract the ID from the contig part
-                        contig_part = parts[1]
-                        id_match = re.search(r'ID=([^;\s]+)', contig_part)
-                        if id_match:
-                            rec['gene_id'] = id_match.group(1)
-                        else:
-                            rec['gene_id'] = None
-                    else:
-                        rec['gene_id'] = None
+                # The sequence identifier is the first part before any spaces
+                sequence_id = rec['target_name'].split()[0]  # Take first part before space
+                rec['sequence_id'] = sequence_id
                 return rec
 
             # Collect HMM records grouped by join key
@@ -726,9 +712,9 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             if not rec:
                                 continue
                             # Choose join key (eukaryotes are handled separately)
-                            join_key = rec.get('gene_id') or rec.get('target_name')
+                            join_key = rec.get('sequence_id')  # Use sequence_id for bacteria/viruses/metagenomes
                             if not join_key:
-                                logger.debug(f"Skipping HMM record with no join key: target_name={rec.get('target_name')}, gene_id={rec.get('gene_id')}")
+                                logger.debug(f"Skipping HMM record with no join key: target_name={rec.get('target_name')}, sequence_id={rec.get('sequence_id')}")
                                 continue
                             
                             # Early filter: HMM E-value thresholds
