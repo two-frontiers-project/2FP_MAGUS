@@ -581,6 +581,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         else:
                             # Bacteria/Viruses/Metagenomes: parse Prodigal output
                             # Include ID so we can correctly join HMM hits per ORF
+                            # Write header with HMM columns for proper merging
                             summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
                             
                             for file in os.listdir(annot_dir):
@@ -650,15 +651,35 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                     'description': ' '.join(t[18:])
                 }
                 # Extract possible gene ID from target_name (for non-euks)
+                # For Prodigal output, target_name is the protein sequence name
+                # We need to extract the gene ID from the sequence name
                 m = re.search(r'ID=([^;\s]+)', rec['target_name'])
-                rec['gene_id'] = m.group(1) if m else None
+                if m:
+                    rec['gene_id'] = m.group(1)
+                else:
+                    # If no ID= found, try to extract from the sequence name itself
+                    # Prodigal format: sample-----contig_1 # 1 # 279 # 1 # ID=1_1;partial=00;...
+                    parts = rec['target_name'].split('-----')
+                    if len(parts) > 1:
+                        # Extract the ID from the contig part
+                        contig_part = parts[1]
+                        id_match = re.search(r'ID=([^;\s]+)', contig_part)
+                        if id_match:
+                            rec['gene_id'] = id_match.group(1)
+                        else:
+                            rec['gene_id'] = None
+                    else:
+                        rec['gene_id'] = None
                 return rec
 
             # Collect HMM records grouped by join key
             hmm_by_key = {}
+            hmm_files_found = []
             for file in os.listdir(annot_dir):
                 if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
                     hmm_path = os.path.join(annot_dir, file)
+                    hmm_files_found.append(file)
+                    logger.info(f"Processing HMM file: {file}")
                     with open(hmm_path, 'r') as fin:
                         for raw in fin:
                             rec = parse_tblout_row(raw)
@@ -666,6 +687,10 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 continue
                             # Choose join key (eukaryotes are handled separately)
                             join_key = rec.get('gene_id') or rec.get('target_name')
+                            if not join_key:
+                                logger.debug(f"Skipping HMM record with no join key: target_name={rec.get('target_name')}, gene_id={rec.get('gene_id')}")
+                                continue
+                            
                             # Early filter: HMM E-value thresholds
                             try:
                                 if hmm_fullseq_evalue_cutoff is not None:
@@ -678,9 +703,11 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                         continue
                             except Exception:
                                 pass
-                            if not join_key:
-                                continue
+                            
                             hmm_by_key.setdefault(join_key, []).append(rec)
+            
+            logger.info(f"Found {len(hmm_files_found)} HMM files: {hmm_files_found}")
+            logger.info(f"Collected {len(hmm_by_key)} HMM records for merging")
 
             if hmm_by_key:
                 temp_summary = summary_file + '.tmp'
