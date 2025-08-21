@@ -578,164 +578,140 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             
                             # WRITE THE ROW - this should happen for EVERY FASTA header
                             summary.write('\t'.join(str(field) for field in row_data) + '\n')
-                        else:
-                            # Bacteria/Viruses/Metagenomes: simple GFF + HMM merge
-                            logger.info(f"Processing {subdir} samples")
-                            
-                            import pandas as pd
-                            
-                            # Process each sample one at a time
-                            for file in os.listdir(annot_dir):
-                                if file.endswith('.gff'):
-                                    sample_id = file.replace('.gff', '')
-                                    gff_file = os.path.join(annot_dir, file)
-                                    hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                        
+                        # Process each sample: read FASTA, clean HMM, merge, write to final summary
+                        for file in os.listdir(annot_dir):
+                            if file.endswith('.fas') and not file.endswith('.codon.fas'):
+                                sample_id = file.replace('.fas', '')
+                                fas_file = os.path.join(annot_dir, file)
+                                
+                                # Read FASTA headers for this sample
+                                fasta_headers = temp_caller.read_fasta_headers(fas_file)
+                                if not fasta_headers:
+                                    continue
+                                
+                                # Check if HMM file exists and clean it
+                                hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
+                                sample_hmm_data = {}
+                                
+                                if os.path.exists(hmm_file):
+                                    hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                                    rows = temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, hmm_domain_evalue_cutoff)
+                                    if rows:
+                                        for row in rows:
+                                            target_name = row['target_name']
+                                            sample_hmm_data[target_name] = row
+                                
+                                # Write all rows for this sample to the final summary
+                                for target_name in fasta_headers:
+                                    # ALWAYS write a row for every FASTA header (left join)
+                                    row_data = [sample_id, target_name]
                                     
-                                    # 1. Load GFF and parse annotation data
-                                    gff_data = []
-                                    with open(gff_file, 'r') as f:
-                                        for line in f:
-                                            if line.startswith('#') or not line.strip():
-                                                continue
-                                            parts = line.strip().split('\t')
-                                            if len(parts) >= 9 and parts[2] == 'CDS':
-                                                # Extract note field with annotation data
-                                                note = parts[8]
-                                                if 'ID=' in note:
-                                                    # Parse the note field
-                                                    note_parts = note.split(';')
-                                                    annotation = {}
-                                                    for part in note_parts:
-                                                        if '=' in part:
-                                                            key, value = part.split('=', 1)
-                                                            annotation[key.strip()] = value.strip()
-                                                    
-                                                    gff_data.append({
-                                                        'sample_id': sample_id,
-                                                        'contig_id': parts[0],
-                                                        'start': parts[3],
-                                                        'end': parts[4],
-                                                        'strand': parts[6],
-                                                        'ID': annotation.get('ID', ''),
-                                                        'partial': annotation.get('partial', ''),
-                                                        'start_type': annotation.get('start_type', ''),
-                                                        'rbs_motif': annotation.get('rbs_motif', ''),
-                                                        'rbs_spacer': annotation.get('rbs_spacer', ''),
-                                                        'gc_cont': annotation.get('gc_cont', '')
-                                                    })
-                                    
-                                    # 2. Convert to DataFrame
-                                    gff_df = pd.DataFrame(gff_data)
-                                    
-                                    # 3. Load HMM data if it exists
-                                    if os.path.exists(hmm_file):
-                                        hmm_df = pd.read_csv(hmm_file)
-                                        # Extract sequence ID from target_name (first part before space)
-                                        hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
-                                        
-                                        # 4. Left join on sequence_id
-                                        # Create a mapping from GFF ID to sequence_id for joining
-                                        # This assumes the GFF ID corresponds to the sequence in the HMM data
-                                        merged_df = pd.merge(gff_df, hmm_df, left_on='ID', right_on='sequence_id', how='left')
+                                    # Add HMM data if it exists, otherwise empty strings
+                                    if target_name in sample_hmm_data:
+                                        hmm_row = sample_hmm_data[target_name]
+                                        row_data.extend([
+                                            hmm_row.get('query_name', ''),
+                                            hmm_row.get('query_accession', ''),
+                                            hmm_row.get('full_evalue', ''),
+                                            hmm_row.get('full_score', ''),
+                                            hmm_row.get('full_bias', ''),
+                                            hmm_row.get('dom_evalue', ''),
+                                            hmm_row.get('dom_score', ''),
+                                            hmm_row.get('dom_bias', ''),
+                                            hmm_row.get('exp', ''),
+                                            hmm_row.get('reg', ''),
+                                            hmm_row.get('clu', ''),
+                                            hmm_row.get('ov', ''),
+                                            hmm_row.get('env', ''),
+                                            hmm_row.get('dom', ''),
+                                            hmm_row.get('rep', ''),
+                                            hmm_row.get('inc', ''),
+                                            hmm_row.get('description', '')
+                                        ])
                                     else:
-                                        # No HMM data, just use GFF data with empty HMM columns
-                                        empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
-                                                         'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
-                                                         'env', 'dom', 'rep', 'inc', 'description']
-                                        for col in empty_hmm_cols:
-                                            merged_df[col] = ''
-                                        merged_df = gff_df
+                                        # No HMM data for this target - add empty strings
+                                        row_data.extend([''] * 17)
                                     
-                                    # Write to summary file
-                                    if not gff_df.empty:
-                                        merged_df.to_csv(summary_file, mode='a', header=not os.path.exists(summary_file), 
-                                                       index=False, sep='\t')
-                                        logger.info(f"Added {len(merged_df)} rows for sample {sample_id}")
+                                    # WRITE THE ROW - this should happen for EVERY FASTA header
+                                    summary.write('\t'.join(str(field) for field in row_data) + '\n')
+            else:
+                # Bacteria/Viruses/Metagenomes: simple GFF + HMM merge
+                logger.info(f"Processing {subdir} samples")
+                
+                import pandas as pd
+                
+                # Process each sample one at a time
+                for file in os.listdir(annot_dir):
+                    if file.endswith('.gff'):
+                        sample_id = file.replace('.gff', '')
+                        gff_file = os.path.join(annot_dir, file)
+                        hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                        
+                        # 1. Load GFF and parse annotation data
+                        gff_data = []
+                        with open(gff_file, 'r') as f:
+                            for line in f:
+                                if line.startswith('#') or not line.strip():
+                                    continue
+                                parts = line.strip().split('\t')
+                                if len(parts) >= 9 and parts[2] == 'CDS':
+                                    # Extract note field with annotation data
+                                    note = parts[8]
+                                    if 'ID=' in note:
+                                        # Parse the note field
+                                        note_parts = note.split(';')
+                                        annotation = {}
+                                        for part in note_parts:
+                                            if '=' in part:
+                                                key, value = part.split('=', 1)
+                                                annotation[key.strip()] = value.strip()
+                                        
+                                        gff_data.append({
+                                            'sample_id': sample_id,
+                                            'contig_id': parts[0],
+                                            'start': parts[3],
+                                            'end': parts[4],
+                                            'strand': parts[6],
+                                            'ID': annotation.get('ID', ''),
+                                            'partial': annotation.get('partial', ''),
+                                            'start_type': annotation.get('start_type', ''),
+                                            'rbs_motif': annotation.get('rbs_motif', ''),
+                                            'rbs_spacer': annotation.get('rbs_spacer', ''),
+                                            'gc_cont': annotation.get('gc_cont', '')
+                                        })
+                        
+                        # 2. Convert to DataFrame
+                        gff_df = pd.DataFrame(gff_data)
+                        
+                        # 3. Load HMM data if it exists
+                        if os.path.exists(hmm_file):
+                            hmm_df = pd.read_csv(hmm_file)
+                            # Extract sequence ID from target_name (first part before space)
+                            hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
+                            
+                            # 4. Left join on sequence_id
+                            # Create a mapping from GFF ID to sequence_id for joining
+                            # This assumes the GFF ID corresponds to the sequence in the HMM data
+                            merged_df = pd.merge(gff_df, hmm_df, left_on='ID', right_on='sequence_id', how='left')
+                        else:
+                            # No HMM data, just use GFF data with empty HMM columns
+                            empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
+                                             'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
+                                             'env', 'dom', 'rep', 'inc', 'description']
+                            merged_df = gff_df.copy()
+                            for col in empty_hmm_cols:
+                                merged_df[col] = ''
+                        
+                        # Write to summary file
+                        if not gff_df.empty:
+                            merged_df.to_csv(summary_file, mode='a', header=not os.path.exists(summary_file), 
+                                           index=False, sep='\t')
+                            logger.info(f"Added {len(merged_df)} rows for sample {sample_id}")
         
-        # Now add HMM results from existing files (do not depend on --hmmfile being provided here)
-        # Skip eukaryotes since they're handled differently with individual summary files
-        if subdir != 'eukaryotes':
-            logger.info(f"Adding HMM results to {subdir} summary (if present)")
-
-            # Parse HMM tblout and build records
-            def parse_tblout_row(row: str):
-                if not row or row.startswith('#'):
-                    return None
-                t = row.rstrip('\n').split()
-                if len(t) < 19:
-                    return None
-                rec = {
-                    'target_name': t[0],
-                    'target_accession': t[1],
-                    'query_name': t[2],
-                    'query_accession': t[3],
-                    'full_evalue': t[4],
-                    'full_score': t[5],
-                    'full_bias': t[6],
-                    'dom_evalue': t[7],
-                    'dom_score': t[8],
-                    'dom_bias': t[9],
-                    'exp': t[10], 'reg': t[11], 'clu': t[12], 'ov': t[13], 'env': t[14], 'dom': t[15], 'rep': t[16], 'inc': t[17],
-                    'description': ' '.join(t[18:])
-                }
-                # Extract sequence identifier from target_name (for non-euks)
-                # For Prodigal output, target_name is the protein sequence name
-                # The sequence identifier is the first part before any spaces
-                sequence_id = rec['target_name'].split()[0]  # Take first part before space
-                rec['sequence_id'] = sequence_id
-                return rec
-
-            # Collect HMM records grouped by join key
-            hmm_by_key = {}
-            hmm_files_found = []
-            
-            # First try to use clean CSV files if they exist
-            for file in os.listdir(annot_dir):
-                if file.endswith('.hmm_clean.csv'):
-                    hmm_path = os.path.join(annot_dir, file)
-                    hmm_files_found.append(file)
-                    with open(hmm_path, 'r') as fin:
-                        reader = csv.DictReader(fin)
-                        for row in reader:
-                            # Extract sequence_id from target_name (first part before space)
-                            sequence_id = row['target_name'].split()[0]
-                            row['sequence_id'] = sequence_id
-                            
-                            # Apply e-value filtering
-                            try:
-                                if hmm_fullseq_evalue_cutoff is not None:
-                                    fev = float(row.get('full_evalue', '')) if row.get('full_evalue', '') else None
-                                    if fev is not None and fev > hmm_fullseq_evalue_cutoff:
-                                        continue
-                                if hmm_domain_evalue_cutoff is not None:
-                                    dev = float(row.get('dom_evalue', '')) if row.get('dom_evalue', '') else None
-                                    if dev is not None and dev > hmm_domain_evalue_cutoff:
-                                        continue
-                            except Exception:
-                                pass
-                            
-                            hmm_by_key.setdefault(sequence_id, []).append(row)
-            
-            # Create a mapping from base sequence ID to HMM data for fuzzy matching
-            hmm_by_base_id = {}
-            for sequence_id, hmm_records in hmm_by_key.items():
-                # Extract base ID (everything before the last underscore numbers)
-                base_id = '_'.join(sequence_id.split('_')[:-2]) if sequence_id.count('_') >= 2 else sequence_id
-                hmm_by_base_id.setdefault(base_id, []).extend(hmm_records)
-            
-            print(f"DEBUG: Found {len(hmm_files_found)} clean HMM files")
-            print(f"DEBUG: Collected {len(hmm_by_key)} HMM records")
-            if hmm_by_key:
-                print(f"DEBUG: Sample keys: {list(hmm_by_key.keys())[:5]}")
-            
-
-            
-            logger.info(f"Found {len(hmm_files_found)} HMM files: {hmm_files_found}")
-            logger.info(f"Collected {len(hmm_by_key)} HMM records for merging")
-
-            # For bacteria/viruses/metagenomes, HMM data is already merged inline above
-            # This section is kept for compatibility but won't be used for these domains
-            logger.info(f"HMM data for {subdir} was merged inline during summary generation")
+        # HMM data for bacteria/viruses/metagenomes was already merged inline above
+        # No additional processing needed here
+        logger.info(f"HMM data for {subdir} was merged inline during summary generation")
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
 
