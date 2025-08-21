@@ -624,18 +624,27 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                                     if 'gc_cont=' in metadata:
                                                         gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
                                                     
-                                                    # Store ORF data keyed by sequence_id (the part before first #) for HMM merging
+                                                                                # Store ORF data keyed by sequence_id (the part before first #) for HMM merging
                                                     sequence_id = contig_id  # This is the full sequence identifier
                                                     orf_data[sequence_id] = [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]
-                            
-                            # Now write the summary with HMM data merged in
+            
+            print(f"DEBUG: Collected {len(orf_data)} ORF records")
+            if orf_data:
+                print(f"DEBUG: Sample ORF keys: {list(orf_data.keys())[:5]}")
+            
+            # Now write the summary with HMM data merged in
                             # Write header with HMM columns
                             summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\tquery_name\tquery_accession\tfull_evalue\tfull_score\tfull_bias\tdom_evalue\tdom_score\tdom_bias\texp\treg\tclu\tov\tenv\tdom\trep\tinc\tdescription\n')
                             
                             # Process each ORF and merge with HMM data
                             for sequence_id, orf_row in orf_data.items():
-                                # Check if we have HMM data for this sequence
+                                # Extract base ID for fuzzy matching
+                                base_id = '_'.join(sequence_id.split('_')[:-2]) if sequence_id.count('_') >= 2 else sequence_id
+                                
+                                # Check if we have HMM data for this sequence (try exact match first, then base ID)
                                 hmm_data = hmm_by_key.get(sequence_id, [])
+                                if not hmm_data:
+                                    hmm_data = hmm_by_base_id.get(base_id, [])
                                 
                                 if hmm_data:
                                     # Write one row per HMM hit
@@ -728,6 +737,18 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 pass
                             
                             hmm_by_key.setdefault(sequence_id, []).append(row)
+            
+            # Create a mapping from base sequence ID to HMM data for fuzzy matching
+            hmm_by_base_id = {}
+            for sequence_id, hmm_records in hmm_by_key.items():
+                # Extract base ID (everything before the last underscore numbers)
+                base_id = '_'.join(sequence_id.split('_')[:-2]) if sequence_id.count('_') >= 2 else sequence_id
+                hmm_by_base_id.setdefault(base_id, []).extend(hmm_records)
+            
+            print(f"DEBUG: Found {len(hmm_files_found)} clean HMM files")
+            print(f"DEBUG: Collected {len(hmm_by_key)} HMM records")
+            if hmm_by_key:
+                print(f"DEBUG: Sample keys: {list(hmm_by_key.keys())[:5]}")
             
 
             
