@@ -583,7 +583,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             # Include ID so we can correctly join HMM hits per ORF
                             logger.info(f"Processing {subdir} samples")
                             
-                                                        # First, collect all ORF data from manicure files
+                            # First, collect all ORF data from manicure files
                             orf_data = {}  # {sequence_id: [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]}
                             
                             manicure_dir = os.path.join(annot_dir, '..', 'manicure')
@@ -636,52 +636,52 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             else:
                                 # If no manicure directory exists, create empty orf_data
                                 orf_data = {}
-            
-            print(f"DEBUG: Collected {len(orf_data)} ORF records")
-            if orf_data:
-                print(f"DEBUG: Sample ORF keys: {list(orf_data.keys())[:5]}")
-            
-            # Now write the summary with HMM data merged in
-            # Write header with HMM columns
-            summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\tquery_name\tquery_accession\tfull_evalue\tfull_score\tfull_bias\tdom_evalue\tdom_score\tdom_bias\texp\treg\tclu\tov\tenv\tdom\trep\tinc\tdescription\n')
-            
-            # Process each ORF and merge with HMM data
-            for sequence_id, orf_row in orf_data.items():
-                # Extract base ID for fuzzy matching
-                base_id = '_'.join(sequence_id.split('_')[:-2]) if sequence_id.count('_') >= 2 else sequence_id
-                
-                # Check if we have HMM data for this sequence (try exact match first, then base ID)
-                hmm_data = hmm_by_key.get(sequence_id, [])
-                if not hmm_data:
-                    hmm_data = hmm_by_base_id.get(base_id, [])
-                
-                if hmm_data:
-                    # Write one row per HMM hit
-                    for hmm_hit in hmm_data:
-                        hmm_values = [
-                            hmm_hit.get('query_name', ''),
-                            hmm_hit.get('query_accession', ''),
-                            hmm_hit.get('full_evalue', ''),
-                            hmm_hit.get('full_score', ''),
-                            hmm_hit.get('full_bias', ''),
-                            hmm_hit.get('dom_evalue', ''),
-                            hmm_hit.get('dom_score', ''),
-                            hmm_hit.get('dom_bias', ''),
-                            hmm_hit.get('exp', ''),
-                            hmm_hit.get('reg', ''),
-                            hmm_hit.get('clu', ''),
-                            hmm_hit.get('ov', ''),
-                            hmm_hit.get('env', ''),
-                            hmm_hit.get('dom', ''),
-                            hmm_hit.get('rep', ''),
-                            hmm_hit.get('inc', ''),
-                            hmm_hit.get('description', '')
-                        ]
-                        summary.write('\t'.join(str(field) for field in orf_row + hmm_values) + '\n')
-                else:
-                    # No HMM data for this sequence - write with empty HMM columns
-                    empty_hmm = [''] * 17
-                    summary.write('\t'.join(str(field) for field in orf_row + empty_hmm) + '\n')
+                            
+                            print(f"DEBUG: Collected {len(orf_data)} ORF records")
+                            if orf_data:
+                                print(f"DEBUG: Sample ORF keys: {list(orf_data.keys())[:5]}")
+                            
+                            # Now write the summary with HMM data merged in
+                            # Write header with HMM columns
+                            summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\tquery_name\tquery_accession\tfull_evalue\tfull_score\tfull_bias\tdom_evalue\tdom_score\tdom_bias\texp\treg\tclu\tov\tenv\tdom\trep\tinc\tdescription\n')
+                            
+                            # Process each ORF and merge with HMM data
+                            for sequence_id, orf_row in orf_data.items():
+                                # Extract base ID for fuzzy matching
+                                base_id = '_'.join(sequence_id.split('_')[:-2]) if sequence_id.count('_') >= 2 else sequence_id
+                                
+                                # Check if we have HMM data for this sequence (try exact match first, then base ID)
+                                hmm_data = hmm_by_key.get(sequence_id, [])
+                                if not hmm_data:
+                                    hmm_data = hmm_by_base_id.get(base_id, [])
+                                
+                                if hmm_data:
+                                    # Write one row per HMM hit
+                                    for hmm_hit in hmm_data:
+                                        hmm_values = [
+                                            hmm_hit.get('query_name', ''),
+                                            hmm_hit.get('query_accession', ''),
+                                            hmm_hit.get('full_evalue', ''),
+                                            hmm_hit.get('full_score', ''),
+                                            hmm_hit.get('full_bias', ''),
+                                            hmm_hit.get('dom_evalue', ''),
+                                            hmm_hit.get('dom_score', ''),
+                                            hmm_hit.get('dom_bias', ''),
+                                            hmm_hit.get('exp', ''),
+                                            hmm_hit.get('reg', ''),
+                                            hmm_hit.get('clu', ''),
+                                            hmm_hit.get('ov', ''),
+                                            hmm_hit.get('env', ''),
+                                            hmm_hit.get('dom', ''),
+                                            hmm_hit.get('rep', ''),
+                                            hmm_hit.get('inc', ''),
+                                            hmm_hit.get('description', '')
+                                        ]
+                                        summary.write('\t'.join(str(field) for field in orf_row + hmm_values) + '\n')
+                                else:
+                                    # No HMM data for this sequence - write with empty HMM columns
+                                    empty_hmm = [''] * 17
+                                    summary.write('\t'.join(str(field) for field in orf_row + empty_hmm) + '\n')
         
         # Now add HMM results from existing files (do not depend on --hmmfile being provided here)
         # Skip eukaryotes since they're handled differently with individual summary files
