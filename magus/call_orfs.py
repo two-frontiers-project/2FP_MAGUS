@@ -581,8 +581,10 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         else:
                             # Bacteria/Viruses/Metagenomes: parse Prodigal output
                             # Include ID so we can correctly join HMM hits per ORF
-                            # Write header with HMM columns for proper merging
-                            summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\n')
+                            logger.info(f"Processing {subdir} samples")
+                            
+                            # First, collect all ORF data from Prodigal output
+                            orf_data = {}  # {gene_id: [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]}
                             
                             for file in os.listdir(annot_dir):
                                 if file.endswith('.faa'):
@@ -622,7 +624,45 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                                     if 'gc_cont=' in metadata:
                                                         gc_cont = metadata.split('gc_cont=')[1].split(';')[0]
                                                     
-                                                    summary.write(f'{sample_id}\t{contig_id}\t{start}\t{end}\t{strand}\t{gene_id}\t{partial}\t{start_type}\t{rbs_motif}\t{rbs_spacer}\t{gc_cont}\n')
+                                                    # Store ORF data keyed by gene_id for HMM merging
+                                                    orf_data[gene_id] = [sample_id, contig_id, start, end, strand, gene_id, partial, start_type, rbs_motif, rbs_spacer, gc_cont]
+                            
+                            # Now write the summary with HMM data merged in
+                            # Write header with HMM columns
+                            summary.write('sample_id\tcontig_id\tstart\tend\tstrand\tID\tpartial\tstart_type\trbs_motif\trbs_spacer\tgc_cont\tquery_name\tquery_accession\tfull_evalue\tfull_score\tfull_bias\tdom_evalue\tdom_score\tdom_bias\texp\treg\tclu\tov\tenv\tdom\trep\tinc\tdescription\n')
+                            
+                            # Process each ORF and merge with HMM data
+                            for gene_id, orf_row in orf_data.items():
+                                # Check if we have HMM data for this gene
+                                hmm_data = hmm_by_key.get(gene_id, [])
+                                
+                                if hmm_data:
+                                    # Write one row per HMM hit
+                                    for hmm_hit in hmm_data:
+                                        hmm_values = [
+                                            hmm_hit.get('query_name', ''),
+                                            hmm_hit.get('query_accession', ''),
+                                            hmm_hit.get('full_evalue', ''),
+                                            hmm_hit.get('full_score', ''),
+                                            hmm_hit.get('full_bias', ''),
+                                            hmm_hit.get('dom_evalue', ''),
+                                            hmm_hit.get('dom_score', ''),
+                                            hmm_hit.get('dom_bias', ''),
+                                            hmm_hit.get('exp', ''),
+                                            hmm_hit.get('reg', ''),
+                                            hmm_hit.get('clu', ''),
+                                            hmm_hit.get('ov', ''),
+                                            hmm_hit.get('env', ''),
+                                            hmm_hit.get('dom', ''),
+                                            hmm_hit.get('rep', ''),
+                                            hmm_hit.get('inc', ''),
+                                            hmm_hit.get('description', '')
+                                        ]
+                                        summary.write('\t'.join(str(field) for field in orf_row + hmm_values) + '\n')
+                                else:
+                                    # No HMM data for this gene - write with empty HMM columns
+                                    empty_hmm = [''] * 17
+                                    summary.write('\t'.join(str(field) for field in orf_row + empty_hmm) + '\n')
         
         # Now add HMM results from existing files (do not depend on --hmmfile being provided here)
         # Skip eukaryotes since they're handled differently with individual summary files
@@ -709,65 +749,9 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
             logger.info(f"Found {len(hmm_files_found)} HMM files: {hmm_files_found}")
             logger.info(f"Collected {len(hmm_by_key)} HMM records for merging")
 
-            if hmm_by_key:
-                temp_summary = summary_file + '.tmp'
-                
-                def parse_float_safe(value: str) -> Optional[float]:
-                    try:
-                        return float(value)
-                    except Exception:
-                        return None
-                
-                with open(summary_file, 'r') as infile, open(temp_summary, 'w') as outfile:
-                    original_header = infile.readline().rstrip('\n')
-                    hmm_cols = [
-                        'hmm_target_name','hmm_target_accession','hmm_query_name','hmm_query_accession',
-                        'hmm_full_evalue','hmm_full_score','hmm_full_bias',
-                        'hmm_dom_evalue','hmm_dom_score','hmm_dom_bias',
-                        'hmm_exp','hmm_reg','hmm_clu','hmm_ov','hmm_env','hmm_dom','hmm_rep','hmm_inc','hmm_description'
-                    ]
-                    # Write a single header row only once (long format: one row per HMM hit)
-                    outfile.write(original_header + '\t' + '\t'.join(hmm_cols) + '\n')
-
-                    header_fields = original_header.split('\t')
-                    if 'ID' in header_fields:
-                        key_idx = header_fields.index('ID')
-                    else:
-                        key_idx = header_fields.index('contig_id') if 'contig_id' in header_fields else 1
-
-                    for row in infile:
-                        row = row.rstrip('\n')
-                        if not row:
-                            continue
-                        cols = row.split('\t')
-                        join_key = cols[key_idx] if key_idx < len(cols) else None
-                        hits = hmm_by_key.get(join_key, []) if join_key else []
-                        # Long format: emit one row per HMM hit; also emit a blank-annotation row if there are no hits
-                        if hits:
-                            for h in hits:
-                                # Apply HMM e-value filters
-                                if hmm_fullseq_evalue_cutoff is not None:
-                                    fev = parse_float_safe(h.get('full_evalue', ''))
-                                    if fev is not None and fev > hmm_fullseq_evalue_cutoff:
-                                        continue
-                                if hmm_domain_evalue_cutoff is not None:
-                                    dev = parse_float_safe(h.get('dom_evalue', ''))
-                                    if dev is not None and dev > hmm_domain_evalue_cutoff:
-                                        continue
-                                values = [
-                                    h.get('target_name',''), h.get('target_accession',''), h.get('query_name',''), h.get('query_accession',''),
-                                    h.get('full_evalue',''), h.get('full_score',''), h.get('full_bias',''),
-                                    h.get('dom_evalue',''), h.get('dom_score',''), h.get('dom_bias',''),
-                                    h.get('exp',''), h.get('reg',''), h.get('clu',''), h.get('ov',''), h.get('env',''), h.get('dom',''), h.get('rep',''), h.get('inc',''), h.get('description','')
-                                ]
-                                outfile.write(row + '\t' + '\t'.join(values) + '\n')
-                        else:
-                            # No HMMs for this ORF: keep with empty HMM columns
-                            outfile.write(row + '\t' + '\t'.join([''] * len(hmm_cols)) + '\n')
-
-                os.replace(temp_summary, summary_file)
-            else:
-                logger.info(f"Skipping HMM merging for {subdir} - using individual summary files instead")
+            # For bacteria/viruses/metagenomes, HMM data is already merged inline above
+            # This section is kept for compatibility but won't be used for these domains
+            logger.info(f"HMM data for {subdir} was merged inline during summary generation")
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
 
