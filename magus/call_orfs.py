@@ -701,36 +701,35 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
             # Collect HMM records grouped by join key
             hmm_by_key = {}
             hmm_files_found = []
+            
+            # First try to use clean CSV files if they exist
             for file in os.listdir(annot_dir):
-                if (suffix and file.endswith(f'.hmm.{suffix}.tsv')) or (not suffix and file.endswith('.hmm.tsv')):
+                if file.endswith('.hmm_clean.csv'):
                     hmm_path = os.path.join(annot_dir, file)
                     hmm_files_found.append(file)
-                    logger.info(f"Processing HMM file: {file}")
                     with open(hmm_path, 'r') as fin:
-                        for raw in fin:
-                            rec = parse_tblout_row(raw)
-                            if not rec:
-                                continue
-                            # Choose join key (eukaryotes are handled separately)
-                            join_key = rec.get('sequence_id')  # Use sequence_id for bacteria/viruses/metagenomes
-                            if not join_key:
-                                logger.debug(f"Skipping HMM record with no join key: target_name={rec.get('target_name')}, sequence_id={rec.get('sequence_id')}")
-                                continue
+                        reader = csv.DictReader(fin)
+                        for row in reader:
+                            # Extract sequence_id from target_name (first part before space)
+                            sequence_id = row['target_name'].split()[0]
+                            row['sequence_id'] = sequence_id
                             
-                            # Early filter: HMM E-value thresholds
+                            # Apply e-value filtering
                             try:
                                 if hmm_fullseq_evalue_cutoff is not None:
-                                    fev = float(rec.get('full_evalue', '')) if rec.get('full_evalue', '') else None
+                                    fev = float(row.get('full_evalue', '')) if row.get('full_evalue', '') else None
                                     if fev is not None and fev > hmm_fullseq_evalue_cutoff:
                                         continue
                                 if hmm_domain_evalue_cutoff is not None:
-                                    dev = float(rec.get('dom_evalue', '')) if rec.get('dom_evalue', '') else None
+                                    dev = float(row.get('dom_evalue', '')) if row.get('dom_evalue', '') else None
                                     if dev is not None and dev > hmm_domain_evalue_cutoff:
                                         continue
                             except Exception:
                                 pass
                             
-                            hmm_by_key.setdefault(join_key, []).append(rec)
+                            hmm_by_key.setdefault(sequence_id, []).append(row)
+            
+
             
             logger.info(f"Found {len(hmm_files_found)} HMM files: {hmm_files_found}")
             logger.info(f"Collected {len(hmm_by_key)} HMM records for merging")
