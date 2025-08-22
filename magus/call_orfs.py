@@ -578,63 +578,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             
                             # WRITE THE ROW - this should happen for EVERY FASTA header
                             summary.write('\t'.join(str(field) for field in row_data) + '\n')
-                        
-                        # Process each sample: read FASTA, clean HMM, merge, write to final summary
-                        for file in os.listdir(annot_dir):
-                            if file.endswith('.fas') and not file.endswith('.codon.fas'):
-                                sample_id = file.replace('.fas', '')
-                                fas_file = os.path.join(annot_dir, file)
-                                
-                                # Read FASTA headers for this sample
-                                fasta_headers = temp_caller.read_fasta_headers(fas_file)
-                                if not fasta_headers:
-                                    continue
-                                
-                                # Check if HMM file exists and clean it
-                                hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
-                                sample_hmm_data = {}
-                                
-                                if os.path.exists(hmm_file):
-                                    hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
-                                    rows = temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, hmm_domain_evalue_cutoff)
-                                    if rows:
-                                        for row in rows:
-                                            target_name = row['target_name']
-                                            sample_hmm_data[target_name] = row
-                                
-                                # Write all rows for this sample to the final summary
-                                for target_name in fasta_headers:
-                                    # ALWAYS write a row for every FASTA header (left join)
-                                    row_data = [sample_id, target_name]
-                                    
-                                    # Add HMM data if it exists, otherwise empty strings
-                                    if target_name in sample_hmm_data:
-                                        hmm_row = sample_hmm_data[target_name]
-                                        row_data.extend([
-                                            hmm_row.get('query_name', ''),
-                                            hmm_row.get('query_accession', ''),
-                                            hmm_row.get('full_evalue', ''),
-                                            hmm_row.get('full_score', ''),
-                                            hmm_row.get('full_bias', ''),
-                                            hmm_row.get('dom_evalue', ''),
-                                            hmm_row.get('dom_score', ''),
-                                            hmm_row.get('dom_bias', ''),
-                                            hmm_row.get('exp', ''),
-                                            hmm_row.get('reg', ''),
-                                            hmm_row.get('clu', ''),
-                                            hmm_row.get('ov', ''),
-                                            hmm_row.get('env', ''),
-                                            hmm_row.get('dom', ''),
-                                            hmm_row.get('rep', ''),
-                                            hmm_row.get('inc', ''),
-                                            hmm_row.get('description', '')
-                                        ])
-                                    else:
-                                        # No HMM data for this target - add empty strings
-                                        row_data.extend([''] * 17)
-                                    
-                                    # WRITE THE ROW - this should happen for EVERY FASTA header
-                                    summary.write('\t'.join(str(field) for field in row_data) + '\n')
             else:
                 # Bacteria/Viruses/Metagenomes: simple GFF + HMM merge
                 logger.info(f"Processing {subdir} samples")
