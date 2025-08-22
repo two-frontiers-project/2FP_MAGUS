@@ -45,7 +45,7 @@ class ORFCaller:
             logger.info(f"Skipping ORF calling for {genome_file} as output already exists.")
         else:
             log_file = os.path.join(self.output_dir, 'bacteria', f"{FN}_prodigal.log")
-            cmd = ['prodigal', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file]
+            cmd = ['prodigal', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gbk']
             logger.info(f"Calling bacterial ORFs for {genome_file} using prodigal")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
@@ -102,7 +102,7 @@ class ORFCaller:
             logger.info(f"Skipping ORF calling for {genome_file} as output already exists.")
         else:
             log_file = os.path.join(self.output_dir, 'viruses', f"{FN}_prodigal.log")
-            cmd = ['prodigal-gv', '-p', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file]
+            cmd = ['prodigal-gv', '-p', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gbk']
             logger.info(f"Calling viral ORFs for {genome_file} using prodigal-gv")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
@@ -211,7 +211,7 @@ class ORFCaller:
             logger.info(f"Skipping ORF calling for {genome_file} as output already exists.")
         else:
             log_file = os.path.join(self.output_dir, 'metagenomes', f"{FN}_prodigal.log")
-            cmd = ['prodigal', '-p', 'meta', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file]
+            cmd = ['prodigal', '-p', 'meta', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gbk']
             logger.info(f"Calling metagenome ORFs for {genome_file} using prodigal (metagenome mode)")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
@@ -648,38 +648,75 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         gff_file = os.path.join(annot_dir, file)
                         hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
                         
-                        # 1. Load GFF and parse annotation data
+                        # 1. Load Prodigal GenBank output and parse annotation data
                         gff_data = []
+                        current_contig = None
+                        current_contig_info = {}
+                        
                         with open(gff_file, 'r') as f:
                             for line in f:
-                                if line.startswith('#') or not line.strip():
+                                line = line.strip()
+                                if not line:
                                     continue
-                                parts = line.strip().split('\t')
-                                if len(parts) >= 9 and parts[2] == 'CDS':
-                                    # Extract note field with annotation data
-                                    note = parts[8]
-                                    if 'ID=' in note:
-                                        # Parse the note field
-                                        note_parts = note.split(';')
-                                        annotation = {}
-                                        for part in note_parts:
-                                            if '=' in part:
-                                                key, value = part.split('=', 1)
-                                                annotation[key.strip()] = value.strip()
+                                
+                                # Parse DEFINITION line for contig info
+                                if line.startswith('DEFINITION'):
+                                    # Extract contig header from seqhdr
+                                    if 'seqhdr=' in line:
+                                        seqhdr_start = line.find('seqhdr="') + 8
+                                        seqhdr_end = line.find('"', seqhdr_start)
+                                        if seqhdr_end > seqhdr_start:
+                                            current_contig = line[seqhdr_start:seqhdr_end]
+                                            # Extract additional info
+                                            if 'gc_cont=' in line:
+                                                gc_match = re.search(r'gc_cont=([^;]+)', line)
+                                                if gc_match:
+                                                    current_contig_info['gc_cont'] = gc_match.group(1)
+                                
+                                # Parse CDS features
+                                elif line.startswith('     CDS'):
+                                    # Extract location and strand info
+                                    location_match = re.search(r'CDS\s+([^/]+)', line)
+                                    if location_match:
+                                        location = location_match.group(1).strip()
+                                        # Parse location (e.g., "<2..298" or "complement(445..846)")
+                                        strand = '+'
+                                        if 'complement(' in location:
+                                            strand = '-'
+                                            location = location.replace('complement(', '').replace(')', '')
                                         
-                                        gff_data.append({
-                                            'sample_id': sample_id,
-                                            'contig_id': parts[0],
-                                            'start': parts[3],
-                                            'end': parts[4],
-                                            'strand': parts[6],
-                                            'ID': annotation.get('ID', ''),
-                                            'partial': annotation.get('partial', ''),
-                                            'start_type': annotation.get('start_type', ''),
-                                            'rbs_motif': annotation.get('rbs_motif', ''),
-                                            'rbs_spacer': annotation.get('rbs_spacer', ''),
-                                            'gc_cont': annotation.get('gc_cont', '')
-                                        })
+                                        # Extract start and end
+                                        coords = location.replace('<', '').replace('>', '').split('..')
+                                        if len(coords) == 2:
+                                            start = coords[0]
+                                            end = coords[1]
+                                            
+                                            # Read the next line for /note attributes
+                                            note_line = next(f, '').strip()
+                                            if note_line.startswith('/note='):
+                                                note = note_line[7:-1]  # Remove '/note=' and quotes
+                                                
+                                                # Parse note attributes
+                                                annotation = {}
+                                                note_parts = note.split(';')
+                                                for part in note_parts:
+                                                    if '=' in part:
+                                                        key, value = part.split('=', 1)
+                                                        annotation[key.strip()] = value.strip()
+                                                
+                                                gff_data.append({
+                                                    'sample_id': sample_id,
+                                                    'contig_id': current_contig or f"contig_{len(gff_data)}",
+                                                    'start': start,
+                                                    'end': end,
+                                                    'strand': strand,
+                                                    'ID': annotation.get('ID', ''),
+                                                    'partial': annotation.get('partial', ''),
+                                                    'start_type': annotation.get('start_type', ''),
+                                                    'rbs_motif': annotation.get('rbs_motif', ''),
+                                                    'rbs_spacer': annotation.get('rbs_spacer', ''),
+                                                    'gc_cont': annotation.get('gc_cont', current_contig_info.get('gc_cont', ''))
+                                                })
                         
                         # 2. Convert to DataFrame
                         gff_df = pd.DataFrame(gff_data)
