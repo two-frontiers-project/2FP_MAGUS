@@ -589,7 +589,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                     if file.endswith('.gff'):
                         sample_id = file.replace('.gff', '')
                         gff_file = os.path.join(annot_dir, file)
-                        hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
                         
                         # 1. Load Prodigal GenBank output and parse annotation data
                         gff_data = []
@@ -664,8 +663,10 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         # 2. Convert to DataFrame
                         gff_df = pd.DataFrame(gff_data)
                         
-                        # 3. Parse HMM tblout to clean CSV if it exists
+                        # 3. Check if HMM annotation exists and merge if available
+                        hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
                         if os.path.exists(hmm_file):
+                            # HMM annotation exists - parse and merge
                             hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
                             # Create temporary ORFCaller instance to use the parse method
                             temp_caller = ORFCaller(output_dir, "fas", temp_args)
@@ -688,7 +689,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 for col in empty_hmm_cols:
                                     merged_df[col] = ''
                         else:
-                            # No HMM data, just use GFF data with empty HMM columns
+                            # No HMM annotation - just use GFF data with empty HMM columns
                             merged_df = gff_df.copy()
                             empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
                                              'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
