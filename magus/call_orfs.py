@@ -721,22 +721,35 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         # 2. Convert to DataFrame
                         gff_df = pd.DataFrame(gff_data)
                         
-                        # 3. Load HMM data if it exists
+                        # 3. Parse HMM tblout to clean CSV if it exists
                         if os.path.exists(hmm_file):
-                            hmm_df = pd.read_csv(hmm_file)
-                            # Extract sequence ID from target_name (first part before space)
-                            hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
-                            
-                            # 4. Left join on sequence_id
-                            # Create a mapping from GFF ID to sequence_id for joining
-                            # This assumes the GFF ID corresponds to the sequence in the HMM data
-                            merged_df = pd.merge(gff_df, hmm_df, left_on='ID', right_on='sequence_id', how='left')
+                            hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                            # Create temporary ORFCaller instance to use the parse method
+                            temp_caller = ORFCaller(output_dir, "fas", temp_args)
+                            hmm_rows = temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, hmm_domain_evalue_cutoff)
+                            if hmm_rows:
+                                # Create HMM DataFrame from parsed data
+                                hmm_df = pd.DataFrame(hmm_rows)
+                                # Extract sequence ID from target_name (first part before space)
+                                hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
+                                
+                                # 4. Left join on sequence_id
+                                # Create a mapping from GFF ID to sequence_id for joining
+                                merged_df = pd.merge(gff_df, hmm_df, left_on='ID', right_on='sequence_id', how='left')
+                            else:
+                                # HMM parsing failed, use GFF data with empty HMM columns
+                                merged_df = gff_df.copy()
+                                empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
+                                                 'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
+                                                 'env', 'dom', 'rep', 'inc', 'description']
+                                for col in empty_hmm_cols:
+                                    merged_df[col] = ''
                         else:
                             # No HMM data, just use GFF data with empty HMM columns
+                            merged_df = gff_df.copy()
                             empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
                                              'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
                                              'env', 'dom', 'rep', 'inc', 'description']
-                            merged_df = gff_df.copy()
                             for col in empty_hmm_cols:
                                 merged_df[col] = ''
                         
