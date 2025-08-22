@@ -602,10 +602,10 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         # 1. Load FAA file and parse headers for annotation data
                         faa_file = os.path.join(annot_dir, f"{sample_id}.faa")
                         if not os.path.exists(faa_file):
-                            print(f"DEBUG: FAA file not found: {faa_file}")
+    
                             continue
                             
-                        print(f"DEBUG: Reading FAA file: {faa_file}")
+
                         faa_data = []
                         
                         with open(faa_file, 'r') as f:
@@ -645,20 +645,12 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                             'gc_cont': annotation.get('gc_cont', '')
                                         })
                         
-                        print(f"DEBUG: Parsed {len(faa_data)} entries from FAA file")
-                        
                         # 2. Convert to DataFrame
                         faa_df = pd.DataFrame(faa_data)
-                        print(f"DEBUG: FAA DataFrame shape: {faa_df.shape}")
-                        print(f"DEBUG: FAA DataFrame columns: {list(faa_df.columns)}")
-                        if not faa_df.empty:
-                            print(f"DEBUG: First few FAA rows:")
-                            print(faa_df.head())
                         
                         # 3. Check if HMM annotation exists and merge if available
                         hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
                         if os.path.exists(hmm_file):
-                            print(f"DEBUG: HMM file found: {hmm_file}")
                             # HMM annotation exists - parse and merge
                             hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
                             # Create temporary ORFCaller instance to use the parse method
@@ -667,20 +659,13 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             if hmm_rows:
                                 # Create HMM DataFrame from parsed data
                                 hmm_df = pd.DataFrame(hmm_rows)
-                                print(f"DEBUG: HMM DataFrame shape: {hmm_df.shape}")
-                                print(f"DEBUG: HMM DataFrame columns: {list(hmm_df.columns)}")
-                                if not hmm_df.empty:
-                                    print(f"DEBUG: First few HMM rows:")
-                                    print(hmm_df.head())
                                 # Extract sequence ID from target_name (first part before space)
                                 hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
                                 
                                 # 4. Left join on sequence_id
                                 # Create a mapping from FAA sequence_id to HMM sequence_id for joining
                                 merged_df = pd.merge(faa_df, hmm_df, left_on='sequence_id', right_on='sequence_id', how='left')
-                                print(f"DEBUG: Merged DataFrame shape: {merged_df.shape}")
                             else:
-                                print(f"DEBUG: HMM parsing failed, using FAA data with empty HMM columns")
                                 # HMM parsing failed, use FAA data with empty HMM columns
                                 merged_df = faa_df.copy()
                                 empty_hmm_cols = ['query_accession', 'full_evalue', 'full_score', 'full_bias', 
@@ -689,7 +674,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 for col in empty_hmm_cols:
                                     merged_df[col] = ''
                         else:
-                            print(f"DEBUG: No HMM file found, using FAA data with empty HMM columns")
                             # No HMM annotation - just use FAA data with empty HMM columns
                             merged_df = faa_df.copy()
                             empty_hmm_cols = ['query_accession', 'full_evalue', 'full_score', 'full_bias', 
@@ -703,13 +687,9 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             merged_df = merged_df.drop('query_name', axis=1)
                         
                         # Collect data for later writing
-                        print(f"DEBUG: Final merged DataFrame shape: {merged_df.shape}")
-                        print(f"DEBUG: Final merged DataFrame columns: {list(merged_df.columns)}")
                         if not faa_df.empty:
                             all_merged_data.append(merged_df)
                             logger.info(f"Collected {len(merged_df)} rows for sample {sample_id}")
-                        else:
-                            print(f"DEBUG: FAA DataFrame is empty, nothing to collect")
                 
                 # Write all data at once with proper header
                 if all_merged_data:
