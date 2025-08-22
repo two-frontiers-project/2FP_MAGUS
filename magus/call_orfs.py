@@ -277,6 +277,7 @@ class ORFCaller:
         
         This function works for all domains (bacteria, viruses, eukaryotes, metagenomes).
         It filters on both full-sequence and domain e-values immediately upon loading.
+        For each ORF, it keeps only the hit with the lowest full-sequence e-value.
         """
         if not os.path.exists(hmm_file):
             logger.warning(f"HMM file {hmm_file} does not exist. Skipping parsing.")
@@ -289,7 +290,8 @@ class ORFCaller:
             'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description'
         ]
         
-        rows = []
+        # Dictionary to store best hit per ORF (target_name)
+        best_hits = {}
         total_lines = 0
         filtered_lines = 0
         
@@ -340,7 +342,13 @@ class ORFCaller:
                 row['inc'] = parts[17]             # parts[17]
                 row['description'] = ' '.join(parts[18:])  # parts[18:] for description
                 
-                rows.append(row)
+                # Keep only the best hit (lowest full_evalue) for each ORF
+                target_name = row['target_name']
+                if target_name not in best_hits or float(row['full_evalue']) < float(best_hits[target_name]['full_evalue']):
+                    best_hits[target_name] = row
+        
+        # Convert best hits to list
+        rows = list(best_hits.values())
         
         # Write to CSV
         with open(output_csv, 'w', newline='') as f:
