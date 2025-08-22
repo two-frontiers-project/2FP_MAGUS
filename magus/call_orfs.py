@@ -662,10 +662,16 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         
                         # 2. Convert to DataFrame
                         gff_df = pd.DataFrame(gff_data)
+                        print(f"DEBUG: GFF DataFrame shape: {gff_df.shape}")
+                        print(f"DEBUG: GFF DataFrame columns: {list(gff_df.columns)}")
+                        if not gff_df.empty:
+                            print(f"DEBUG: First few GFF rows:")
+                            print(gff_df.head())
                         
                         # 3. Check if HMM annotation exists and merge if available
                         hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
                         if os.path.exists(hmm_file):
+                            print(f"DEBUG: HMM file found: {hmm_file}")
                             # HMM annotation exists - parse and merge
                             hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
                             # Create temporary ORFCaller instance to use the parse method
@@ -674,13 +680,20 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             if hmm_rows:
                                 # Create HMM DataFrame from parsed data
                                 hmm_df = pd.DataFrame(hmm_rows)
+                                print(f"DEBUG: HMM DataFrame shape: {hmm_df.shape}")
+                                print(f"DEBUG: HMM DataFrame columns: {list(hmm_df.columns)}")
+                                if not hmm_df.empty:
+                                    print(f"DEBUG: First few HMM rows:")
+                                    print(hmm_df.head())
                                 # Extract sequence ID from target_name (first part before space)
                                 hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
                                 
                                 # 4. Left join on sequence_id
                                 # Create a mapping from GFF ID to sequence_id for joining
                                 merged_df = pd.merge(gff_df, hmm_df, left_on='ID', right_on='sequence_id', how='left')
+                                print(f"DEBUG: Merged DataFrame shape: {merged_df.shape}")
                             else:
+                                print(f"DEBUG: HMM parsing failed, using GFF data with empty HMM columns")
                                 # HMM parsing failed, use GFF data with empty HMM columns
                                 merged_df = gff_df.copy()
                                 empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
@@ -689,6 +702,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 for col in empty_hmm_cols:
                                     merged_df[col] = ''
                         else:
+                            print(f"DEBUG: No HMM file found, using GFF data with empty HMM columns")
                             # No HMM annotation - just use GFF data with empty HMM columns
                             merged_df = gff_df.copy()
                             empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
@@ -698,10 +712,14 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 merged_df[col] = ''
                         
                         # Write to summary file
+                        print(f"DEBUG: Final merged DataFrame shape: {merged_df.shape}")
+                        print(f"DEBUG: Final merged DataFrame columns: {list(merged_df.columns)}")
                         if not gff_df.empty:
                             merged_df.to_csv(summary_file, mode='a', header=not os.path.exists(summary_file), 
                                            index=False, sep='\t')
                             logger.info(f"Added {len(merged_df)} rows for sample {sample_id}")
+                        else:
+                            print(f"DEBUG: GFF DataFrame is empty, nothing to write")
         
         # HMM data for bacteria/viruses/metagenomes was already merged inline above
         # No additional processing needed here
