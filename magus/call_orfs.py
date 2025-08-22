@@ -45,7 +45,7 @@ class ORFCaller:
             logger.info(f"Skipping ORF calling for {genome_file} as output already exists.")
         else:
             log_file = os.path.join(self.output_dir, 'bacteria', f"{FN}_prodigal.log")
-            cmd = ['prodigal', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gbk']
+            cmd = ['prodigal', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gff']
             logger.info(f"Calling bacterial ORFs for {genome_file} using prodigal")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
@@ -102,7 +102,7 @@ class ORFCaller:
             logger.info(f"Skipping ORF calling for {genome_file} as output already exists.")
         else:
             log_file = os.path.join(self.output_dir, 'viruses', f"{FN}_prodigal.log")
-            cmd = ['prodigal-gv', '-p', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gbk']
+            cmd = ['prodigal-gv', '-p', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gff']
             logger.info(f"Calling viral ORFs for {genome_file} using prodigal-gv")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
@@ -584,89 +584,76 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 
                 import pandas as pd
                 
-                # Process each sample one at a time
+                # Create temporary ORFCaller instance to use the methods
+                class TempArgs:
+                    def __init__(self):
+                        self.annotation_domain_evalue = hmm_domain_evalue_cutoff or 0.01
+                        self.threads = 1
+                
+                temp_args = TempArgs()
+                
+                # Collect all data first, then write at once
+                all_merged_data = []
+                
                 for file in os.listdir(annot_dir):
-                    if file.endswith('.gff'):
-                        sample_id = file.replace('.gff', '')
-                        gff_file = os.path.join(annot_dir, file)
+                    if file.endswith('.faa'):
+                        sample_id = file.replace('.faa', '')
                         
-                        # 1. Load Prodigal GenBank output and parse annotation data
-                        gff_data = []
-                        current_contig = None
-                        current_contig_info = {}
+                        # 1. Load FAA file and parse headers for annotation data
+                        faa_file = os.path.join(annot_dir, f"{sample_id}.faa")
+                        if not os.path.exists(faa_file):
+                            print(f"DEBUG: FAA file not found: {faa_file}")
+                            continue
+                            
+                        print(f"DEBUG: Reading FAA file: {faa_file}")
+                        faa_data = []
                         
-                        with open(gff_file, 'r') as f:
+                        with open(faa_file, 'r') as f:
                             for line in f:
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                
-                                # Parse DEFINITION line for contig info
-                                if line.startswith('DEFINITION'):
-                                    # Extract contig header from seqhdr
-                                    if 'seqhdr=' in line:
-                                        seqhdr_start = line.find('seqhdr="') + 8
-                                        seqhdr_end = line.find('"', seqhdr_start)
-                                        if seqhdr_end > seqhdr_start:
-                                            current_contig = line[seqhdr_start:seqhdr_end]
-                                            # Extract additional info
-                                            if 'gc_cont=' in line:
-                                                gc_match = re.search(r'gc_cont=([^;]+)', line)
-                                                if gc_match:
-                                                    current_contig_info['gc_cont'] = gc_match.group(1)
-                                
-                                # Parse CDS features
-                                elif line.startswith('     CDS'):
-                                    # Extract location and strand info
-                                    location_match = re.search(r'CDS\s+([^/]+)', line)
-                                    if location_match:
-                                        location = location_match.group(1).strip()
-                                        # Parse location (e.g., "<2..298" or "complement(445..846)")
-                                        strand = '+'
-                                        if 'complement(' in location:
-                                            strand = '-'
-                                            location = location.replace('complement(', '').replace(')', '')
+                                if line.startswith('>'):
+                                    # Parse header: >TFID_178229_singleassembly_k333_10327_1 # 2 # 298 # 1 # ID=2_1;partial=10;start_type=Edge;rbs_motif=None;rbs_spacer=None;gc_cont=0.290
+                                    header = line.strip()[1:]  # Remove '>'
+                                    parts = header.split(' # ')
+                                    
+                                    if len(parts) >= 5:
+                                        sequence_id = parts[0]
+                                        start = parts[1]
+                                        end = parts[2]
+                                        strand = '+' if parts[3] == '1' else '-'
+                                        annotation_str = parts[4]
                                         
-                                        # Extract start and end
-                                        coords = location.replace('<', '').replace('>', '').split('..')
-                                        if len(coords) == 2:
-                                            start = coords[0]
-                                            end = coords[1]
-                                            
-                                            # Read the next line for /note attributes
-                                            note_line = next(f, '').strip()
-                                            if note_line.startswith('/note='):
-                                                note = note_line[7:-1]  # Remove '/note=' and quotes
-                                                
-                                                # Parse note attributes
-                                                annotation = {}
-                                                note_parts = note.split(';')
-                                                for part in note_parts:
-                                                    if '=' in part:
-                                                        key, value = part.split('=', 1)
-                                                        annotation[key.strip()] = value.strip()
-                                                
-                                                gff_data.append({
-                                                    'sample_id': sample_id,
-                                                    'contig_id': current_contig or f"contig_{len(gff_data)}",
-                                                    'start': start,
-                                                    'end': end,
-                                                    'strand': strand,
-                                                    'ID': annotation.get('ID', ''),
-                                                    'partial': annotation.get('partial', ''),
-                                                    'start_type': annotation.get('start_type', ''),
-                                                    'rbs_motif': annotation.get('rbs_motif', ''),
-                                                    'rbs_spacer': annotation.get('rbs_spacer', ''),
-                                                    'gc_cont': annotation.get('gc_cont', current_contig_info.get('gc_cont', ''))
-                                                })
+                                        # Parse annotation attributes
+                                        annotation = {}
+                                        if ';' in annotation_str:
+                                            note_parts = annotation_str.split(';')
+                                            for part in note_parts:
+                                                if '=' in part:
+                                                    key, value = part.split('=', 1)
+                                                    annotation[key.strip()] = value.strip()
+                                        
+                                        faa_data.append({
+                                            'sample_id': sample_id,
+                                            'sequence_id': sequence_id,
+                                            'start': start,
+                                            'end': end,
+                                            'strand': strand,
+                                            'ID': annotation.get('ID', ''),
+                                            'partial': annotation.get('partial', ''),
+                                            'start_type': annotation.get('start_type', ''),
+                                            'rbs_motif': annotation.get('rbs_motif', ''),
+                                            'rbs_spacer': annotation.get('rbs_spacer', ''),
+                                            'gc_cont': annotation.get('gc_cont', '')
+                                        })
+                        
+                        print(f"DEBUG: Parsed {len(faa_data)} entries from FAA file")
                         
                         # 2. Convert to DataFrame
-                        gff_df = pd.DataFrame(gff_data)
-                        print(f"DEBUG: GFF DataFrame shape: {gff_df.shape}")
-                        print(f"DEBUG: GFF DataFrame columns: {list(gff_df.columns)}")
-                        if not gff_df.empty:
-                            print(f"DEBUG: First few GFF rows:")
-                            print(gff_df.head())
+                        faa_df = pd.DataFrame(faa_data)
+                        print(f"DEBUG: FAA DataFrame shape: {faa_df.shape}")
+                        print(f"DEBUG: FAA DataFrame columns: {list(faa_df.columns)}")
+                        if not faa_df.empty:
+                            print(f"DEBUG: First few FAA rows:")
+                            print(faa_df.head())
                         
                         # 3. Check if HMM annotation exists and merge if available
                         hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
@@ -689,37 +676,48 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
                                 
                                 # 4. Left join on sequence_id
-                                # Create a mapping from GFF ID to sequence_id for joining
-                                merged_df = pd.merge(gff_df, hmm_df, left_on='ID', right_on='sequence_id', how='left')
+                                # Create a mapping from FAA sequence_id to HMM sequence_id for joining
+                                merged_df = pd.merge(faa_df, hmm_df, left_on='sequence_id', right_on='sequence_id', how='left')
                                 print(f"DEBUG: Merged DataFrame shape: {merged_df.shape}")
                             else:
-                                print(f"DEBUG: HMM parsing failed, using GFF data with empty HMM columns")
-                                # HMM parsing failed, use GFF data with empty HMM columns
-                                merged_df = gff_df.copy()
-                                empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
+                                print(f"DEBUG: HMM parsing failed, using FAA data with empty HMM columns")
+                                # HMM parsing failed, use FAA data with empty HMM columns
+                                merged_df = faa_df.copy()
+                                empty_hmm_cols = ['query_accession', 'full_evalue', 'full_score', 'full_bias', 
                                                  'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
                                                  'env', 'dom', 'rep', 'inc', 'description']
                                 for col in empty_hmm_cols:
                                     merged_df[col] = ''
                         else:
-                            print(f"DEBUG: No HMM file found, using GFF data with empty HMM columns")
-                            # No HMM annotation - just use GFF data with empty HMM columns
-                            merged_df = gff_df.copy()
-                            empty_hmm_cols = ['query_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
+                            print(f"DEBUG: No HMM file found, using FAA data with empty HMM columns")
+                            # No HMM annotation - just use FAA data with empty HMM columns
+                            merged_df = faa_df.copy()
+                            empty_hmm_cols = ['query_accession', 'full_evalue', 'full_score', 'full_bias', 
                                              'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
                                              'env', 'dom', 'rep', 'inc', 'description']
                             for col in empty_hmm_cols:
                                 merged_df[col] = ''
                         
-                        # Write to summary file
+                        # Drop redundant query_name column before collecting
+                        if 'query_name' in merged_df.columns:
+                            merged_df = merged_df.drop('query_name', axis=1)
+                        
+                        # Collect data for later writing
                         print(f"DEBUG: Final merged DataFrame shape: {merged_df.shape}")
                         print(f"DEBUG: Final merged DataFrame columns: {list(merged_df.columns)}")
-                        if not gff_df.empty:
-                            merged_df.to_csv(summary_file, mode='a', header=not os.path.exists(summary_file), 
-                                           index=False, sep='\t')
-                            logger.info(f"Added {len(merged_df)} rows for sample {sample_id}")
+                        if not faa_df.empty:
+                            all_merged_data.append(merged_df)
+                            logger.info(f"Collected {len(merged_df)} rows for sample {sample_id}")
                         else:
-                            print(f"DEBUG: GFF DataFrame is empty, nothing to write")
+                            print(f"DEBUG: FAA DataFrame is empty, nothing to collect")
+                
+                # Write all data at once with proper header
+                if all_merged_data:
+                    final_df = pd.concat(all_merged_data, ignore_index=True)
+                    final_df.to_csv(summary_file, index=False, sep='\t')
+                    logger.info(f"Wrote {len(final_df)} total rows to {summary_file}")
+                else:
+                    logger.warning(f"No data collected for {subdir}")
         
         # HMM data for bacteria/viruses/metagenomes was already merged inline above
         # No additional processing needed here
@@ -754,38 +752,35 @@ def main():
     parser.add_argument('--cleanup', action='store_true', help='Clean up annotation directories after processing.')
     
     # Restart functionality
-    parser.add_argument('--restart', type=str, choices=['create-summary', 'annotations'], 
-                        help='Restart from specific stage: create-summary or annotations')
+    parser.add_argument('--restart', type=str, choices=['orf-calling', 'annotation', 'hmm-parsing', 'create-summary'], 
+                        help='Restart from specific stage: orf-calling, annotation, hmm-parsing, or create-summary')
     
     args = parser.parse_args()
 
-    # Validate arguments
-    if not args.config and not args.mag_dir:
-        parser.error("Either --config or --mag_dir must be provided.")
-    
-    if args.config and args.mag_dir:
-        parser.error("Cannot use both --config and --mag_dir. Choose one mode.")
-    
-    if args.mag_dir and not args.domain:
-        parser.error("--domain must be specified when using --mag_dir.")
+    # Validate arguments (skip validation for restart modes that don't need genome input)
+    if not args.restart:
+        if not args.config and not args.mag_dir:
+            parser.error("Either --config or --mag_dir must be provided.")
+        
+        if args.config and args.mag_dir:
+            parser.error("Cannot use both --config and --mag_dir. Choose one mode.")
+        
+        if args.mag_dir and not args.domain:
+            parser.error("--domain must be specified when using --mag_dir.")
 
     os.makedirs(args.output_directory, exist_ok=True)
     orf_caller = ORFCaller(args.output_directory, args.extension, args)
 
     # Handle restart modes
-    if args.restart == 'create-summary':
-        logger.info("Running in create-summary mode - generating comprehensive summaries")
-        create_comprehensive_summary(
-            args.output_directory, args.hmmfile, args.suffix,
-            hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
-            hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
-        )
-        logger.info("Comprehensive summary creation completed successfully.")
-        return
-    elif args.restart == 'annotations':
-        logger.info("Running in annotations mode - running HMM annotations on existing ORF calls")
+    if args.restart == 'orf-calling':
+        logger.info("Running in orf-calling restart mode - forcing overwrite of existing ORF files")
+        args.force = True  # Force overwrite of existing files
+        # Continue to normal processing below
+        
+    elif args.restart == 'annotation':
+        logger.info("Running in annotation restart mode - running HMM annotations on existing ORF calls")
         if not args.hmmfile:
-            logger.error("--hmmfile must be provided when using --restart annotations")
+            logger.error("--hmmfile must be provided when using --restart annotation")
             return
         
         # Collect all HMM annotation tasks
@@ -842,74 +837,103 @@ def main():
         else:
             logger.info("No files found that need HMM annotation")
         
-        # Create comprehensive summaries with new HMM results
-        logger.info("Creating comprehensive summaries with updated HMM results")
+        logger.info("Annotation restart completed successfully.")
+        return
+        
+    elif args.restart == 'hmm-parsing':
+        logger.info("Running in hmm-parsing restart mode - regenerating clean HMM files")
+        
+        # Regenerate all HMM clean CSV files
+        for subdir in ['bacteria', 'viruses', 'eukaryotes', 'metagenomes']:
+            annot_dir = os.path.join(args.output_directory, subdir, 'annot')
+            if not os.path.exists(annot_dir):
+                continue
+            
+            logger.info(f"Regenerating HMM clean files for {subdir}")
+            for file in os.listdir(annot_dir):
+                if file.endswith('.hmm.tsv'):
+                    sample_id = file.replace('.hmm.tsv', '')
+                    hmm_file = os.path.join(annot_dir, file)
+                    hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                    
+                    # Create temporary ORFCaller instance
+                    temp_caller = ORFCaller(args.output_directory, args.extension, args)
+                    logger.info(f"Regenerating clean HMM file for {sample_id}")
+                    temp_caller.parse_hmm_tblout_to_csv(hmm_file, hmm_csv, args.annotation_domain_evalue)
+        
+        logger.info("HMM parsing restart completed successfully.")
+        # Continue to create summaries below instead of returning
+        
+    elif args.restart == 'create-summary':
+        logger.info("Running in create-summary restart mode - regenerating comprehensive summaries")
         create_comprehensive_summary(
             args.output_directory, args.hmmfile, args.suffix,
             hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
             hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
         )
-        logger.info("Annotations restart completed successfully.")
+        logger.info("Comprehensive summary creation completed successfully.")
         return
 
-    genomes_data = []
+    # Only process genomes if not in restart mode (except orf-calling restart)
+    if not args.restart or args.restart == 'orf-calling':
+        genomes_data = []
 
-    if args.config:
-        # Config file mode
-        logger.info(f"Using config file mode: {args.config}")
-        with open(args.config, 'r') as f:
-            reader = csv.reader(f, delimiter='\t')
-            for row in reader:
-                if not row or row[0].startswith('#') or len(row) < 3:
-                    continue
-                sample_id, genome_path, domain = row[0], row[1], row[2]
-                genomes_data.append((sample_id, genome_path, domain))
-    
-    else:
-        # Directory mode
-        logger.info(f"Using directory mode: {args.mag_dir}")
+        if args.config:
+            # Config file mode
+            logger.info(f"Using config file mode: {args.config}")
+            with open(args.config, 'r') as f:
+                reader = csv.reader(f, delimiter='\t')
+                for row in reader:
+                    if not row or row[0].startswith('#') or len(row) < 3:
+                        continue
+                    sample_id, genome_path, domain = row[0], row[1], row[2]
+                    genomes_data.append((sample_id, genome_path, domain))
         
-        # Handle multiple wildcard patterns separated by pipes
-        wildcards = args.wildcard.split('|') if args.wildcard else ['']
-        
-        all_genome_files = []
-        for wildcard in wildcards:
-            try:
-                genome_files = find_genome_files(args.mag_dir, args.extension, wildcard.strip())
-                all_genome_files.extend(genome_files)
-                logger.info(f"Found {len(genome_files)} files matching wildcard '{wildcard.strip()}'")
-            except RuntimeError as e:
-                if len(wildcards) == 1:  # Only one wildcard, so this is an error
-                    raise e
-                else:  # Multiple wildcards, so this one just didn't match anything
-                    logger.warning(f"No files found for wildcard '{wildcard.strip()}'")
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_genome_files = []
-        for path in all_genome_files:
-            if path not in seen:
-                seen.add(path)
-                unique_genome_files.append(path)
-        
-        if not unique_genome_files:
-            raise RuntimeError("No matching genome files found with any of the provided wildcards.")
-        
-        logger.info(f"Total unique genome files found: {len(unique_genome_files)}")
-        
-        # Create genome data tuples - ALL files get the same domain specified at command line
-        for genome_path in unique_genome_files:
-            # Use the filename (without extension) as sample_id
-            sample_id = genome_path.name
-            # Remove the extension properly
-            extension = f".{args.extension}" if not args.extension.startswith('.') else args.extension
-            if sample_id.endswith(extension):
-                sample_id = sample_id[:-len(extension)]
-            genomes_data.append((sample_id, str(genome_path), args.domain))
+        else:
+            # Directory mode
+            logger.info(f"Using directory mode: {args.mag_dir}")
+            
+            # Handle multiple wildcard patterns separated by pipes
+            wildcards = args.wildcard.split('|') if args.wildcard else ['']
+            
+            all_genome_files = []
+            for wildcard in wildcards:
+                try:
+                    genome_files = find_genome_files(args.mag_dir, args.extension, wildcard.strip())
+                    all_genome_files.extend(genome_files)
+                    logger.info(f"Found {len(genome_files)} files matching wildcard '{wildcard.strip()}'")
+                except RuntimeError as e:
+                    if len(wildcards) == 1:  # Only one wildcard, so this is an error
+                        raise e
+                    else:  # Multiple wildcards, so this one just didn't match anything
+                        logger.warning(f"No files found for wildcard '{wildcard.strip()}'")
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_genome_files = []
+            for path in all_genome_files:
+                if path not in seen:
+                    seen.add(path)
+                    unique_genome_files.append(path)
+            
+            if not unique_genome_files:
+                raise RuntimeError("No matching genome files found with any of the provided wildcards.")
+            
+            logger.info(f"Total unique genome files found: {len(unique_genome_files)}")
+            
+            # Create genome data tuples - ALL files get the same domain specified at command line
+            for genome_path in unique_genome_files:
+                # Use the filename (without extension) as sample_id
+                sample_id = genome_path.name
+                # Remove the extension properly
+                extension = f".{args.extension}" if not args.extension.startswith('.') else args.extension
+                if sample_id.endswith(extension):
+                    sample_id = sample_id[:-len(extension)]
+                genomes_data.append((sample_id, str(genome_path), args.domain))
 
-    # Process all genomes (Stage 1: ORF calling)
-    logger.info("Stage 1: Calling ORFs")
-    process_genomes(orf_caller, genomes_data, args.max_workers)
+        # Process all genomes (Stage 1: ORF calling)
+        logger.info("Stage 1: Calling ORFs")
+        process_genomes(orf_caller, genomes_data, args.max_workers)
 
     # Stage 2: Create comprehensive summaries with HMM results
     logger.info("Stage 2: Creating comprehensive summaries")
