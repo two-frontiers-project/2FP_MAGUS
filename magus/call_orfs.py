@@ -664,10 +664,10 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                             'gc_cont': annotation.get('gc_cont', '')
                                         })
                         
-                        # 2. Convert to DataFrame
-                        faa_df = pd.DataFrame(faa_data)
-                        
-                        # 3. Check if HMM annotation exists and merge if available
+                                                        # 2. Convert to DataFrame
+                                faa_df = pd.DataFrame(faa_data)
+                                
+                                # 3. Check if HMM annotation exists and merge if available
                         hmm_file = os.path.join(annot_dir, f"{sample_id}.hmm.tsv")
                         if os.path.exists(hmm_file):
                             # HMM annotation exists - parse and merge
