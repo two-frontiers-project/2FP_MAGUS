@@ -603,12 +603,14 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 # Collect all data first, then write at once
                 all_merged_data = []
                 
-                for file in os.listdir(annot_dir):
+                manicure_dir = os.path.join(output_dir, subdir, 'manicure')
+                
+                for file in os.listdir(manicure_dir):
                     if file.endswith('.faa'):
                         sample_id = file.replace('.faa', '')
                         
                         # 1. Load FAA file and parse headers for annotation data
-                        faa_file = os.path.join(annot_dir, f"{sample_id}.faa")
+                        faa_file = os.path.join(manicure_dir, f"{sample_id}.faa")
                         if not os.path.exists(faa_file):
     
                             continue
@@ -619,16 +621,25 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                         with open(faa_file, 'r') as f:
                             for line in f:
                                 if line.startswith('>'):
-                                    # Parse header: >TFID_178229_singleassembly_k333_10327_1 # 2 # 298 # 1 # ID=2_1;partial=10;start_type=Edge;rbs_motif=None;rbs_spacer=None;gc_cont=0.290
+                                    # Parse header: >GCF_964277365.1_iyApoUnic1.Wolbachia_sp_1.1_genomic-----NZ_OZ195518.1_1-----3+1016+1+ID=1_1;partial=10;start_type=Edge;rbs_motif=None;rbs_spacer=None;gc_cont=0.365
                                     header = line.strip()[1:]  # Remove '>'
-                                    parts = header.split(' # ')
+                                    parts = header.split('-----')
                                     
-                                    if len(parts) >= 5:
-                                        sequence_id = parts[0]
-                                        start = parts[1]
-                                        end = parts[2]
-                                        strand = '+' if parts[3] == '1' else '-'
-                                        annotation_str = parts[4]
+                                    if len(parts) >= 3:
+                                        sequence_id = parts[1]  # NZ_OZ195518.1_1
+                                        coord_part = parts[2]  # 3+1016+1+ID=1_1;partial=10;start_type=Edge;rbs_motif=None;rbs_spacer=None;gc_cont=0.365
+                                        coord_parts = coord_part.split('+')
+                                        if len(coord_parts) >= 3:
+                                            start = coord_parts[0]
+                                            end = coord_parts[1]
+                                            strand = '+' if coord_parts[2] == '1' else '-'
+                                        else:
+                                            start = ''
+                                            end = ''
+                                            strand = ''
+                                        
+                                        # Parse annotation attributes
+                                        annotation_str = coord_part.split('+', 3)[-1] if len(coord_parts) > 3 else ''
                                         
                                         # Parse annotation attributes
                                         annotation = {}
@@ -667,12 +678,20 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             if hmm_rows:
                                 # Create HMM DataFrame from parsed data
                                 hmm_df = pd.DataFrame(hmm_rows)
-                                # Extract sequence ID from target_name (first part before space)
-                                hmm_df['sequence_id'] = hmm_df['target_name'].str.split().str[0]
+                                # Extract sequence ID from target_name (first part between dashes)
+                                hmm_df['sequence_id'] = hmm_df['target_name'].str.split('-----').str[1]
                                 
                                 # 4. Left join on sequence_id
                                 # Create a mapping from FAA sequence_id to HMM sequence_id for joining
                                 merged_df = pd.merge(faa_df, hmm_df, left_on='sequence_id', right_on='sequence_id', how='left')
+                                
+                                # Ensure all required HMM columns exist
+                                required_hmm_cols = ['target_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 
+                                                   'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 
+                                                   'env', 'dom', 'rep', 'inc', 'description']
+                                for col in required_hmm_cols:
+                                    if col not in merged_df.columns:
+                                        merged_df[col] = ''
                             else:
                                 # HMM parsing failed, use FAA data with empty HMM columns
                                 merged_df = faa_df.copy()
