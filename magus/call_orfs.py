@@ -126,7 +126,7 @@ class ORFCaller:
 
         # HMM annotation (put results in annot directory for summary)
         if self.args.hmmfile:
-            self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
+            self.run_hmm_annotation(manicure_file, annot_dir, FN, self.args.hmmfile)
         
         return faa_file, ffn_file, gff_file
 
@@ -235,7 +235,7 @@ class ORFCaller:
 
         # HMM annotation (put results in annot directory for summary)
         if self.args.hmmfile:
-            self.run_hmm_annotation(faa_file, annot_dir, FN, self.args.hmmfile)
+            self.run_hmm_annotation(manicure_file, annot_dir, FN, self.args.hmmfile)
         
         return faa_file, ffn_file, gff_file
 
@@ -603,6 +603,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 # Collect all data first, then write at once
                 all_merged_data = []
                 
+                # Use manicure directory for all domains since they all use Prodigal
                 manicure_dir = os.path.join(output_dir, subdir, 'manicure')
                 
                 for file in os.listdir(manicure_dir):
@@ -678,8 +679,16 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             if hmm_rows:
                                 # Create HMM DataFrame from parsed data
                                 hmm_df = pd.DataFrame(hmm_rows)
-                                # Extract sequence ID from target_name (first part between dashes)
-                                hmm_df['sequence_id'] = hmm_df['target_name'].str.split('-----').str[1]
+                                # Extract sequence ID from target_name - handle both formats
+                                def extract_sequence_id(target_name):
+                                    if '-----' in target_name:
+                                        # Bacterial format: GCF_...-----NZ_OZ195518.1_1-----3+1016+1+ID=1_1;...
+                                        return target_name.split('-----')[1]
+                                    else:
+                                        # Metagenome format: NZ_OZ195518.1_194 - 1-cysPrx_C ...
+                                        return target_name.split()[0]
+                                
+                                hmm_df['sequence_id'] = hmm_df['target_name'].apply(extract_sequence_id)
                                 
                                 # Ensure both sequence_id columns are strings and handle NaN values
                                 faa_df['sequence_id'] = faa_df['sequence_id'].astype(str)
