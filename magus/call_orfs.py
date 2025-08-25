@@ -681,6 +681,10 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 # Extract sequence ID from target_name (first part between dashes)
                                 hmm_df['sequence_id'] = hmm_df['target_name'].str.split('-----').str[1]
                                 
+                                # Ensure both sequence_id columns are strings and handle NaN values
+                                faa_df['sequence_id'] = faa_df['sequence_id'].astype(str)
+                                hmm_df['sequence_id'] = hmm_df['sequence_id'].astype(str)
+                                
                                 # 4. Left join on sequence_id
                                 # Create a mapping from FAA sequence_id to HMM sequence_id for joining
                                 merged_df = pd.merge(faa_df, hmm_df, left_on='sequence_id', right_on='sequence_id', how='left')
