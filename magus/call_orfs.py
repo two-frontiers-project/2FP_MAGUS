@@ -108,7 +108,7 @@ class ORFCaller:
             logger.info(f"Skipping ORF calling for {genome_file} as output already exists.")
         else:
             log_file = os.path.join(self.output_dir, 'viruses', f"{FN}_prodigal.log")
-            cmd = ['prodigal-gv', '-p', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gff']
+            cmd = ['prodigal-gv', '-p', 'meta', '-q', '-i', genome_file, '-d', ffn_file, '-a', faa_file, '-o', gff_file, '-f', 'gff']
             logger.info(f"Calling viral ORFs for {genome_file} using prodigal-gv")
             with open(log_file, 'w') as log:
                 subprocess.run(cmd, check=True, stdout=log, stderr=log)
@@ -477,7 +477,8 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
 
 def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                  hmm_fullseq_evalue_cutoff: Optional[float] = None,
-                                 hmm_domain_evalue_cutoff: Optional[float] = None):
+                                 hmm_domain_evalue_cutoff: Optional[float] = None,
+                                 max_workers: int = 4):
     """Create ONE comprehensive summary file per domain with ALL information.
 
     If suffix is provided, domain summary is named with _{suffix} and HMM inputs
@@ -661,7 +662,7 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                 
                 # Process in parallel with max_workers
                 from concurrent.futures import ThreadPoolExecutor, as_completed
-                max_workers = min(1, len(files))  # Use max_workers or default to 4
+                # Use the max_workers parameter passed to the function
                 
                 logger.info(f"Processing {len(files)} samples with {max_workers} parallel workers")
                 
@@ -860,6 +861,7 @@ def main():
             args.output_directory, args.hmmfile, args.suffix,
             hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
             hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+            max_workers=args.max_workers,
         )
         logger.info("Comprehensive summary creation completed successfully.")
         # Continue to cleanup below instead of returning
@@ -933,6 +935,7 @@ def main():
         args.output_directory, args.hmmfile, args.suffix,
         hmm_fullseq_evalue_cutoff=args.annotation_fullseq_evalue,
         hmm_domain_evalue_cutoff=args.annotation_domain_evalue,
+        max_workers=args.max_workers,
     )
 
     # Clean up annot directories
