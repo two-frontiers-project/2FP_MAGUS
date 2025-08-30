@@ -227,12 +227,12 @@ def create_concatenated_fasta(concatenated_sequences: Dict[str, Dict],
     
     return fasta_file
 
-def run_mafft(fasta_file: str, output_dir: str) -> str:
+def run_mafft(fasta_file: str, output_dir: str, threads: int = 1) -> str:
     """Run MAFFT alignment on concatenated FASTA file."""
     aligned_file = os.path.join(output_dir, "concatenated_genes_aligned.fasta")
-    
-    cmd = ['mafft', '--auto', fasta_file]
-    
+
+    cmd = ['mafft', '--thread', str(threads), '--auto', fasta_file]
+
     try:
         with open(aligned_file, 'w') as f:
             subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, check=True)
@@ -242,10 +242,10 @@ def run_mafft(fasta_file: str, output_dir: str) -> str:
         logger.error(f"MAFFT failed: {e}")
         return None
 
-def run_trimal(aligned_file: str, output_dir: str, cutoff: float) -> str:
+def run_trimal(aligned_file: str, output_dir: str, cutoff: float, threads: int = 1) -> str:
     """Trim MAFFT alignment using trimAl with a specified gap threshold."""
     trimmed_file = os.path.join(output_dir, "concatenated_genes_aligned_trimmed.fasta")
-    cmd = ['trimal', '-in', aligned_file, '-out', trimmed_file, '-gt', str(cutoff)]
+    cmd = ['trimal', '-in', aligned_file, '-out', trimmed_file, '-gt', str(cutoff), '-threads', str(threads)]
 
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -255,14 +255,16 @@ def run_trimal(aligned_file: str, output_dir: str, cutoff: float) -> str:
         logger.error(f"trimAl failed: {e}")
         return None
 
-def run_fasttree(aligned_file: str, output_dir: str) -> str:
+def run_fasttree(aligned_file: str, output_dir: str, threads: int = 1) -> str:
     """Run FastTree on aligned concatenated sequences."""
     tree_file = os.path.join(output_dir, "eukaryotic_phylogeny.tree")
 
     cmd = ['fasttree', '-out', tree_file, aligned_file]
+    env = os.environ.copy()
+    env['OMP_NUM_THREADS'] = str(threads)
 
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
         logger.info(f"FastTree completed: {tree_file}")
         return tree_file
     except subprocess.CalledProcessError as e:
@@ -270,10 +272,10 @@ def run_fasttree(aligned_file: str, output_dir: str) -> str:
         return None
 
 
-def run_iqtree(aligned_file: str, output_dir: str) -> str:
+def run_iqtree(aligned_file: str, output_dir: str, threads: int = 1) -> str:
     """Run IQ-TREE on aligned concatenated sequences."""
     tree_prefix = os.path.join(output_dir, "eukaryotic_phylogeny")
-    cmd = ['iqtree', '-s', aligned_file, '-nt', 'AUTO', '-pre', tree_prefix]
+    cmd = ['iqtree', '-s', aligned_file, '-nt', str(threads), '-pre', tree_prefix]
 
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -331,6 +333,12 @@ def main():
         '--genome-list',
         help='File containing list of genome IDs to include (one per line, # for comments)'
     )
+    parser.add_argument(
+        '--threads',
+        type=int,
+        default=1,
+        help='Number of CPU threads to use'
+    )
     
     args = parser.parse_args()
     
@@ -373,13 +381,13 @@ def main():
         
         # Run MAFFT on concatenated sequences
         logger.info("Running MAFFT alignment...")
-        aligned_file = run_mafft(fasta_file, args.output_dir)
+        aligned_file = run_mafft(fasta_file, args.output_dir, args.threads)
 
         if aligned_file:
             tree_input = aligned_file
             if args.trimal_cutoff is not None:
                 logger.info("Trimming alignment...")
-                trimmed_file = run_trimal(aligned_file, args.output_dir, args.trimal_cutoff)
+                trimmed_file = run_trimal(aligned_file, args.output_dir, args.trimal_cutoff, args.threads)
                 if not trimmed_file:
                     logger.error("trimAl failed")
                     sys.exit(1)
@@ -387,12 +395,12 @@ def main():
 
             if args.iqtree:
                 logger.info("Running IQ-TREE...")
-                tree_file = run_iqtree(tree_input, args.output_dir)
+                tree_file = run_iqtree(tree_input, args.output_dir, args.threads)
                 if not tree_file:
                     logger.error("IQ-TREE failed")
             else:
                 logger.info("Running FastTree...")
-                tree_file = run_fasttree(tree_input, args.output_dir)
+                tree_file = run_fasttree(tree_input, args.output_dir, args.threads)
                 if not tree_file:
                     logger.error("FastTree failed")
 
