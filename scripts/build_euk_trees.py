@@ -7,7 +7,8 @@ This script takes the output from find_euk_single_copy.py and:
 2. Extracts ORF sequences from the original summary
 3. Concatenates ALL genes per genome into single sequences
 4. Runs MAFFT for alignment on concatenated sequences
-5. Runs FastTree to build ONE phylogenetic tree
+5. Trims the alignment with trimAl to remove gappy columns
+6. Runs FastTree to build ONE phylogenetic tree
 """
 
 import argparse
@@ -241,6 +242,19 @@ def run_mafft(fasta_file: str, output_dir: str) -> str:
         logger.error(f"MAFFT failed: {e}")
         return None
 
+def run_trimal(aligned_file: str, output_dir: str) -> str:
+    """Trim MAFFT alignment using trimAl with a 50% gap threshold."""
+    trimmed_file = os.path.join(output_dir, "concatenated_genes_aligned_trimmed.fasta")
+    cmd = ['trimal', '-in', aligned_file, '-out', trimmed_file, '-gt', '0.5']
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logger.info(f"trimAl completed: {trimmed_file}")
+        return trimmed_file
+    except subprocess.CalledProcessError as e:
+        logger.error(f"trimAl failed: {e}")
+        return None
+
 def run_fasttree(aligned_file: str, output_dir: str) -> str:
     """Run FastTree on aligned concatenated sequences."""
     tree_file = os.path.join(output_dir, "eukaryotic_phylogeny.tree")
@@ -335,17 +349,23 @@ def main():
         # Run MAFFT on concatenated sequences
         logger.info("Running MAFFT alignment...")
         aligned_file = run_mafft(fasta_file, args.output_dir)
-        
+
         if aligned_file:
-            # Run FastTree on aligned concatenated sequences
-            logger.info("Running FastTree...")
-            tree_file = run_fasttree(aligned_file, args.output_dir)
-            
-            if tree_file:
-                logger.info(f"Successfully created phylogenetic tree: {tree_file}")
-                logger.info(f"Tree building completed. Results in: {args.output_dir}")
+            logger.info("Trimming alignment...")
+            trimmed_file = run_trimal(aligned_file, args.output_dir)
+
+            if trimmed_file:
+                # Run FastTree on trimmed concatenated sequences
+                logger.info("Running FastTree...")
+                tree_file = run_fasttree(trimmed_file, args.output_dir)
+
+                if tree_file:
+                    logger.info(f"Successfully created phylogenetic tree: {tree_file}")
+                    logger.info(f"Tree building completed. Results in: {args.output_dir}")
+                else:
+                    logger.error("FastTree failed")
             else:
-                logger.error("FastTree failed")
+                logger.error("trimAl failed")
         else:
             logger.error("MAFFT alignment failed")
         
@@ -354,4 +374,4 @@ def main():
         sys.exit(1)
 
 if __name__ == '__main__':
-    main() 
+    main()
