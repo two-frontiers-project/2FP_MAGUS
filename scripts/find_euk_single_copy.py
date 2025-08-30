@@ -95,22 +95,24 @@ def get_single_copy_candidates(filtered_data: Dict[str, List[Dict]]) -> Dict[str
     """Identify candidate single copy genes based on gene families."""
     
     # Define gene families of interest
+    # Focus on a conservative set of largely single-copy nuclear genes
+    # recommended during method development.  Each RFC subunit is tracked
+    # separately to avoid inadvertently concatenating paralogous hits.
     gene_families = {
-        'RNA_pol_Rpb1': ['RNA_pol_Rpb1_1', 'RNA_pol_Rpb1_2', 'RNA_pol_Rpb1_3', 
-                         'RNA_pol_Rpb1_4', 'RNA_pol_Rpb1_5', 'RNA_pol_Rpb1_6', 
+        'RNA_pol_Rpb1': ['RNA_pol_Rpb1_1', 'RNA_pol_Rpb1_2', 'RNA_pol_Rpb1_3',
+                         'RNA_pol_Rpb1_4', 'RNA_pol_Rpb1_5', 'RNA_pol_Rpb1_6',
                          'RNA_pol_Rpb1_7', 'Rpb1_R'],
         'RNA_pol_Rpb2': ['RNA_pol_Rpb2_1', 'RNA_pol_Rpb2_2', 'RNA_pol_Rpb2_3',
                          'RNA_pol_Rpb2_4', 'RNA_pol_Rpb2_5', 'RNA_pol_Rpb2_6',
                          'RNA_pol_Rpb2_7'],
-        'RNA_pol_other': ['RNA_pol_Rpb4', 'RNA_pol_Rpb5_N', 'RNA_pol_Rpb5_C', 
-                          'RNA_pol_Rpb6', 'RNA_pol_Rpb8', 'RNA_pol_RpbG'],
-        'TBP': ['TBP', 'TBP-binding', 'TBP-TOTE'],
         'PCNA': ['PCNA'],
-        'RFC': ['RFC1', 'RFC2', 'RFC3', 'RFC4', 'RFC5'],
-        'CPSF': ['CPSF73-100_C', 'CPSF100_C', 'CPSF_A', 'RSLD_CPSF6'],
-        'CSTF': ['CSTF1_dimer', 'CSTF2_hinge', 'CSTF_C', 'partial_CstF'],
-        'RNase_PH': ['RNase_PH', 'RNase_PH_C'],
-        'rRNA_tRNA': ['Fibrillarin', 'Nop1', 'GCD14']
+        'RFC1': ['RFC1'],
+        'RFC2': ['RFC2'],
+        'RFC3': ['RFC3'],
+        'RFC4': ['RFC4'],
+        'RFC5': ['RFC5'],
+        'Fibrillarin': ['Fibrillarin'],
+        'Nop1': ['Nop1']
     }
     
     candidates = defaultdict(list)
@@ -220,4 +222,4 @@ def main():
         sys.exit(1)
 
 if __name__ == '__main__':
-    main() 
+    main()
