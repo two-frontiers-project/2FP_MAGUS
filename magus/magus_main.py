@@ -29,7 +29,8 @@ def main():
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
         'call-orfs': 'call_orfs.py',
         'build-gene-catalog': 'build_gene_catalog.py',
-        'filter-mags': 'filter_mags.py'
+        'filter-mags': 'filter_mags.py',
+        'build-tree': 'build_tree.py'
   }
 
     # Check for valid command
