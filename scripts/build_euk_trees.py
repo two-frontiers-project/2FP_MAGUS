@@ -273,7 +273,7 @@ def run_fasttree(aligned_file: str, output_dir: str) -> str:
 def run_iqtree(aligned_file: str, output_dir: str) -> str:
     """Run IQ-TREE on aligned concatenated sequences."""
     tree_prefix = os.path.join(output_dir, "eukaryotic_phylogeny")
-    cmd = ['iqtree2', '-s', aligned_file, '-nt', 'AUTO', '-pre', tree_prefix]
+    cmd = ['iqtree', '-s', aligned_file, '-nt', 'AUTO', '-pre', tree_prefix]
 
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
