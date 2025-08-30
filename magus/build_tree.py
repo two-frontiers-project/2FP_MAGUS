@@ -242,10 +242,19 @@ def run_mafft(fasta_file: str, output_dir: str, threads: int = 1) -> str:
         logger.error(f"MAFFT failed: {e}")
         return None
 
-def run_trimal(aligned_file: str, output_dir: str, cutoff: float, threads: int = 1) -> str:
-    """Trim MAFFT alignment using trimAl with a specified gap threshold."""
+def run_trimal(aligned_file: str, output_dir: str, gt: float) -> str:
+    """Trim MAFFT alignment using trimAl with a specified gap threshold.
+
+    Args:
+        aligned_file: Path to the aligned FASTA file.
+        output_dir: Directory to write the trimmed alignment.
+        gt: Gap threshold between 0 and 1 for trimAl's ``-gt`` option.
+    """
+    if gt < 0 or gt > 1:
+        raise ValueError("trimAl gap threshold (gt) must be between 0 and 1")
+
     trimmed_file = os.path.join(output_dir, "concatenated_genes_aligned_trimmed.fasta")
-    cmd = ['trimal', '-in', aligned_file, '-out', trimmed_file, '-gt', str(cutoff), '-threads', str(threads)]
+    cmd = ['trimal', '-in', aligned_file, '-out', trimmed_file, '-gt', str(gt)]
 
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -348,6 +357,11 @@ def main():
     if args.coverage_threshold < 0 or args.coverage_threshold > 100:
         logger.error("coverage-threshold must be between 0 and 100")
         sys.exit(1)
+
+    # Validate trimAl gap threshold
+    if args.trimal_cutoff is not None and (args.trimal_cutoff < 0 or args.trimal_cutoff > 1):
+        logger.error("trimal-cutoff must be between 0 and 1")
+        sys.exit(1)
     
     try:
         # Load genome list if provided
@@ -389,7 +403,7 @@ def main():
             tree_input = aligned_file
             if args.trimal_cutoff is not None:
                 logger.info("Trimming alignment...")
-                trimmed_file = run_trimal(aligned_file, args.output_dir, args.trimal_cutoff, args.threads)
+                trimmed_file = run_trimal(aligned_file, args.output_dir, args.trimal_cutoff)
                 if not trimmed_file:
                     logger.error("trimAl failed")
                     sys.exit(1)
