@@ -7,8 +7,8 @@ This script takes the output from find_euk_single_copy.py and:
 2. Extracts ORF sequences from the original summary
 3. Concatenates ALL genes per genome into single sequences
 4. Runs MAFFT for alignment on concatenated sequences
-5. Trims the alignment with trimAl to remove gappy columns
-6. Runs FastTree to build ONE phylogenetic tree
+5. Optionally trims the alignment with trimAl to remove gappy columns
+6. Builds a phylogenetic tree with FastTree (default) or IQ-TREE
 """
 
 import argparse
@@ -242,10 +242,10 @@ def run_mafft(fasta_file: str, output_dir: str) -> str:
         logger.error(f"MAFFT failed: {e}")
         return None
 
-def run_trimal(aligned_file: str, output_dir: str) -> str:
-    """Trim MAFFT alignment using trimAl with a 50% gap threshold."""
+def run_trimal(aligned_file: str, output_dir: str, cutoff: float) -> str:
+    """Trim MAFFT alignment using trimAl with a specified gap threshold."""
     trimmed_file = os.path.join(output_dir, "concatenated_genes_aligned_trimmed.fasta")
-    cmd = ['trimal', '-in', aligned_file, '-out', trimmed_file, '-gt', '0.5']
+    cmd = ['trimal', '-in', aligned_file, '-out', trimmed_file, '-gt', str(cutoff)]
 
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -258,15 +258,30 @@ def run_trimal(aligned_file: str, output_dir: str) -> str:
 def run_fasttree(aligned_file: str, output_dir: str) -> str:
     """Run FastTree on aligned concatenated sequences."""
     tree_file = os.path.join(output_dir, "eukaryotic_phylogeny.tree")
-    
+
     cmd = ['fasttree', '-out', tree_file, aligned_file]
-    
+
     try:
         subprocess.run(cmd, check=True)
         logger.info(f"FastTree completed: {tree_file}")
         return tree_file
     except subprocess.CalledProcessError as e:
         logger.error(f"FastTree failed: {e}")
+        return None
+
+
+def run_iqtree(aligned_file: str, output_dir: str) -> str:
+    """Run IQ-TREE on aligned concatenated sequences."""
+    tree_prefix = os.path.join(output_dir, "eukaryotic_phylogeny")
+    cmd = ['iqtree2', '-s', aligned_file, '-nt', 'AUTO', '-pre', tree_prefix]
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        tree_file = f"{tree_prefix}.treefile"
+        logger.info(f"IQ-TREE completed: {tree_file}")
+        return tree_file
+    except subprocess.CalledProcessError as e:
+        logger.error(f"IQ-TREE failed: {e}")
         return None
 
 def main():
@@ -296,6 +311,16 @@ def main():
         type=float,
         default=0.001,
         help='E-value cutoff for filtering gene hits (default: 0.001)'
+    )
+    parser.add_argument(
+        '--trimal-cutoff',
+        type=float,
+        help='Gap threshold (0-1) for trimAl; if omitted, trimAl is skipped'
+    )
+    parser.add_argument(
+        '--iqtree',
+        action='store_true',
+        help='Use IQ-TREE instead of FastTree'
     )
     parser.add_argument(
         '--output-dir',
@@ -351,21 +376,29 @@ def main():
         aligned_file = run_mafft(fasta_file, args.output_dir)
 
         if aligned_file:
-            logger.info("Trimming alignment...")
-            trimmed_file = run_trimal(aligned_file, args.output_dir)
+            tree_input = aligned_file
+            if args.trimal_cutoff is not None:
+                logger.info("Trimming alignment...")
+                trimmed_file = run_trimal(aligned_file, args.output_dir, args.trimal_cutoff)
+                if not trimmed_file:
+                    logger.error("trimAl failed")
+                    sys.exit(1)
+                tree_input = trimmed_file
 
-            if trimmed_file:
-                # Run FastTree on trimmed concatenated sequences
-                logger.info("Running FastTree...")
-                tree_file = run_fasttree(trimmed_file, args.output_dir)
-
-                if tree_file:
-                    logger.info(f"Successfully created phylogenetic tree: {tree_file}")
-                    logger.info(f"Tree building completed. Results in: {args.output_dir}")
-                else:
-                    logger.error("FastTree failed")
+            if args.iqtree:
+                logger.info("Running IQ-TREE...")
+                tree_file = run_iqtree(tree_input, args.output_dir)
+                if not tree_file:
+                    logger.error("IQ-TREE failed")
             else:
-                logger.error("trimAl failed")
+                logger.info("Running FastTree...")
+                tree_file = run_fasttree(tree_input, args.output_dir)
+                if not tree_file:
+                    logger.error("FastTree failed")
+
+            if tree_file:
+                logger.info(f"Successfully created phylogenetic tree: {tree_file}")
+                logger.info(f"Tree building completed. Results in: {args.output_dir}")
         else:
             logger.error("MAFFT alignment failed")
         
