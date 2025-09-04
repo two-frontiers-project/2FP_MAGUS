@@ -289,25 +289,16 @@ class ORFCaller:
         return hmm_out
 
     def parse_hmm_tblout_to_csv(self, hmm_file, output_csv, evalue_cutoff=0.01):
-        """Parse HMM tblout output to clean CSV using efficient bash commands.
+        """Parse HMM tblout output to clean CSV using Python parsing.
         
         This function works for all domains (bacteria, viruses, eukaryotes, metagenomes).
-        Uses bash commands for much faster processing than Python parsing.
+        Uses Python parsing for more reliable handling of complex HMM output.
         """
         if not os.path.exists(hmm_file):
             logger.warning(f"HMM file {hmm_file} does not exist. Skipping parsing.")
             return None
         
         try:
-            # Use bash commands for efficient HMM parsing
-            # Remove comments, convert spaces to tabs, extract columns, sort by score
-            cmd = f"grep -v '^#' {hmm_file} | sed 's/ \\+/\\t/g' | awk -F'\\t' '{{if (${evalue_cutoff} == 0.01 || (${evalue_cutoff} != 0.01 && $5 <= {evalue_cutoff})) printf \"%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\", $1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18}}' | sort -grk5,5"
-            
-            # Execute the command and capture output
-            import subprocess
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-            
-            # Parse the output into rows
             rows = []
             columns = [
                 'target_name', 'query_name', 'query_accession',
@@ -315,13 +306,72 @@ class ORFCaller:
                 'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description'
             ]
             
-            # Process each line of output
-            for line in result.stdout.strip().split('\n'):
-                if not line:
-                    continue
-                parts = line.split('\t')
-                if len(parts) >= 17:
-                    row = dict(zip(columns, parts))
+            # Parse HMM output line by line
+            with open(hmm_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('#') or not line:
+                        continue
+                    
+                    # Split the line into fields using the HMM output format
+                    # HMM output has fixed-width columns, so we need to parse carefully
+                    parts = line.split()
+                    if len(parts) < 18:
+                        continue
+                    
+                    # Extract fields based on HMM output format
+                    target_name = parts[0]
+                    query_name = parts[2] if len(parts) > 2 else ''
+                    query_accession = parts[3] if len(parts) > 3 else ''
+                    
+                    # Parse numeric fields
+                    try:
+                        full_evalue = float(parts[4]) if len(parts) > 4 else 0.0
+                        full_score = float(parts[5]) if len(parts) > 5 else 0.0
+                        full_bias = float(parts[6]) if len(parts) > 6 else 0.0
+                        dom_evalue = float(parts[7]) if len(parts) > 7 else 0.0
+                        dom_score = float(parts[8]) if len(parts) > 8 else 0.0
+                        dom_bias = float(parts[9]) if len(parts) > 9 else 0.0
+                    except (ValueError, IndexError):
+                        continue
+                    
+                    # Check e-value cutoff
+                    if full_evalue > evalue_cutoff:
+                        continue
+                    
+                    # Extract remaining fields
+                    exp = parts[10] if len(parts) > 10 else ''
+                    reg = parts[11] if len(parts) > 11 else ''
+                    clu = parts[12] if len(parts) > 12 else ''
+                    ov = parts[13] if len(parts) > 13 else ''
+                    env = parts[14] if len(parts) > 14 else ''
+                    dom = parts[15] if len(parts) > 15 else ''
+                    rep = parts[16] if len(parts) > 16 else ''
+                    inc = parts[17] if len(parts) > 17 else ''
+                    
+                    # Description is everything after the 17th field
+                    description = ' '.join(parts[18:]) if len(parts) > 18 else ''
+                    
+                    row = {
+                        'target_name': target_name,
+                        'query_name': query_name,
+                        'query_accession': query_accession,
+                        'full_evalue': str(full_evalue),
+                        'full_score': str(full_score),
+                        'full_bias': str(full_bias),
+                        'dom_evalue': str(dom_evalue),
+                        'dom_score': str(dom_score),
+                        'dom_bias': str(dom_bias),
+                        'exp': exp,
+                        'reg': reg,
+                        'clu': clu,
+                        'ov': ov,
+                        'env': env,
+                        'dom': dom,
+                        'rep': rep,
+                        'inc': inc,
+                        'description': description
+                    }
                     rows.append(row)
             
             # Write to CSV
@@ -333,10 +383,6 @@ class ORFCaller:
             logger.info(f"Parsed {len(rows)} HMM hits from {hmm_file}")
             return rows
             
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Error executing HMM parsing command: {e}")
-            logger.error(f"Command output: {e.stderr}")
-            return None
         except Exception as e:
             logger.error(f"Error parsing HMM file {hmm_file}: {e}")
             return None
@@ -571,52 +617,56 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                             # WRITE THE ROW - this should happen for EVERY FASTA header
                             summary.write('\t'.join(str(field) for field in row_data) + '\n')
             else:
-                # Bacteria/Viruses/Metagenomes: efficient parallel processing
+                # Bacteria/Viruses/Metagenomes: rewrite for proper merging
                 logger.info(f"Processing {subdir} samples")
-                
-                # Use manicure directory for all domains since they all use Prodigal
-                manicure_dir = os.path.join(output_dir, subdir, 'manicure')
-                
-                # Get list of files to process
-                files = [f for f in os.listdir(manicure_dir) if f.endswith('.faa')]
                 
                 # Write header first
                 with open(summary_file, 'w') as f:
-                    f.write('\t'.join(['sample_id', 'sequence_id', 'start', 'end', 'strand', 'ID', 'partial', 'start_type', 'rbs_motif', 'rbs_spacer', 'gc_cont', 'target_name', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']) + '\n')
+                    f.write('\t'.join(['sample_id', 'sequence_id', 'start', 'end', 'strand', 'ID', 'partial', 'start_type', 'rbs_motif', 'rbs_spacer', 'gc_cont', 'query_accession', 'full_evalue', 'full_score', 'full_bias', 'dom_evalue', 'dom_score', 'dom_bias', 'exp', 'reg', 'clu', 'ov', 'env', 'dom', 'rep', 'inc', 'description']) + '\n')
                 
-                # Process files in parallel batches
-                def process_single_sample(file):
+                # Get list of FASTA files to process
+                manicure_dir = os.path.join(output_dir, subdir, 'manicure')
+                files = [f for f in os.listdir(manicure_dir) if f.endswith('.faa')]
+                
+                for file in files:
                     sample_id = file.replace('.faa', '')
                     faa_file = os.path.join(manicure_dir, file)
                     
                     if not os.path.exists(faa_file):
-                        return []
+                        continue
                     
-                    # Load HMM data for this sample (already parsed)
-                    hmm_lookup = {}
+                    # Step 1: Load clean HMM data line by line
+                    hmm_data = {}
                     hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
+                    print(f"Looking for HMM file: {hmm_csv}")
+                    print(f"HMM file exists: {os.path.exists(hmm_csv)}")
                     if os.path.exists(hmm_csv):
                         with open(hmm_csv, 'r') as hmm_f:
                             reader = csv.DictReader(hmm_f)
                             for row in reader:
-                                # Extract sequence ID from target_name
                                 target_name = row['target_name']
                                 if '-----' in target_name:
                                     sequence_id = target_name.split('-----')[1]
-                                else:
-                                    sequence_id = target_name.split()[0]
-                                hmm_lookup[sequence_id] = row
+                                    hmm_data[sequence_id] = row
                     
-                    # Process FAA file and return rows
-                    sample_rows = []
+                    # Step 2: Load manicured FASTA data line by line, append to same dictionary
                     with open(faa_file, 'r') as faa_f:
                         for line in faa_f:
                             if line.startswith('>'):
-                                header = line.strip()[1:]
-                                parts = header.split('-----')
+                                header = line.strip()[1:]  # Remove >
                                 
-                                if len(parts) >= 3:
-                                    sequence_id = parts[1]
+                                # Extract sequence ID - second part after -----
+                                if '-----' in header and len(header.split('-----')) >= 2:
+                                    sequence_id = header.split('-----')[1]
+                                else:
+                                    sequence_id = header.split()[0]
+                                
+                                # Parse coordinates and annotations
+                                start = end = strand = ''
+                                annotation = {}
+                                
+                                if '-----' in header and len(header.split('-----')) >= 3:
+                                    parts = header.split('-----')
                                     coord_part = parts[2]
                                     coord_parts = coord_part.split('+')
                                     
@@ -624,71 +674,41 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                         start = coord_parts[0]
                                         end = coord_parts[1]
                                         strand = '+' if coord_parts[2] == '1' else '-'
-                                    else:
-                                        start = end = strand = ''
                                     
                                     # Parse annotation attributes
                                     annotation_str = coord_part.split('+', 3)[-1] if len(coord_parts) > 3 else ''
-                                    annotation = {}
                                     if ';' in annotation_str:
                                         for part in annotation_str.split(';'):
                                             if '=' in part:
                                                 key, value = part.split('=', 1)
                                                 annotation[key.strip()] = value.strip()
-                                    
-                                    # Get HMM data for this sequence
-                                    hmm_data = hmm_lookup.get(sequence_id, {})
-                                    
-                                    # Create row data
-                                    row_data = [
-                                        sample_id, sequence_id, start, end, strand,
-                                        annotation.get('ID', ''), annotation.get('partial', ''),
-                                        annotation.get('start_type', ''), annotation.get('rbs_motif', ''),
-                                        annotation.get('rbs_spacer', ''), annotation.get('gc_cont', ''),
-                                        hmm_data.get('target_name', ''), hmm_data.get('query_accession', ''),
-                                        hmm_data.get('full_evalue', ''), hmm_data.get('full_score', ''),
-                                        hmm_data.get('full_bias', ''), hmm_data.get('dom_evalue', ''),
-                                        hmm_data.get('dom_score', ''), hmm_data.get('dom_bias', ''),
-                                        hmm_data.get('exp', ''), hmm_data.get('reg', ''),
-                                        hmm_data.get('clu', ''), hmm_data.get('ov', ''),
-                                        hmm_data.get('env', ''), hmm_data.get('dom', ''),
-                                        hmm_data.get('rep', ''), hmm_data.get('inc', ''),
-                                        hmm_data.get('description', '')
-                                    ]
-                                    
-                                    sample_rows.append('\t'.join(str(field) for field in row_data))
-                    
-                    return sample_rows
-                
-                # Process in parallel with max_workers
-                from concurrent.futures import ThreadPoolExecutor, as_completed
-                # Use the max_workers parameter passed to the function
-                
-                logger.info(f"Processing {len(files)} samples with {max_workers} parallel workers")
-                
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    # Submit all tasks
-                    future_to_file = {executor.submit(process_single_sample, file): file for file in files}
-                    
-                    # Process results as they complete and write to file
-                    with open(summary_file, 'a') as f:
-                        for future in as_completed(future_to_file):
-                            file = future_to_file[future]
-                            try:
-                                sample_rows = future.result()
-                                if sample_rows:
-                                    # Write all rows for this sample immediately
-                                    for row in sample_rows:
-                                        f.write(row + '\n')
-                                    logger.info(f"Wrote {len(sample_rows)} rows for {file}")
-                                else:
-                                    logger.warning(f"No data for {file}")
-                            except Exception as e:
-                                logger.error(f"Error processing {file}: {e}")
+                                
+                                # Get HMM data for this sequence
+                                hmm_row = hmm_data.get(sequence_id, {})
+
+                                print(hmm_row)
+                                
+                                # Step 3: Write to output file (drop target_name as it's redundant)
+                                row_data = [
+                                    sample_id, sequence_id, start, end, strand,
+                                    annotation.get('ID', ''), annotation.get('partial', ''),
+                                    annotation.get('start_type', ''), annotation.get('rbs_motif', ''),
+                                    annotation.get('rbs_spacer', ''), annotation.get('gc_cont', ''),
+                                    hmm_row.get('query_name', ''),
+                                    hmm_row.get('full_evalue', ''), hmm_row.get('full_score', ''),
+                                    hmm_row.get('full_bias', ''), hmm_row.get('dom_evalue', ''),
+                                    hmm_row.get('dom_score', ''), hmm_row.get('dom_bias', ''),
+                                    hmm_row.get('exp', ''), hmm_row.get('reg', ''),
+                                    hmm_row.get('clu', ''), hmm_row.get('ov', ''),
+                                    hmm_row.get('env', ''), hmm_row.get('dom', ''),
+                                    hmm_row.get('rep', ''), hmm_row.get('inc', ''),
+                                    hmm_row.get('description', '')
+                                ]
+                                print(row_data)
+                                with open(summary_file, 'a') as f:
+                                    f.write('\t'.join(str(field) for field in row_data) + '\n')
                 
                 logger.info(f"Completed processing {subdir} samples")
-        
-
         
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
 
