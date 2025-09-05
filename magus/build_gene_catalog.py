@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class GeneCatalogBuilder:
     def __init__(self, summary_file, faa_dir, output_dir, threads=1, 
                  evalue_cutoff=0.01, identity_threshold=0.3, coverage_threshold=0.8,
-                 identity_only=False):
+                 identity_only=False, multi_sample_single_copy=False):
         """
         Initialize the gene catalog builder.
         
@@ -30,6 +30,7 @@ class GeneCatalogBuilder:
             identity_threshold: Identity threshold for MMseqs2 clustering
             coverage_threshold: Coverage threshold for MMseqs2 clustering
             identity_only: If True, skip functional annotation and only use MMseqs2 clustering
+            multi_sample_single_copy: If True, identify genes that appear once per sample but across multiple samples
         """
         self.summary_file = Path(summary_file)
         self.faa_dir = Path(faa_dir)
@@ -39,6 +40,7 @@ class GeneCatalogBuilder:
         self.identity_threshold = identity_threshold
         self.coverage_threshold = coverage_threshold
         self.identity_only = identity_only
+        self.multi_sample_single_copy = multi_sample_single_copy
         
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -288,38 +290,80 @@ class GeneCatalogBuilder:
             return gene_clusters
     
     def _create_gene_mappings(self, gene_annotations, annotated_genes, unannotated_genes, gene_clusters):
-        """Create the final gene mapping files."""
+        """Create the final gene mapping files with proper frequency-based clustering."""
         # Main cluster mapping
         cluster_mapping = self.output_dir / "gene_clusters.tsv"
         singleton_mapping = self.output_dir / "gene_singletons.tsv"
+        single_copy_mapping = self.output_dir / "single_copy_genes.tsv"
         
-        with open(cluster_mapping, 'w') as cluster_f, open(singleton_mapping, 'w') as singleton_f:
+        # Count annotation frequencies across samples
+        annotation_frequency = defaultdict(int)
+        annotation_samples = defaultdict(set)
+        annotation_genes = defaultdict(list)
+        
+        # Process annotated genes to count frequencies
+        for gene_id in annotated_genes:
+            if gene_id in gene_annotations:
+                sample_id, gene = gene_id.split('-----', 1)
+                annotation = gene_annotations[gene_id]
+                annotation_frequency[annotation] += 1
+                annotation_samples[annotation].add(sample_id)
+                annotation_genes[annotation].append(gene_id)
+        
+        # Separate annotations into clusters vs singletons based on frequency
+        cluster_annotations = set()
+        singleton_annotations = set()
+        multi_sample_single_copy_annotations = set()
+        
+        for annotation, count in annotation_frequency.items():
+            if count > 1:
+                # Appears multiple times - goes to clusters
+                cluster_annotations.add(annotation)
+            else:
+                # Appears only once - check if multi-sample single-copy
+                if self.multi_sample_single_copy and len(annotation_samples[annotation]) > 1:
+                    # Appears once per sample but across multiple samples
+                    multi_sample_single_copy_annotations.add(annotation)
+                    cluster_annotations.add(annotation)  # Also goes to clusters
+                else:
+                    # True singleton - appears only once total
+                    singleton_annotations.add(annotation)
+        
+        with open(cluster_mapping, 'w') as cluster_f, open(singleton_mapping, 'w') as singleton_f, open(single_copy_mapping, 'w') as single_copy_f:
             # Write headers
-            cluster_f.write("sampleid\tgene\tclusterid\n")
-            singleton_f.write("sampleid\tgene\tclusterid\n")
+            cluster_f.write("sampleid\tgene\tclusterid\tannotation\n")
+            singleton_f.write("sampleid\tgene\tclusterid\tannotation\n")
+            single_copy_f.write("sampleid\tgene\tclusterid\tannotation\n")
             
             # Process annotated genes
             for gene_id in annotated_genes:
                 if gene_id in gene_annotations:
                     sample_id, gene = gene_id.split('-----', 1)
-                    cluster_id = gene_annotations[gene_id]
-                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_id}\n")
+                    annotation = gene_annotations[gene_id]
+                    
+                    if annotation in cluster_annotations:
+                        cluster_f.write(f"{sample_id}\t{gene}\t{annotation}\t{annotation}\n")
+                        if annotation in multi_sample_single_copy_annotations:
+                            single_copy_f.write(f"{sample_id}\t{gene}\t{annotation}\t{annotation}\n")
+                    elif annotation in singleton_annotations:
+                        singleton_f.write(f"{sample_id}\t{gene}\t{annotation}\t{annotation}\n")
             
             # Process unannotated genes
             for gene_id in unannotated_genes:
+                sample_id, gene = gene_id.split('-----', 1)
                 if gene_id in gene_clusters:
-                    sample_id, gene = gene_id.split('-----', 1)
                     cluster_id = gene_clusters[gene_id]
-                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_id}\n")
+                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_id}\tunannotated\n")
                 else:
                     # This is a singleton
-                    sample_id, gene = gene_id.split('-----', 1)
-                    singleton_f.write(f"{sample_id}\t{gene}\t{sample_id}\n")
+                    singleton_f.write(f"{sample_id}\t{gene}\t{sample_id}\tunannotated\n")
         
         logger.info(f"Created gene cluster mapping: {cluster_mapping}")
         logger.info(f"Created gene singleton mapping: {singleton_mapping}")
+        if self.multi_sample_single_copy:
+            logger.info(f"Created single copy genes mapping: {single_copy_mapping}")
         
-        return cluster_mapping, singleton_mapping
+        return cluster_mapping, singleton_mapping, single_copy_mapping
     
     def _create_identity_only_mappings(self, gene_clusters):
         """Create gene mappings for identity-only mode."""
@@ -395,22 +439,54 @@ class GeneCatalogBuilder:
         return cluster_faa, singleton_faa
     
     def _create_nonredundant_fastas(self, gene_annotations, annotated_genes, unannotated_genes, gene_clusters):
-        """Create non-redundant FASTA files for clusters and singletons."""
+        """Create non-redundant FASTA files for clusters and singletons based on frequency."""
         logger.info("Creating non-redundant FASTA files")
         
         # Files to create
         cluster_faa = self.output_dir / "gene_catalog_clusters.faa"
         singleton_faa = self.output_dir / "gene_catalog_singletons.faa"
         
+        # Count annotation frequencies to determine clusters vs singletons
+        annotation_frequency = defaultdict(int)
+        annotation_samples = defaultdict(set)
+        
+        # Process annotated genes to count frequencies
+        for gene_id in annotated_genes:
+            if gene_id in gene_annotations:
+                sample_id, gene = gene_id.split('-----', 1)
+                annotation = gene_annotations[gene_id]
+                annotation_frequency[annotation] += 1
+                annotation_samples[annotation].add(sample_id)
+        
+        # Separate annotations into clusters vs singletons
+        cluster_annotations = set()
+        singleton_annotations = set()
+        
+        for annotation, count in annotation_frequency.items():
+            if count > 1:
+                # Appears multiple times - goes to clusters
+                cluster_annotations.add(annotation)
+            else:
+                # Appears only once - check if multi-sample single-copy
+                if self.multi_sample_single_copy and len(annotation_samples[annotation]) > 1:
+                    # Appears once per sample but across multiple samples - goes to clusters
+                    cluster_annotations.add(annotation)
+                else:
+                    # True singleton - appears only once total
+                    singleton_annotations.add(annotation)
+        
         # Group genes by their cluster/annotation
         cluster_groups = defaultdict(list)
         singleton_genes = set()
         
-        # Process annotated genes (functional groups)
+        # Process annotated genes
         for gene_id in annotated_genes:
             if gene_id in gene_annotations:
-                cluster_id = gene_annotations[gene_id]
-                cluster_groups[cluster_id].append(gene_id)
+                annotation = gene_annotations[gene_id]
+                if annotation in cluster_annotations:
+                    cluster_groups[annotation].append(gene_id)
+                else:
+                    singleton_genes.add(gene_id)
         
         # Process unannotated genes
         for gene_id in unannotated_genes:
@@ -500,7 +576,7 @@ class GeneCatalogBuilder:
             gene_clusters = self._cluster_unannotated_genes(unannotated_fasta)
             
             # Create final mappings
-            cluster_mapping, singleton_mapping = self._create_gene_mappings(
+            cluster_mapping, singleton_mapping, single_copy_mapping = self._create_gene_mappings(
                 gene_annotations, annotated_genes, unannotated_genes, gene_clusters
             )
             
@@ -569,6 +645,12 @@ def main():
         help='Skip functional annotation and only use MMseqs2 sequence clustering'
     )
     
+    parser.add_argument(
+        '--multi-sample-single-copy',
+        action='store_true',
+        help='Identify genes that appear once per sample but across multiple samples'
+    )
+    
     args = parser.parse_args()
     
     # Create and run the gene catalog builder
@@ -580,7 +662,8 @@ def main():
         evalue_cutoff=args.evalue_cutoff,
         identity_threshold=args.identity_threshold,
         coverage_threshold=args.coverage_threshold,
-        identity_only=args.identity_only
+        identity_only=args.identity_only,
+        multi_sample_single_copy=args.multi_sample_single_copy
     )
     
     try:
