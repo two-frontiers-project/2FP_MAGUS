@@ -638,8 +638,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                     # Step 1: Load clean HMM data line by line
                     hmm_data = {}
                     hmm_csv = os.path.join(annot_dir, f"{sample_id}.hmm_clean.csv")
-                    print(f"Looking for HMM file: {hmm_csv}")
-                    print(f"HMM file exists: {os.path.exists(hmm_csv)}")
                     if os.path.exists(hmm_csv):
                         with open(hmm_csv, 'r') as hmm_f:
                             reader = csv.DictReader(hmm_f)
@@ -704,12 +702,9 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                     hmm_row.get('rep', ''), hmm_row.get('inc', ''),
                                     hmm_row.get('description', '')
                                 ]
-                                print(row_data)
                                 with open(summary_file, 'a') as f:
                                     f.write('\t'.join(str(field) for field in row_data) + '\n')
-                
-                logger.info(f"Completed processing {subdir} samples")
-        
+                        
         logger.info(f"Created comprehensive {subdir} summary: {summary_file}")
 
 def main():
