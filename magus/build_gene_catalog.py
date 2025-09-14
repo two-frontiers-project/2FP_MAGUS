@@ -8,7 +8,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 from collections import defaultdict
-import pandas as pd
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -63,86 +62,106 @@ class GeneCatalogBuilder:
         """Parse the call_orfs summary file to get annotated vs unannotated genes."""
         logger.info(f"Parsing summary file: {self.summary_file}")
         
-        # Read the summary file and store as instance variable
-        self.summary_df = pd.read_csv(self.summary_file, sep='\t')
-        df = self.summary_df
+        annotated_genes = set()
+        unannotated_genes = set()
+        gene_annotations = {}
+        self.evalue_mapping = {}
         
-        # Determine the format based on columns
-        if 'target_name' in df.columns and 'query_name' in df.columns:
-            # Eukaryotic format
-            annotated_genes = set()
-            unannotated_genes = set()
-            gene_annotations = {}
+        with open(self.summary_file, 'r') as f:
+            # Read header to determine format
+            header_line = f.readline().strip()
+            if not header_line:
+                logger.error("Empty summary file")
+                sys.exit(1)
             
-            for _, row in df.iterrows():
-                sample_id = row['sample_id']
-                gene_id = row['target_name']
-                query_name = row.get('query_name', '')
-                full_evalue = row.get('full_evalue', '')
-                
-                if pd.notna(query_name) and query_name != '' and pd.notna(full_evalue):
-                    try:
-                        evalue = float(full_evalue)
-                        if evalue <= self.evalue_cutoff:
-                            full_gene_id = f"{sample_id}-----{gene_id}"
-                            gene_annotations[full_gene_id] = query_name
-                            annotated_genes.add(full_gene_id)
-                        else:
+            headers = header_line.split('\t')
+            
+            # Determine the format based on columns
+            if 'target_name' in headers and 'query_name' in headers:
+                # Eukaryotic format
+                for line_num, line in enumerate(f, start=2):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    parts = line.split('\t')
+                    if len(parts) < len(headers):
+                        logger.warning(f"Skipping malformed line {line_num}: insufficient columns")
+                        continue
+                    
+                    row = dict(zip(headers, parts))
+                    sample_id = row['sample_id']
+                    gene_id = row['target_name']
+                    query_name = row.get('query_name', '')
+                    full_evalue = row.get('full_evalue', '')
+                    
+                    if query_name and query_name != '' and full_evalue and full_evalue != '':
+                        try:
+                            evalue = float(full_evalue)
+                            if evalue <= self.evalue_cutoff:
+                                full_gene_id = f"{sample_id}-----{gene_id}"
+                                gene_annotations[full_gene_id] = query_name
+                                annotated_genes.add(full_gene_id)
+                            else:
+                                full_gene_id = f"{sample_id}-----{gene_id}"
+                                unannotated_genes.add(full_gene_id)
+                        except (ValueError, TypeError):
                             full_gene_id = f"{sample_id}-----{gene_id}"
                             unannotated_genes.add(full_gene_id)
-                    except (ValueError, TypeError):
+                    else:
                         full_gene_id = f"{sample_id}-----{gene_id}"
                         unannotated_genes.add(full_gene_id)
-                else:
-                    full_gene_id = f"{sample_id}-----{gene_id}"
-                    unannotated_genes.add(full_gene_id)
         
-        elif 'sequence_id' in df.columns and ('query_name' in df.columns or 'query_accession' in df.columns):
-            # Bacterial/viral format
-            annotated_genes = set()
-            unannotated_genes = set()
-            gene_annotations = {}
-            self.evalue_mapping = {}  # Build efficient E-value lookup
-            
-            # Determine which column to use for query name
-            query_col = 'query_name' if 'query_name' in df.columns else 'query_accession'
-            
-            for _, row in df.iterrows():
-                sample_id = row['sample_id']
-                gene_id = row['sequence_id']
-                query_name = row.get(query_col, '')
-                full_evalue = row.get('full_evalue', '')
+            elif 'sequence_id' in headers and ('query_name' in headers or 'query_accession' in headers):
+                # Bacterial/viral format
+                query_col = 'query_name' if 'query_name' in headers else 'query_accession'
                 
-                # Store E-value for efficient lookup (if available)
-                if pd.notna(full_evalue):
-                    try:
-                        evalue = float(full_evalue)
-                        self.evalue_mapping[(sample_id, gene_id)] = evalue
-                    except (ValueError, TypeError):
+                for line_num, line in enumerate(f, start=2):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    parts = line.split('\t')
+                    if len(parts) < len(headers):
+                        logger.warning(f"Skipping malformed line {line_num}: insufficient columns")
+                        continue
+                    
+                    row = dict(zip(headers, parts))
+                    sample_id = row['sample_id']
+                    gene_id = row['sequence_id']
+                    query_name = row.get(query_col, '')
+                    full_evalue = row.get('full_evalue', '')
+                    
+                    # Store E-value for efficient lookup (if available)
+                    if full_evalue and full_evalue != '':
+                        try:
+                            evalue = float(full_evalue)
+                            self.evalue_mapping[(sample_id, gene_id)] = evalue
+                        except (ValueError, TypeError):
+                            self.evalue_mapping[(sample_id, gene_id)] = float('inf')
+                    else:
                         self.evalue_mapping[(sample_id, gene_id)] = float('inf')
-                else:
-                    self.evalue_mapping[(sample_id, gene_id)] = float('inf')
-                
-                if pd.notna(query_name) and query_name != '' and pd.notna(full_evalue):
-                    try:
-                        evalue = float(full_evalue)
-                        if evalue <= self.evalue_cutoff:
-                            full_gene_id = f"{sample_id}-----{gene_id}"
-                            gene_annotations[full_gene_id] = query_name
-                            annotated_genes.add(full_gene_id)
-                        else:
+                    
+                    if query_name and query_name != '' and full_evalue and full_evalue != '':
+                        try:
+                            evalue = float(full_evalue)
+                            if evalue <= self.evalue_cutoff:
+                                full_gene_id = f"{sample_id}-----{gene_id}"
+                                gene_annotations[full_gene_id] = query_name
+                                annotated_genes.add(full_gene_id)
+                            else:
+                                full_gene_id = f"{sample_id}-----{gene_id}"
+                                unannotated_genes.add(full_gene_id)
+                        except (ValueError, TypeError):
                             full_gene_id = f"{sample_id}-----{gene_id}"
                             unannotated_genes.add(full_gene_id)
-                    except (ValueError, TypeError):
+                    else:
                         full_gene_id = f"{sample_id}-----{gene_id}"
                         unannotated_genes.add(full_gene_id)
-                else:
-                    full_gene_id = f"{sample_id}-----{gene_id}"
-                    unannotated_genes.add(full_gene_id)
         
-        else:
-            logger.error("Unrecognized summary file format")
-            sys.exit(1)
+            else:
+                logger.error("Unrecognized summary file format")
+                sys.exit(1)
         
         logger.info(f"Found {len(annotated_genes)} annotated genes and {len(unannotated_genes)} unannotated genes")
         return gene_annotations, annotated_genes, unannotated_genes
@@ -330,10 +349,10 @@ class GeneCatalogBuilder:
                     singleton_annotations.add(annotation)
         
         with open(cluster_mapping, 'w') as cluster_f, open(singleton_mapping, 'w') as singleton_f, open(single_copy_mapping, 'w') as single_copy_f:
-            # Write headers
-            cluster_f.write("sampleid\tgene\tclusterid\tannotation\n")
-            singleton_f.write("sampleid\tgene\tclusterid\tannotation\n")
-            single_copy_f.write("sampleid\tgene\tclusterid\tannotation\n")
+            # Write headers - 3 columns only
+            cluster_f.write("sampleid\tgene\tcluster_rep\n")
+            singleton_f.write("sampleid\tgene\tcluster_rep\n")
+            single_copy_f.write("sampleid\tgene\tcluster_rep\n")
             
             # Process annotated genes
             for gene_id in annotated_genes:
@@ -342,21 +361,24 @@ class GeneCatalogBuilder:
                     annotation = gene_annotations[gene_id]
                     
                     if annotation in cluster_annotations:
-                        cluster_f.write(f"{sample_id}\t{gene}\t{annotation}\t{annotation}\n")
+                        # Non-singleton functional annotation - goes to clusters
+                        cluster_f.write(f"{sample_id}\t{gene}\t{annotation}\n")
                         if annotation in multi_sample_single_copy_annotations:
-                            single_copy_f.write(f"{sample_id}\t{gene}\t{annotation}\t{annotation}\n")
+                            single_copy_f.write(f"{sample_id}\t{gene}\t{annotation}\n")
                     elif annotation in singleton_annotations:
-                        singleton_f.write(f"{sample_id}\t{gene}\t{annotation}\t{annotation}\n")
+                        # Singleton functional annotation - goes to singletons
+                        singleton_f.write(f"{sample_id}\t{gene}\t{annotation}\n")
             
             # Process unannotated genes
             for gene_id in unannotated_genes:
                 sample_id, gene = gene_id.split('-----', 1)
                 if gene_id in gene_clusters:
-                    cluster_id = gene_clusters[gene_id]
-                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_id}\tunannotated\n")
+                    # Non-singleton sequence cluster - goes to clusters
+                    cluster_rep = gene_clusters[gene_id]
+                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_rep}\n")
                 else:
-                    # This is a singleton
-                    singleton_f.write(f"{sample_id}\t{gene}\t{sample_id}\tunannotated\n")
+                    # Singleton sequence - goes to singletons
+                    singleton_f.write(f"{sample_id}\t{gene}\t{gene_id}\n")
         
         logger.info(f"Created gene cluster mapping: {cluster_mapping}")
         logger.info(f"Created gene singleton mapping: {singleton_mapping}")
@@ -372,9 +394,9 @@ class GeneCatalogBuilder:
         singleton_mapping = self.output_dir / "gene_singletons.tsv"
         
         with open(cluster_mapping, 'w') as cluster_f, open(singleton_mapping, 'w') as singleton_f:
-            # Write headers
-            cluster_f.write("sampleid\tgene\tclusterid\n")
-            singleton_f.write("sampleid\tgene\tclusterid\n")
+            # Write headers - 3 columns only
+            cluster_f.write("sampleid\tgene\tcluster_rep\n")
+            singleton_f.write("sampleid\tgene\tcluster_rep\n")
             
             # Process all genes
             all_genes = set(self.gene_sequences.keys())
@@ -384,13 +406,13 @@ class GeneCatalogBuilder:
             # Write clustered genes
             for gene_id in clustered_genes:
                 sample_id, gene = gene_id.split('-----', 1)
-                cluster_id = gene_clusters[gene_id]
-                cluster_f.write(f"{sample_id}\t{gene}\t{cluster_id}\n")
+                cluster_rep = gene_clusters[gene_id]
+                cluster_f.write(f"{sample_id}\t{gene}\t{cluster_rep}\n")
             
             # Write singleton genes
             for gene_id in singleton_genes:
                 sample_id, gene = gene_id.split('-----', 1)
-                singleton_f.write(f"{sample_id}\t{gene}\t{sample_id}\n")
+                singleton_f.write(f"{sample_id}\t{gene}\t{gene_id}\n")
         
         logger.info(f"Created identity-only gene cluster mapping: {cluster_mapping}")
         logger.info(f"Created identity-only gene singleton mapping: {singleton_mapping}")
