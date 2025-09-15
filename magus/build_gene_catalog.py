@@ -85,9 +85,9 @@ class GeneCatalogBuilder:
                         continue
                     
                     parts = line.split('\t')
-                    if len(parts) < len(headers):
-                        logger.warning(f"Skipping malformed line {line_num}: insufficient columns")
-                        continue
+                    # Pad with empty strings if line has fewer columns than headers
+                    while len(parts) < len(headers):
+                        parts.append('')
                     
                     row = dict(zip(headers, parts))
                     sample_id = row['sample_id']
@@ -122,9 +122,9 @@ class GeneCatalogBuilder:
                         continue
                     
                     parts = line.split('\t')
-                    if len(parts) < len(headers):
-                        logger.warning(f"Skipping malformed line {line_num}: insufficient columns")
-                        continue
+                    # Pad with empty strings if line has fewer columns than headers
+                    while len(parts) < len(headers):
+                        parts.append('')
                     
                     row = dict(zip(headers, parts))
                     sample_id = row['sample_id']
