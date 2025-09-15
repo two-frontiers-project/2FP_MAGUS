@@ -96,7 +96,7 @@ class GeneCatalogBuilder:
                     query_name = row.get('query_name', '')
                     full_evalue = row.get('full_evalue', '')
                     
-                    if query_name and query_name != '' and full_evalue and full_evalue != '':
+                    if query_name and query_name.strip():
                         try:
                             evalue = float(full_evalue)
                             if evalue <= self.evalue_cutoff:
@@ -143,7 +143,7 @@ class GeneCatalogBuilder:
                     else:
                         self.evalue_mapping[(sample_id, gene_id)] = float('inf')
                     
-                    if query_name and query_name != '' and full_evalue and full_evalue != '':
+                    if query_name and query_name.strip():
                         try:
                             evalue = float(full_evalue)
                             if evalue <= self.evalue_cutoff:
