@@ -229,14 +229,16 @@ class GeneCatalogBuilder:
                 str(cluster_prefix),
                 temp_dir / "tmp",
                 '--min-seq-id', str(self.identity_threshold),
-                '--c', str(self.coverage_threshold),
+                '-c', str(self.coverage_threshold),
                 '--threads', str(self.threads)
             ]
             
             try:
-                subprocess.run(cmd, check=True, capture_output=True)
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             except subprocess.CalledProcessError as e:
                 logger.error(f"MMseqs2 clustering failed: {e}")
+                logger.error(f"MMseqs2 stderr: {e.stderr}")
+                logger.error(f"MMseqs2 stdout: {e.stdout}")
                 return {}
             
             # Parse cluster results
@@ -280,14 +282,16 @@ class GeneCatalogBuilder:
                 str(cluster_prefix),
                 temp_dir / "tmp",
                 '--min-seq-id', str(self.identity_threshold),
-                '--c', str(self.coverage_threshold),
+                '-c', str(self.coverage_threshold),
                 '--threads', str(self.threads)
             ]
             
             try:
-                subprocess.run(cmd, check=True, capture_output=True)
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             except subprocess.CalledProcessError as e:
                 logger.error(f"MMseqs2 clustering failed: {e}")
+                logger.error(f"MMseqs2 stderr: {e.stderr}")
+                logger.error(f"MMseqs2 stdout: {e.stdout}")
                 return {}
             
             # Parse cluster results
