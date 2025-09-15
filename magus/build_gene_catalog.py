@@ -219,7 +219,7 @@ class GeneCatalogBuilder:
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         
         # Run MMseqs2 easy-cluster - output goes to output dir
-        cluster_prefix = self.output_dir / "genecat"
+        cluster_prefix = self.output_dir / "mmseqs_genecat"
         cmd = [
             'mmseqs', 'easy-cluster',
             str(unannotated_fasta),
