@@ -169,44 +169,26 @@ class GeneCatalogBuilder:
     
     def _load_faa_sequences(self):
         """Load all .faa sequences from the specified directory."""
-        logger.info(f"Loading .faa sequences from: {self.faa_dir}")
-        
-        for faa_file in self.faa_dir.glob("*.faa"):
-            sample_id = faa_file.stem  # filename without .faa extension
-            
-            with open(faa_file, 'r') as f:
-                current_gene = None
-                current_sequence = []
-                
-                for line in f:
-                    if line.startswith('>'):
-                        if current_gene and current_sequence:
-                            # Store the full gene ID and sequence
-                            full_gene_id = f"{sample_id}-----{current_gene}"
-                            self.gene_sequences[full_gene_id] = ''.join(current_sequence)
-                        
-                        # Extract just the gene ID part (before any # or space)
-                        header = line.strip()[1:]  # Remove '>'
-                        current_gene = header.split('#')[0].split()[0]  # Take first part before # or space
-                        current_sequence = []
-                    else:
-                        current_sequence.append(line.strip())
-                
-                if current_gene and current_sequence:
-                    full_gene_id = f"{sample_id}-----{current_gene}"
-                    self.gene_sequences[full_gene_id] = ''.join(current_sequence)
-        
-        logger.info(f"Loaded {len(self.gene_sequences)} gene sequences")
+        pass
     
     def _create_unannotated_fasta(self, unannotated_genes):
-        """Create a fasta file containing only unannotated genes."""
+        """Create a fasta file containing only unannotated genes using bash."""
         unannotated_fasta = self.output_dir / "unannotated_genes.faa"
         
-        with open(unannotated_fasta, 'w') as out_f:
+        # Create a file with unannotated gene IDs
+        unannotated_ids_file = self.output_dir / "unannotated_ids.txt"
+        with open(unannotated_ids_file, 'w') as f:
             for gene_id in unannotated_genes:
-                if gene_id in self.gene_sequences:
-                    sequence = self.gene_sequences[gene_id]
-                    out_f.write(f">{gene_id}\n{sequence}\n")
+                f.write(f"{gene_id}\n")
+        
+        # Use bash to extract sequences from all FASTA files
+        with open(unannotated_fasta, 'w') as out_f:
+            for faa_file in self.faa_dir.glob("*.faa"):
+                # Extract sequences for unannotated genes from this file
+                cmd = f"grep -F -f {unannotated_ids_file} -A 1 {faa_file} | grep -v '^--$'"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout:
+                    out_f.write(result.stdout)
         
         return unannotated_fasta
     
@@ -221,8 +203,8 @@ class GeneCatalogBuilder:
         # Create tmp directory if it doesn't exist
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         
-        # Run MMseqs2 easy-cluster
-        cluster_prefix = self.tmp_dir / "cluster"
+        # Run MMseqs2 easy-cluster - output goes to output dir
+        cluster_prefix = self.output_dir / "genecat"
         cmd = [
             'mmseqs', 'easy-cluster',
             str(unannotated_fasta),
@@ -233,21 +215,20 @@ class GeneCatalogBuilder:
             '--threads', str(self.threads)
         ]
         
-        logger.info(f"Running MMseqs2 command: {' '.join(cmd)}")
-        logger.info(f"Input FASTA: {unannotated_fasta}")
-        logger.info(f"Output prefix: {cluster_prefix}")
-        logger.info(f"Temp dir: {self.tmp_dir}")
         
         try:
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
+            print(f"MMseqs2 ERROR: {e}")
+            print(f"MMseqs2 STDERR: {e.stderr}")
+            print(f"MMseqs2 STDOUT: {e.stdout}")
             logger.error(f"MMseqs2 clustering failed: {e}")
             logger.error(f"MMseqs2 stderr: {e.stderr}")
             logger.error(f"MMseqs2 stdout: {e.stdout}")
             return {}
         
-        # Parse cluster results
-        cluster_file = cluster_prefix.with_suffix('.cluster')
+        # Parse cluster results - MMseqs2 creates cluster_cluster.tsv
+        cluster_file = cluster_prefix.parent / f"{cluster_prefix.name}_cluster.tsv"
         if not cluster_file.exists():
             logger.error("MMseqs2 failed to generate cluster file")
             logger.error(f"Expected cluster file: {cluster_file}")
@@ -564,12 +545,18 @@ class GeneCatalogBuilder:
                     if sequence:
                         out_f.write(f">{cluster_id}\n{sequence}\n")
         
-        # Write singleton FASTA
-        with open(singleton_faa, 'w') as out_f:
+        # Write singleton FASTA using bash
+        singleton_ids_file = self.output_dir / "singleton_ids.txt"
+        with open(singleton_ids_file, 'w') as f:
             for gene_id in singleton_genes:
-                sequence = self.gene_sequences.get(gene_id, '')
-                if sequence:
-                    out_f.write(f">{gene_id}\n{sequence}\n")
+                f.write(f"{gene_id}\n")
+        
+        with open(singleton_faa, 'w') as out_f:
+            for faa_file in self.faa_dir.glob("*.faa"):
+                cmd = f"grep -F -f {singleton_ids_file} -A 1 {faa_file} | grep -v '^--$'"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout:
+                    out_f.write(result.stdout)
         
         logger.info(f"Created cluster FASTA: {cluster_faa}")
         logger.info(f"Created singleton FASTA: {singleton_faa}")
@@ -615,13 +602,9 @@ class GeneCatalogBuilder:
                 gene_annotations, annotated_genes, unannotated_genes, gene_clusters
             )
             
-            # Create non-redundant FASTA files
-            cluster_faa, singleton_faa = self._create_nonredundant_fastas(
-                gene_annotations, annotated_genes, unannotated_genes, gene_clusters
-            )
             
             logger.info("Gene catalog construction completed successfully")
-            return cluster_mapping, singleton_mapping, cluster_faa, singleton_faa
+            return cluster_mapping, singleton_mapping
 
 def main():
     parser = argparse.ArgumentParser(
