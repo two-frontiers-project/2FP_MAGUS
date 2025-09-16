@@ -178,8 +178,14 @@ class GeneCatalogBuilder:
                     for record in SeqIO.parse(faa_file, "fasta"):
                         # Extract sample_id from filename (remove .faa extension)
                         sample_id = faa_file.stem
-                        # Create the full gene ID as used in the summary file
-                        full_gene_id = f"{sample_id}-----{record.id}"
+                        # The record.id already contains the full format, extract just the basic gene ID
+                        if '-----' in record.id:
+                            # Format: sample_id-----gene_id-----additional_info
+                            full_gene_id = record.id.split('-----', 2)[0] + '-----' + record.id.split('-----', 2)[1]
+                        else:
+                            # Fallback for basic format
+                            basic_gene_id = record.id.split()[0] if ' ' in record.id else record.id
+                            full_gene_id = f"{sample_id}-----{basic_gene_id}"
                         
                         # Check if this gene is unannotated
                         if full_gene_id in unannotated_set:
