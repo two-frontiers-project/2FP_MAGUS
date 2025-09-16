@@ -273,7 +273,21 @@ class GeneCatalogBuilder:
                 if len(parts) >= 2:
                     representative = parts[0]
                     gene_id = parts[1]
-                    gene_clusters[gene_id] = representative
+                    
+                    # Extract the basic gene ID from the full format
+                    if '-----' in gene_id:
+                        # Format: sample_id-----gene_id-----additional_info
+                        basic_gene_id = gene_id.split('-----', 2)[0] + '-----' + gene_id.split('-----', 2)[1]
+                    else:
+                        basic_gene_id = gene_id
+                    
+                    # Extract basic representative ID too
+                    if '-----' in representative:
+                        basic_representative = representative.split('-----', 2)[0] + '-----' + representative.split('-----', 2)[1]
+                    else:
+                        basic_representative = representative
+                    
+                    gene_clusters[basic_gene_id] = basic_representative
         
         logger.info(f"Created {len(set(gene_clusters.values()))} clusters from unannotated genes")
         return gene_clusters
@@ -345,7 +359,12 @@ class GeneCatalogBuilder:
                 if gene_id in gene_clusters:
                     # Non-singleton sequence cluster - goes to clusters
                     cluster_rep = gene_clusters[gene_id]
-                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_rep}\n")
+                    # Extract just the basic gene ID from the cluster representative
+                    if '-----' in cluster_rep:
+                        cluster_rep_basic = cluster_rep.split('-----', 2)[1]  # Get the middle part
+                    else:
+                        cluster_rep_basic = cluster_rep
+                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_rep_basic}\n")
                 else:
                     # Singleton sequence - goes to singletons
                     singleton_f.write(f"{sample_id}\t{gene}\t{gene_id}\n")
