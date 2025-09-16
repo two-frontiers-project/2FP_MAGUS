@@ -171,8 +171,19 @@ class GeneCatalogBuilder:
         # Create a set for faster lookup
         unannotated_set = set(unannotated_genes)
         
+        # Get unique sample IDs from the summary file
+        sample_ids = set()
+        for gene_id in unannotated_genes:
+            sample_id = gene_id.split('-----')[0]
+            sample_ids.add(sample_id)
+        
         with open(unannotated_fasta, 'w') as out_f:
-            for faa_file in self.faa_dir.glob("*.faa"):
+            for sample_id in sample_ids:
+                faa_file = self.faa_dir / f"{sample_id}.faa"
+                if not faa_file.exists():
+                    logger.warning(f"FASTA file not found for sample {sample_id}: {faa_file}")
+                    continue
+                    
                 try:
                     # Parse FASTA file with Biopython
                     for record in SeqIO.parse(faa_file, "fasta"):
@@ -362,8 +373,13 @@ class GeneCatalogBuilder:
                 
                 try:
                     for record in SeqIO.parse(faa_file, "fasta"):
-                        gene_id = record.id
-                        full_gene_id = f"{sample_id}-----{gene_id}"
+                        # Extract just the basic gene ID from the full format
+                        if '-----' in record.id:
+                            gene_id = record.id.split('-----', 2)[1]  # Get the middle part
+                            full_gene_id = record.id.split('-----', 2)[0] + '-----' + record.id.split('-----', 2)[1]
+                        else:
+                            gene_id = record.id
+                            full_gene_id = f"{sample_id}-----{gene_id}"
                         
                         if full_gene_id in gene_clusters:
                             # Non-singleton sequence cluster
