@@ -161,7 +161,12 @@ def main():
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
     parser.add_argument('--coasm_todo', type=str, required=True, help='Path to output of cluster_contigs, the coasm_todo file')
     parser.add_argument('--outdir', type=str, default="coasm", help='Output directory for co-assembly (default: coasm)')
-    parser.add_argument('--tmp_dir', type=str,default = 'tmp/coasm', help='Temporary directory (default: ~/partmp)')
+    parser.add_argument(
+        '--tmpdir',
+        type=str,
+        default='tmp/coasm',
+        help='Temporary directory (default: tmp/coasm)'
+    )
     parser.add_argument('--threads', type=int, default=48, help='Number of threads for tools (default: 48)')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
 
@@ -170,7 +175,7 @@ def main():
     coassembly = CoAssembly(
         config=args.config,
         outdir=args.outdir,
-        tmpdir=args.tmp_dir,
+        tmpdir=args.tmpdir,
         coasm_todo=args.coasm_todo,
         threads=args.threads,
         test_mode=args.test_mode

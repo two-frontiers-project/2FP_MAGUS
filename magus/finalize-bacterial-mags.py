@@ -4,13 +4,13 @@ import argparse
 import pandas as pd
 
 class FinalMAGMerge:
-    def __init__(self, tmp_dir,singleassembly_mag_dir, coasm_mag_dir, outdir, threads=28):
+    def __init__(self, tmpdir,singleassembly_mag_dir, coasm_mag_dir, outdir, threads=28):
         self.original_mag_dir = singleassembly_mag_dir
         self.new_coasm_dir = coasm_mag_dir
         self.outdir = outdir
         self.merged_output = outdir + '/magus_consolidated_bac_arc_mags.fasta'
         self.threads = threads
-        self.tmpdir = tmp_dir
+        self.tmpdir = tmpdir
         os.makedirs(self.tmpdir, exist_ok=True)
         os.makedirs(self.outdir, exist_ok=True)
 
@@ -93,7 +93,7 @@ def main():
     parser.add_argument('--coasm_mag_dir', type=str, default="coasm/mags", help='New co-assembled MAGs directory (default: coasm/mags)')
     parser.add_argument('--outdir', type=str, default="magus_output/magus_bacteria_archaea", help='Merged output file (default: magus_output/magus_bacteria_archaea/)')
     parser.add_argument('--threads', type=int, default=28, help='Number of threads (default: 28)')
-    parser.add_argument('--tmp_dir', default = 'tmp/finalize-bacterial-mags',type=str, help='Temporary directory (default: tmp/finalize-bacterial-mags)')
+    parser.add_argument('--tmpdir', default = 'tmp/finalize-bacterial-mags',type=str, help='Temporary directory (default: tmp/finalize-bacterial-mags)')
 
     args = parser.parse_args()
 
@@ -101,7 +101,7 @@ def main():
         singleassembly_mag_dir=args.singleassembly_mag_dir,
         coasm_mag_dir=args.coasm_mag_dir,
         outdir=args.outdir,
-        tmp_dir=args.tmp_dir,
+        tmpdir=args.tmpdir,
         threads=args.threads
     )
     final_merge.run()

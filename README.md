@@ -72,86 +72,154 @@ This is a **wildly** memory intensive piece of software. It is not meant to be r
 
 ## Commands and arguments
 
-The sequence of commands to run the full pipeline is as follows:
+MAGUS exposes the following sub-commands through `magus <command>`:
 
-| Command       | Description                                                                                                  |
-|----------------|--------------------------------------------------------------------------------------------------------------|
-| magus qc |   Read quality control and compression    |
-| magus single-assembly |    Assemble samples one at a time        |
-| magus single-binning |  Bin genomes with MetaBAT2  and run CheckM2  |
-| magus cluster-contigs |   Identify samples for potential co-assembly  |
-| magus coassembly |  Co-assemble samples|
-| magus coassembly-binning |    Run MetaBAT2 and CheckM2 on coassembled bins    |
-| magus finalize-bacterial-mags |  Filter redundant bacterial/archaeal MAGS identified in both single and coassembly binning.  |
-| magus find-viruses | Identify viral contigs with CheckV |
-| magus find-euks | Identify putative eukaryotic bins with EukRep and EukCC   |
+| Command | Description |
+| --- | --- |
+| `magus qc` | Run read QC and compression with `shi7_trimmer` and `minigzip`. |
+| `magus assemble-hosts` | Generate host assemblies and clustering metadata used to mask dominant genomes prior to metagenomic processing. |
+| `magus subsample-reads` | Down-sample reads with `seqtk` and emit an updated config file. |
+| `magus filter-reads` | Remove reads matching host references using xtree `.perq` output. |
+| `magus taxonomy` | Run xtree on raw reads to generate coverage, taxonomy, and abundance summaries. |
+| `magus single-assembly` | Assemble each sample independently with MEGAHIT. |
+| `magus binning` | Bin single-assembly contigs with MetaBAT2 and assess quality with CheckM2. |
+| `magus cluster-contigs` | Collect filtered contigs, perform clustering, and build the co-assembly task list. |
+| `magus coassembly` | Execute co-assemblies for grouped samples. |
+| `magus coassembly-binning` | Bin co-assembly results and evaluate bins with CheckM2. |
+| `magus finalize-bacterial-mags` | Merge redundant bacterial/archaeal MAGs across single and co-assemblies. |
+| `magus find-viruses` | Merge contigs, run CheckV, and dereplicate viral genomes. |
+| `magus find-euks` | Identify putative eukaryotic genomes using EukRep and EukCC. |
+| `magus dereplicate` | Dereplicate MAGs with lingenome and canolax5. |
+| `magus call-orfs` | Call and annotate open reading frames across MAG collections. |
+| `magus build-gene-catalog` | Build pan-genome gene catalogs from ORF predictions. |
+| `magus filter-mags` | Filter MAGs using xtree alignment statistics. |
+| `magus build-tree` | Construct phylogenetic trees from concatenated single-copy genes. |
 
-In the near future we'll release our gene catalog modules that enable functional comparison of various genomes and construction of phylogenetic trees.
+### Common flag conventions
 
-## Command arguments
+Most MAGUS entry points share a small vocabulary of option names so you can rely on the same spelling regardless of the workflow you are invoking:
 
-| Command                  | Argument                   | Description                                                    |
-|--------------------------|----------------------------|----------------------------------------------------------------|
-| **qc**      | `--config`                | Location of the configuration file containing the raw reads                            |
-|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
-|                          | `--threads`               | Number of threads assigned per job                             |
-| **single-assembly**      | `--config`                | Location of the configuration file containing the qc'd reads                            |
-|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
-|                          | `--threads`               | Number of threads assigned per job                             |
-| **single-binning**       | `--config`                | Location of the configuration file containing the qc'd reads                             |
-|                          | `--threads`               | Number of threads assigned per job                             |
-|                          | `--asmdir`                | Directory for the assembly output                              |
-|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
-|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
-|                          | `--test_mode`             | Enables test mode for debugging                                |
-|                          | `--completeness`          | Custom completeness threshold for bins                         |
-|                          | `--contamination`         | Custom contamination threshold for bins                        |
-|                          | `--low-quality`           | Include bins of low quality or better (not recommended)        |
-|                          | `--medium-quality`        | Include bins of medium quality or better                       |
-|                          | `--high-quality`          | Include only high quality bins                                 |
-| **cluster-contigs**      | `--config`                | Location of the configuration file containing the qc'd reads                              |
-|                          | `--threads`               | Number of threads assigned per job                             |
-|                          | `--contig_dir`            | Directory containing contigs for clustering                    |
-|                          | `--combined_output`       | File to store combined contig output                           |
-|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
-| **coassembly**           | `--config`                | Location of the configuration file containing the qc'd reads                              |
-|                          | `--coasm_todo`            | To-do list or specification file for co-assembly tasks         |
-|                          | `--outdir`                | Output directory for co-assembly results                       |
-|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
-|                          | `--threads`               | Number of threads assigned per job                             |
-|                          | `--test_mode`             | Enables test mode for debugging                                |
-| **coassembly-binning**   | `--config`                | Location of the configuration file containing the qc'd reads                              |
-|                          | `--coasm_outdir`          | Directory to store co-assembly output                          |
-|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
-|                          | `--threads`               | Number of threads assigned per job                             |
-|                          | `--checkm_db`             | Path to CheckM database for quality assessment                 |
-|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
-|                          | `--test_mode`             | Enables test mode for debugging                                |
-| **find-viruses**         | `--asm_dir`               | Directory for single-assembly files                            |
-|                          | `--coasm_dir`             | Directory for co-assembly files                                |
-|                          | `--combined_contig_file`  | File containing combined contigs for analysis                  |
-|                          | `--filtered_contig_file`  | File containing filtered contigs based on length and quality   |
-|                          | `--min_length`            | Minimum length cutoff for viral contigs                        |
-|                          | `--max_length`            | Maximum length cutoff for viral contigs                        |
-|                          | `--threads`               | Number of threads assigned per job                             |
-|                          | `--quality`               | Quality threshold for viral identification                     |
-|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
-|                          | `--dblocs`                | Database locations for viral identification                    |
-| **find-euks**            | `--coasm_dir`             | Directory for co-assembly files                                |
-|                          | `--asm_dir`               | Directory for single-assembly files                            |
-|                          | `--size_threshold`        | Size threshold for eukaryotic genome detection                 |
-|                          | `--euk_binning_outputdir` | Output directory for eukaryotic binning results                |
-|                          | `--dblocs`                | Database locations for eukaryotic genome identification        |
-|                          | `--max_workers`           | Number of parallel jobs to run simultaneously                  |
-|                          | `--threads`               | Number of threads assigned per job                             |
-|                          | `--skip_eukrep`           | Option to skip EukRep-based filtering                          |
-|                          | `--eukrep_env`            | Conda environment for running EukRep                           |
-|                          | `--skip_eukcc`            | Option to skip EukCC-based filtering                           |
-| **finalize-bacterial-mags** | `--singleassembly_mag_dir` | Directory for single-assembly MAGs                          |
-|                          | `--coasm_mag_dir`         | Directory for co-assembly MAGs                                 |
-|                          | `--outdir`                | Output directory for finalized bacterial MAGs                  |
-|                          | `--threads`               | Number of threads assigned per job                             |
-|                          | `--tmp_dir`               | Temporary directory for intermediate files                     |
+- `--config`: TSV mapping sample identifiers to input files for read-based steps (`qc`, `subsample-reads`, `filter-reads`, `taxonomy`, `single-assembly`, `binning`, `cluster-contigs`, `coassembly`, `coassembly-binning`, `find-viruses`).
+- `--threads`: CPU threads assigned to external tools (for example MEGAHIT, MetaBAT2, CheckM2, CheckV, MMseqs2, EukRep/EukCC).
+- `--max_workers`: Process-level parallelism for orchestration layers that fan out per-sample work (`qc`, `subsample-reads`, `filter-reads`, `taxonomy`, `single-assembly`, `binning`, `coassembly-binning`, `call-orfs`, `find-euks`).
+- `--tmpdir`: Scratch directory for intermediates produced by heavier jobs (assembly, binning, dereplication, virus detection, etc.).
+- `--checkm_db`: Optional override used by binning commands to point CheckM2 at a non-default database.
+
+### Command arguments
+
+Key options for each command are summarised below (see `magus <command> --help` for complete details):
+
+- **qc** (`magus qc`)
+  - `--config`: TSV describing raw reads.
+  - `--slurm_config`: Optional Slurm settings for batch execution.
+  - `--max_workers`: Parallel samples to process at once.
+  - `--mode`: `local` or `slurm` execution mode.
+- **assemble-hosts** (`magus assemble-hosts`)
+  - `--config`: TSV of reads to subsample for host assembly.
+  - `--threads` / `--max_workers`: Compute resources for preprocessing.
+  - `--ksize`: Override the number of host clusters to recover.
+  - `--output_config`: Destination for the host-filtering config.
+  - `--tmpdir`: Working directory for intermediate host files.
+- **subsample-reads** (`magus subsample-reads`)
+  - `--config`: Input sequencing config.
+  - `--outdir`: Directory for subsampled reads.
+  - `--out_config`: Path for the updated config file.
+  - `--depth`: Target read count per sample.
+  - `--threads` / `--max_workers`: Parallelism controls.
+- **filter-reads** (`magus filter-reads`)
+  - `--config`: Sequencing config aligning filenames to read pairs.
+  - `--perq_dir`: Directory containing xtree `.perq` files.
+  - `--output_dir`: Where filtered reads are written.
+  - `--min_kmers`: Minimum k-mer evidence retained per read.
+  - `--threads` / `--max_workers`: Filtering parallelism.
+- **taxonomy** (`magus taxonomy`)
+  - `--config`: TSV mapping sample IDs to read locations.
+  - `--db`: xtree database to query.
+  - `--output`: Output directory for alignments and summaries.
+  - `--threads` / `--max_workers`: Worker and thread counts.
+  - `--coverage-cutoff` and `--skip-*` flags: Control downstream filtering and optional output files.
+- **single-assembly** (`magus single-assembly`)
+  - `--config`: QC'd read configuration.
+  - `--threads`: Threads passed to MEGAHIT.
+  - `--max_workers`: Number of samples assembled in parallel.
+  - `--mode` / `--slurm_config`: Toggle and configure Slurm execution.
+- **binning** (`magus binning`)
+  - `--config`: Assembly config file (expects `filename`, `pe1`, `pe2`).
+  - `--asmdir`: Location of assemblies to bin.
+  - `--tmpdir`: Scratch directory for binning intermediates.
+  - `--threads` / `--max_workers`: Resources for MetaBAT2 and CheckM2.
+  - `--checkm_db`: Optional CheckM database override.
+  - Quality thresholds (`--completeness`, `--contamination`, `--low-quality`, `--medium-quality`, `--high-quality`) and `--restart` flags to resume stages.
+- **cluster-contigs** (`magus cluster-contigs`)
+  - `--config`: Same config used for single assemblies.
+  - `--asmdir` / `--magdir`: Source assemblies and MAGs.
+  - `--contig_dir` / `--combined_output`: Output paths for filtered contigs.
+  - `--threads`: CPU threads for clustering utilities.
+  - `--tmpdir`: Workspace for clustering output.
+- **coassembly** (`magus coassembly`)
+  - `--config`: Sequencing config.
+  - `--coasm_todo`: Task list generated by `cluster-contigs`.
+  - `--outdir`: Destination for co-assembly results.
+  - `--tmpdir`: Working directory for co-assembly intermediates.
+  - `--threads`: Threads allocated per co-assembly.
+  - `--test_mode`: Relax filters and generate smaller test runs.
+- **coassembly-binning** (`magus coassembly-binning`)
+  - `--config`: Sequencing config.
+  - `--coasm_outdir`: Root of co-assembly outputs to process.
+  - `--tmpdir`: Scratch directory for binning.
+  - `--threads` / `--max_workers`: Resource controls.
+  - `--checkm_db`: Optional CheckM database override.
+  - `--test_mode` and `--restart`: Control relaxed thresholds and resume behaviour.
+- **finalize-bacterial-mags** (`magus finalize-bacterial-mags`)
+  - `--singleassembly_mag_dir` / `--coasm_mag_dir`: Input MAG locations.
+  - `--outdir`: Final MAG export directory.
+  - `--threads`: CPU threads for dereplication.
+  - `--tmpdir`: Temporary directory for merging work.
+- **find-viruses** (`magus find-viruses`)
+  - `--asm_paths` *or* `--config`: Supply assemblies to scan.
+  - `--checkv_db`: CheckV database location.
+  - `--combined_contig_file` / `--filtered_contig_file`: Filenames for merged contigs.
+  - `--quality`: CheckV quality tiers to retain.
+  - `--tmpdir`: Scratch directory for CheckV runs and dereplication.
+  - `--restart cleanup`: Resume downstream processing after CheckV completes.
+- **find-euks** (`magus find-euks`)
+  - `--bin_dirs`: Pipe-delimited directories to search for bins.
+  - `--wildcards`: Patterns (also pipe-delimited) to match candidate bins.
+  - `--size_threshold`: Minimum bin size included (bp).
+  - `--euk_binning_outputdir`: Output directory for eukaryotic bins.
+  - `--dblocs`: Mapping file for database paths (expects `eukccdb`).
+  - `--max_workers` / `--threads`: Concurrency settings.
+  - `--skip_eukrep`, `--skip_eukcc`, `--eukrep_env`, `--checkm2_file`: Control filtering stages.
+- **dereplicate** (`magus dereplicate`)
+  - `--mag_dir`: Glob pointing to MAGs to dereplicate.
+  - `--tmpdir`: Working directory for lingenome and canolax intermediates.
+  - `--threads`: Threads for canolax5.
+  - `--extension`, `--wildcard`, `--output`, `--kmer_size`, `--max_genome_size`: Options controlling dereplication scope and behaviour.
+- **call-orfs** (`magus call-orfs`)
+  - Supports configs or globs via `--config` or `--mag_dir`/`--wildcard`.
+  - Control domains, annotation targets, and runtime via `--domain`, `--output_directory`, `--max_workers`, `--threads`, `--extension`, and `--force`.
+  - Annotation flags include `--hmmfile`, `--annotation-fullseq-evalue`, `--annotation-domain-evalue`, `--suffix`, `--eukdb`, `--cleanup`, and `--restart`.
+- **build-gene-catalog** (`magus build-gene-catalog`)
+  - `--summary-file`: ORF summary table.
+  - `--faa-dir`: Directory of amino-acid FASTA files.
+  - `--output-dir`: Catalog output root.
+  - `--threads`: Threads for MMseqs2.
+  - Filtering knobs: `--evalue-cutoff`, `--identity-threshold`, `--coverage-threshold`, `--identity-only`, `--multi-sample-single-copy`.
+  - `--tmpdir`: Working directory handed to MMseqs2.
+- **filter-mags** (`magus filter-mags`)
+  - `--output-dir`: Filtered MAG destination.
+  - `--perq-dir`: Directory housing xtree `.perq` files.
+  - `--mag-dir`: MAG directory to filter.
+  - `--kmer-threshold`: Evidence cutoff for retaining contigs.
+- **build-tree** (`magus build-tree`)
+  - Positional `fasta_dir`: Directory of per-genome alignments.
+  - `--gene-list`: Single-copy gene definitions.
+  - `--orf-data`: ORF summary file.
+  - `--coverage-threshold`, `--evalue-cutoff`, `--trimal-cutoff`: Filtering parameters for alignments.
+  - `--iqtree`: Toggle IQ-TREE instead of FastTree.
+  - `--output-dir`: Output directory for trees.
+  - `--genome-list`: Optional list of genomes to include.
+  - `--threads`: Parallelism for tree building.
 
 ## Conda and python dependencies 
 

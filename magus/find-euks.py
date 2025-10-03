@@ -351,12 +351,43 @@ class EukRepRunner:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--bin_dirs", type=str, required=True, help="Pipe-separated list of directories containing bins, quoted")
-    parser.add_argument("--wildcards", type=str, default = "", required=False, help="Pipe-separated list of patterns for bin files, quoted. Use 'bins' to search in subdirectories named 'bins', or file patterns like '.fa|.fasta'")
-    parser.add_argument("--size_threshold", type=int, default=10000000)
-    parser.add_argument("--euk_binning_outputdir", type=str, default="magus_output/magus_euks")
-    parser.add_argument("--dblocs", type=str, required=True)
-    parser.add_argument("--max_workers", type=int, default=1)
-    parser.add_argument("--threads", type=int, default=8)
+    parser.add_argument(
+        "--wildcards",
+        type=str,
+        default="",
+        required=False,
+        help="Pipe-separated list of patterns for bin files, quoted. Use 'bins' to search in subdirectories named 'bins', or file patterns like '.fa|.fasta'"
+    )
+    parser.add_argument(
+        "--size_threshold",
+        type=int,
+        default=10000000,
+        help="Minimum bin size to include (default: 10000000 bp)"
+    )
+    parser.add_argument(
+        "--euk_binning_outputdir",
+        type=str,
+        default="magus_output/magus_euks",
+        help="Directory to write EukRep/EukCC outputs (default: magus_output/magus_euks)"
+    )
+    parser.add_argument(
+        "--dblocs",
+        type=str,
+        required=True,
+        help="Path to database locations file (expects eukccdb entry)"
+    )
+    parser.add_argument(
+        "--max_workers",
+        type=int,
+        default=1,
+        help="Maximum number of parallel workers (default: 1)"
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=8,
+        help="Threads allocated to EukRep and EukCC (default: 8)"
+    )
     parser.add_argument("--skip_eukrep", action='store_true', help="Skip EukRep step")
     parser.add_argument("--skip_eukcc", action='store_true', help="Skip EukCC step")
     parser.add_argument("--eukrep_env", type=str, default=None)
