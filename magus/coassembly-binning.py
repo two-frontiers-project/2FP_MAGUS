@@ -155,7 +155,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run co-assembly and binning pipeline.")
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
     parser.add_argument('--coasm_outdir', type=str, default="coasm", help='Output directory from previous step (default: coasm)')
-    parser.add_argument('--tmp_dir', default = 'tmp/coassembly-binning',type=str, help='Temporary directory (default: tmp/coassembly-binning)')
+    parser.add_argument('--tmpdir', default = 'tmp/coassembly-binning',type=str, help='Temporary directory (default: tmp/coassembly-binning)')
     parser.add_argument('--threads', type=int, default=28, help='Number of threads (default: 48)')
     parser.add_argument('--checkm_db', type=str, help='Path to a custom CheckM database')
     parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
@@ -168,7 +168,7 @@ def main():
     binning = CoAssemblyBinning(
         config=args.config,
         outdir=args.coasm_outdir,
-        tmpdir=args.tmp_dir,
+        tmpdir=args.tmpdir,
         threads=args.threads,
         checkm_db=args.checkm_db,
         max_workers=args.max_workers,

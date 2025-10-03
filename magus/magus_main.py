@@ -19,7 +19,7 @@ def main():
         'taxonomy': 'taxonomy.py',
         'cluster-contigs': 'cluster-contigs.py',
         'single-assembly': 'single-assembly.py',
-        'single-binning': 'single-binning.py',
+        'binning': 'single-binning.py',
         'cluster-contigs': 'cluster-contigs.py',
         'coassembly': 'coassembly.py',
         'coassembly-binning': 'coassembly-binning.py',

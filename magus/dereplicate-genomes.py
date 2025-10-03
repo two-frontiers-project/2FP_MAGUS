@@ -8,9 +8,9 @@ from pathlib import Path
 import glob
 
 class Dereplicator:
-	def __init__(self, mag_glob, tmp, threads, extension, wildcard, output, kmer_size, max_genome_size):
+	def __init__(self, mag_glob, tmpdir, threads, extension, wildcard, output, kmer_size, max_genome_size):
 		self.input_paths = [Path(p).resolve() for p in glob.glob(mag_glob, recursive=True)]
-		self.tmp = Path(tmp)
+		self.tmp = Path(tmpdir)
 		self.threads = threads
 		self.extension = extension
 		self.wildcard = wildcard
@@ -189,7 +189,7 @@ class Dereplicator:
 def main():
 	parser = argparse.ArgumentParser(description="Dereplicate MAGs using lingenome and canolax5.")
 	parser.add_argument("-m", "--mag_dir", type=str, required=True, help="Path or glob to MAGs (e.g. asm/*/bins).")
-	parser.add_argument("--tmp", type=str, default="tmp", help="Temporary working directory.")
+	parser.add_argument("--tmpdir", type=str, default="tmp", help="Temporary working directory.")
 	parser.add_argument("--threads", type=int, default=4, help="Number of threads for canolax5.")
 	parser.add_argument("--extension", type=str, default="fa", help="File extension of MAGs (default: fa).")
 	parser.add_argument("-w", "--wildcard", type=str, default="", help="Pattern to match anywhere in MAG path.")
@@ -201,7 +201,7 @@ def main():
 
 	runner = Dereplicator(
 		args.mag_dir,
-		args.tmp,
+		args.tmpdir,
 		args.threads,
 		args.extension,
 		args.wildcard,

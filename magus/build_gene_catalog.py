@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class GeneCatalogBuilder:
     def __init__(self, summary_file, faa_dir, output_dir, threads=1, 
                  evalue_cutoff=0.01, identity_threshold=0.3, coverage_threshold=0.8,
-                 identity_only=False, multi_sample_single_copy=False, tmp_dir='./tmp/'):
+                 identity_only=False, multi_sample_single_copy=False, tmpdir='./tmp/'):
         self.summary_file = Path(summary_file) if summary_file else None
         self.faa_dir = Path(faa_dir)
         self.output_dir = Path(output_dir)
@@ -35,7 +35,7 @@ class GeneCatalogBuilder:
         self.coverage_threshold = coverage_threshold
         self.identity_only = identity_only
         self.multi_sample_single_copy = multi_sample_single_copy
-        self.tmp_dir = Path(tmp_dir)
+        self.tmp_dir = Path(tmpdir)
         
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -513,7 +513,7 @@ def main():
     )
     
     parser.add_argument(
-        '--tmp-dir',
+        '--tmpdir',
         default='./tmp/',
         help='Temporary directory for MMseqs2 (default: ./tmp/)'
     )
@@ -535,7 +535,7 @@ def main():
         coverage_threshold=args.coverage_threshold,
         identity_only=args.identity_only,
         multi_sample_single_copy=args.multi_sample_single_copy,
-        tmp_dir=args.tmp_dir
+        tmpdir=args.tmpdir
     )
     
     try:

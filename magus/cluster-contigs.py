@@ -4,10 +4,10 @@ import argparse
 import pandas as pd
 
 class ContigClustering:
-	def __init__(self, config, asmdir, magdir,tmp_dir,contig_dir="contigs", combined_output="Contigs.fasta", threads=28):
+	def __init__(self, config, asmdir, magdir,tmpdir,contig_dir="contigs", combined_output="Contigs.fasta", threads=28):
 		self.config = self.load_config(config)
 		self.threads = threads
-		self.tmp_dir = tmp_dir
+		self.tmp_dir = tmpdir
 		self.asmdir = asmdir
 		self.magdir = magdir
 		self.contig_dir = self.tmp_dir + '/' + contig_dir
@@ -136,7 +136,7 @@ def main():
 	parser.add_argument('--combined_output', type=str, default="Contigs.fasta", help='Output file for combined contigs (default: Contigs.fasta)')
 	parser.add_argument('--asmdir', type=str, default='asm/', help='Directory with assemblies. Default is ./asm')
 	parser.add_argument('--magdir', type=str, default='asm/mags/', help='Directory with single assembled MAGs. Default is ./asm/mags')
-	parser.add_argument('--tmp_dir', type=str, default='tmp/cluster-contigs', help='Temp directory. Default tmp/cluster-contigs.')
+	parser.add_argument('--tmpdir', type=str, default='tmp/cluster-contigs', help='Temp directory. Default tmp/cluster-contigs.')
 
 	# Parse arguments
 	args = parser.parse_args()
@@ -149,7 +149,7 @@ def main():
 		magdir = args.magdir,
 		combined_output=args.combined_output,
 		threads=args.threads,
-		tmp_dir=args.tmp_dir
+		tmpdir=args.tmpdir
 	)
 	clustering.run()
 

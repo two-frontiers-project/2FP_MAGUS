@@ -7,21 +7,21 @@ from pathlib import Path
 import csv
 
 class CheckVRunner:
-    def __init__(self, asm_paths, checkv_db, combined_contig_file, filtered_contig_file, min_length, max_length, threads, quality, tmp_dir="tmp/run_checkv", config_file=None):
+    def __init__(self, asm_paths, checkv_db, combined_contig_file, filtered_contig_file, min_length, max_length, threads, quality, tmpdir="tmp/run_checkv", config_file=None):
         self.asm_paths = asm_paths
-        self.combined_contig_file = os.path.join(tmp_dir, combined_contig_file)
-        self.filtered_contig_file = os.path.join(tmp_dir, filtered_contig_file)
+        self.combined_contig_file = os.path.join(tmpdir, combined_contig_file)
+        self.filtered_contig_file = os.path.join(tmpdir, filtered_contig_file)
         self.min_length = min_length
         self.max_length = max_length
         self.threads = threads
-        self.tmp_dir = tmp_dir
+        self.tmp_dir = tmpdir
         self.quality = set(quality)
         self.virus_dir = os.path.join("magus_viruses")
         self.checkv_db = checkv_db
         self.config_file = config_file
         self.contig_files = []
         os.makedirs(self.virus_dir, exist_ok=True)
-        os.makedirs(tmp_dir, exist_ok=True)
+        os.makedirs(tmpdir, exist_ok=True)
 
     def find_contig_files_from_config(self):
         """Find contig files from a config file similar to call_orfs.py."""
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_length", type=int, default=1000000000, help="Maximum length of contigs to include")
     parser.add_argument("--threads", type=int, default=28, help="Number of threads for CheckV")
     parser.add_argument("--quality", type=str, default="CHM", help="Viral contig levels to include (C [Complete], H [High], M [Medium], L [Low])")
-    parser.add_argument("--tmp_dir", type=str, default="tmp/run_checkv", help="Temporary directory for storing intermediate files")
+    parser.add_argument("--tmpdir", type=str, default="tmp/run_checkv", help="Temporary directory for storing intermediate files")
     parser.add_argument("--checkv_db", type=str, required=True, help="Path to the CheckV database directory")
     parser.add_argument(
         "--restart",
@@ -276,7 +276,7 @@ if __name__ == "__main__":
         max_length=args.max_length,
         threads=args.threads,
         quality=args.quality,
-        tmp_dir=args.tmp_dir,
+        tmpdir=args.tmpdir,
         config_file=config_file
     )
     # If restarting from cleanup, validate CheckV outputs exist and resume post-CheckV steps
