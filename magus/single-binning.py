@@ -6,13 +6,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 
 class Binning:
-    def __init__(self, config, tmp_dir, asmdir, magdir="mags", threads=14, checkm_db=None,
+    def __init__(self, config, tmpdir, asmdir, magdir="mags", threads=14, checkm_db=None,
                  test_mode=False, max_workers=4, completeness=None,
                  contamination=None, quality=None, restart=None):
         self.config = self.load_config(config)
         self.asmdir = asmdir
         self.magdir = asmdir+"/"+magdir
-        self.tmpdir = tmp_dir
+        self.tmpdir = tmpdir
         self.threads = threads
         self.checkm_db = checkm_db  # Custom CheckM database path
         self.test_mode = test_mode  # Flag for test mode
@@ -324,7 +324,7 @@ def main():
     parser.add_argument('--checkm_db', type=str, default=None, help='Path to custom CheckM database')
     parser.add_argument('--asmdir', type=str, default="asm", help='Output directory for assembly (default: asm)')
     parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
-    parser.add_argument('--tmp_dir', type=str, default='tmp/single-binning', help='Temp directory. Default tmp/single-binning.')
+    parser.add_argument('--tmpdir', type=str, default='tmp/binning', help='Temp directory. Default tmp/binning.')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
     parser.add_argument('--completeness', type=float, default=None, help='Completeness threshold for filtering bins')
     parser.add_argument('--contamination', type=float, default=None, help='Contamination threshold for filtering bins')
@@ -352,7 +352,7 @@ def main():
         threads=args.threads,
         checkm_db=args.checkm_db,
         asmdir=args.asmdir,
-        tmp_dir=args.tmp_dir,
+        tmpdir=args.tmpdir,
         max_workers=args.max_workers,
         test_mode=args.test_mode,
         completeness=args.completeness,
