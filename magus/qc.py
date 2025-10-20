@@ -5,13 +5,14 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
 class QualityControl:
-    def __init__(self, config, qc_dir="qc", max_workers=1, mode="local", slurm_config=None):
+    def __init__(self, config, qc_dir="qc", max_workers=1, mode="local", slurm_config=None, seqtype="short"):
         self.config_path = config
         self.config = self.load_config(config)
         self.qc_dir = qc_dir
         self.max_workers = max_workers
         self.mode = mode
         self.slurm_config = self.load_slurm_config(slurm_config) if slurm_config else None
+        self.seqtype = seqtype
         self.qc_results = []
         os.makedirs(self.qc_dir, exist_ok=True)
 
@@ -27,6 +28,14 @@ class QualityControl:
         r1 = sample['pe1']
         r2 = sample.get('pe2', None)
         
+        if self.seqtype == "long":
+            cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 500 10 FLOOR 4 ASS_QUALITY 13"
+            print(f"Running shi7_trimmer in long-read mode on {sample_name}")
+            subprocess.run(cmd, shell=True)
+            self.compress_output(sample_name, None)
+            self.qc_results.append({'filename': sample_name, 'pe1': f"{self.qc_dir}/{sample_name}.fa.gz", 'pe2': None})
+            return
+
         if pd.isna(r2) or r2 is None:
             cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP ADAP2 CTGTCTCTTATACA OUTFASTA"
             print(f"Running shi7_trimmer in single-end mode on {sample_name}")
@@ -83,6 +92,8 @@ def main():
     parser.add_argument('--slurm_config', type=str, help='Path to the Slurm configuration TSV file')
     parser.add_argument('--max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
     parser.add_argument('--mode', type=str, default="local", help="Execution mode: local or slurm (default: local)")
+    parser.add_argument('--seqtype', type=str, choices=['long', 'short'], default='short',
+                        help='Sequencing data type: long or short reads (default: short)')
     
     args = parser.parse_args()
     
@@ -90,7 +101,8 @@ def main():
         config=args.config,
         max_workers=args.max_workers,
         mode=args.mode,
-        slurm_config=args.slurm_config
+        slurm_config=args.slurm_config,
+        seqtype=args.seqtype
     )
     qc.run()
 
