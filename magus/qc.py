@@ -1,6 +1,7 @@
 import subprocess
 import os
 import argparse
+import re
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
@@ -27,53 +28,78 @@ class QualityControl:
         sample_name = sample['filename']
         r1 = sample['pe1']
         r2 = sample.get('pe2', None)
-        
+
         if self.seqtype == "long":
-            cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 500 10 FLOOR 4 ASS_QUALITY 13"
+            output_prefix = self.long_read_output_prefix(sample)
+            cmd = f"shi7_trimmer {r1} {output_prefix} 500 10 FLOOR 4 ASS_QUALITY 13"
             print(f"Running shi7_trimmer in long-read mode on {sample_name}")
             subprocess.run(cmd, shell=True)
-            self.compress_output(sample_name, None)
-            self.qc_results.append({'filename': sample_name, 'pe1': f"{self.qc_dir}/{sample_name}.fa.gz", 'pe2': None})
+            compressed = self.compress_long_output(output_prefix)
+            self.qc_results.append({'filename': sample_name, 'pe1': compressed, 'pe2': None})
             return
 
         if pd.isna(r2) or r2 is None:
             cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP ADAP2 CTGTCTCTTATACA OUTFASTA"
             print(f"Running shi7_trimmer in single-end mode on {sample_name}")
             subprocess.run(cmd, shell=True)
-            self.compress_output(sample_name, r2)
-            self.qc_results.append({'filename': sample_name, 'pe1': f"{self.qc_dir}/{sample_name}.fa.gz", 'pe2': f"{self.qc_dir}/{sample_name}.R2.fa.gz" if r2 else None})
+            compressed = self.compress_short_output(sample_name, has_r2=False)
+            self.qc_results.append({'filename': sample_name, 'pe1': compressed, 'pe2': None})
 
         else:
             cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP ADAP2 CTGTCTCTTATACA R2 {r2} OUTFASTA"
             print(f"Running shi7_trimmer in paired-end mode on {sample_name}")
             subprocess.run(cmd, shell=True)
-            self.compress_output(sample_name, r2)
-            self.qc_results.append({'filename': sample_name, 'pe1': f"{self.qc_dir}/{sample_name}.R1.fa.gz", 'pe2': f"{self.qc_dir}/{sample_name}.R2.fa.gz" if r2 else None})
+            r1_compressed, r2_compressed = self.compress_short_output(sample_name, has_r2=True)
+            self.qc_results.append({'filename': sample_name, 'pe1': r1_compressed, 'pe2': r2_compressed})
 
-    def compress_output(self, sample_name, r2):
-        # Compress the exact files that shi7_trimmer creates
-        if r2:
-            # Paired-end: compress R1 and R2 files
+    def compress_long_output(self, output_prefix):
+        fq_file = f"{output_prefix}.fq"
+        if os.path.exists(fq_file):
+            cmd = f"minigzip -4 {fq_file}"
+            print(f"Compressing {fq_file}")
+            subprocess.run(cmd, shell=True)
+        return f"{fq_file}.gz"
+
+    def long_read_output_prefix(self, sample):
+        sample_name = sample.get('filename') or ''
+        r1 = sample.get('pe1') or ''
+
+        for candidate in (sample_name, r1):
+            if not candidate:
+                continue
+            basename = os.path.basename(candidate)
+            stripped = re.sub(r'(\.fastq|\.fq)(?:\.gz)?$', '', basename, flags=re.IGNORECASE)
+            if stripped:
+                return os.path.join(self.qc_dir, stripped)
+
+        fallback = os.path.basename(sample_name or r1)
+        return os.path.join(self.qc_dir, fallback)
+
+    def compress_short_output(self, sample_name, has_r2=False):
+        if has_r2:
             r1_file = os.path.join(self.qc_dir, f"{sample_name}.R1.fa")
             r2_file = os.path.join(self.qc_dir, f"{sample_name}.R2.fa")
-            
+
             if os.path.exists(r1_file):
                 cmd = f"minigzip -4 {r1_file}"
                 print(f"Compressing {r1_file}")
                 subprocess.run(cmd, shell=True)
-            
+
             if os.path.exists(r2_file):
                 cmd = f"minigzip -4 {r2_file}"
                 print(f"Compressing {r2_file}")
                 subprocess.run(cmd, shell=True)
-        else:
-            # Single-end: compress the single output file
-            single_file = os.path.join(self.qc_dir, f"{sample_name}.fa")
-            
-            if os.path.exists(single_file):
-                cmd = f"minigzip -4 {single_file}"
-                print(f"Compressing {single_file}")
-                subprocess.run(cmd, shell=True)
+
+            return f"{r1_file}.gz", f"{r2_file}.gz"
+
+        single_file = os.path.join(self.qc_dir, f"{sample_name}.fa")
+
+        if os.path.exists(single_file):
+            cmd = f"minigzip -4 {single_file}"
+            print(f"Compressing {single_file}")
+            subprocess.run(cmd, shell=True)
+
+        return f"{single_file}.gz"
 
     def write_output_config(self):
         output_dir = os.path.dirname(self.config_path)
@@ -94,6 +120,8 @@ def main():
     parser.add_argument('--mode', type=str, default="local", help="Execution mode: local or slurm (default: local)")
     parser.add_argument('--seqtype', type=str, choices=['long', 'short'], default='short',
                         help='Sequencing data type: long or short reads (default: short)')
+    parser.add_argument('--outdir', dest='qc_dir', type=str, default='qc',
+                        help='Directory where QC outputs are written (default: qc)')
     
     args = parser.parse_args()
     
@@ -102,7 +130,8 @@ def main():
         max_workers=args.max_workers,
         mode=args.mode,
         slurm_config=args.slurm_config,
-        seqtype=args.seqtype
+        seqtype=args.seqtype,
+        qc_dir=args.qc_dir
     )
     qc.run()
 
