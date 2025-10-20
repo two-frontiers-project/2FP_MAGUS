@@ -6,7 +6,8 @@ import math
 from concurrent.futures import ThreadPoolExecutor
 
 class Assembly:
-    def __init__(self, config, outdir="asm", threads=14, max_workers=1, mode="local", slurm_config=None):
+    def __init__(self, config, outdir="asm", threads=14, max_workers=1, mode="local", slurm_config=None,
+                 seqtype="short", flye_mode="meta"):
         self.config_path = config
         self.config = self.load_config(config)
         self.outdir = outdir
@@ -14,6 +15,8 @@ class Assembly:
         self.max_workers = max_workers
         self.mode = mode
         self.slurm_config = self.load_slurm_config(slurm_config) if slurm_config else None
+        self.seqtype = seqtype
+        self.flye_mode = flye_mode
         os.makedirs(self.outdir, exist_ok=True)
 
     def load_config(self, config_path):
@@ -80,6 +83,24 @@ class Assembly:
         subprocess.run(cmd, shell=True)
         self.post_process_contigs(sample_name)
 
+    def run_flye(self, sample):
+        sample_name = sample['filename']
+        r1 = sample['pe1']
+        out_sample_dir = f"{self.outdir}/{sample_name}"
+        os.makedirs(out_sample_dir, exist_ok=True)
+
+        if self.flye_mode == "low_complexity":
+            cmd = (f"flye --nano-hq {r1} --genome-size 10M --asm-coverage 40 "
+                   f"--out-dir {out_sample_dir} --threads {self.threads} --deterministic")
+            print(f"Running Flye in low-complexity mode on {sample_name}")
+        else:
+            cmd = (f"flye --nano-hq {r1} --meta --out-dir {out_sample_dir} "
+                   f"--threads {self.threads} --deterministic")
+            print(f"Running metaFlye on {sample_name}")
+
+        subprocess.run(cmd, shell=True)
+        self.post_process_long_contigs(sample_name)
+
     def post_process_contigs(self, sample_name):
         out_sample_dir = f"{self.outdir}/{sample_name}"
         contig_file = f"{out_sample_dir}/final.contigs.fa"
@@ -99,9 +120,54 @@ class Assembly:
         subprocess.run(filter_cmd, shell=True, check=True)
         print(f"Filtered contigs for {sample_name}")
 
+    def post_process_long_contigs(self, sample_name):
+        out_sample_dir = f"{self.outdir}/{sample_name}"
+        contig_file = f"{out_sample_dir}/assembly.fasta"
+        renamed_contig_file = f"{out_sample_dir}/renamed_assembly.fasta"
+        filtered_contig_file = f"{out_sample_dir}/temp0.fa"
+
+        if not os.path.exists(contig_file):
+            print(f"Assembly file not found for {sample_name}: {contig_file}")
+            return
+
+        with open(contig_file, 'r') as infile, open(renamed_contig_file, 'w') as outfile:
+            for line in infile:
+                if line.startswith('>'):
+                    header = line[1:].strip()
+                    outfile.write(f">{sample_name}_singleassembly_{header}\n")
+                else:
+                    outfile.write(line)
+
+        os.replace(renamed_contig_file, contig_file)
+
+        with open(contig_file, 'r') as infile, open(filtered_contig_file, 'w') as outfile:
+            header = None
+            sequence_chunks = []
+
+            def write_record(h, seq_chunks):
+                if h is None:
+                    return
+                sequence = ''.join(seq_chunks)
+                if len(sequence) >= 1000:
+                    outfile.write(f"{h}\n")
+                    outfile.write(f"{sequence}\n")
+
+            for line in infile:
+                if line.startswith('>'):
+                    write_record(header, sequence_chunks)
+                    header = line.strip()
+                    sequence_chunks = []
+                else:
+                    sequence_chunks.append(line.strip())
+
+            write_record(header, sequence_chunks)
+
+        print(f"Filtered long-read contigs for {sample_name}")
+
     def run_local_mode(self):
+        runner = self.run_megahit if self.seqtype == "short" else self.run_flye
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            executor.map(self.run_megahit, self.config)
+            executor.map(runner, self.config)
 
     def run_slurm_mode(self):
         batch_files = self.split_config()
@@ -120,17 +186,28 @@ def main():
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
     parser.add_argument('--slurm_config', type=str, help='Path to the Slurm configuration TSV file')
     parser.add_argument('--max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
-    parser.add_argument('--threads', type=int, default=14, help='Number of threads for megahit (default: 14)')
+    parser.add_argument('--threads', type=int, default=14, help='Number of threads for assembly (default: 14)')
     parser.add_argument('--mode', type=str, default="local", help="Execution mode: local or slurm (default: local)")
-    
+    parser.add_argument('--seqtype', type=str, choices=['short', 'long'], default='short',
+                        help='Sequencing data type: short or long reads (default: short)')
+
+    flye_group = parser.add_mutually_exclusive_group()
+    flye_group.add_argument('--meta', dest='flye_mode', action='store_const', const='meta',
+                            help='Use metaFlye for long-read assemblies (default)')
+    flye_group.add_argument('--low_complexity', dest='flye_mode', action='store_const', const='low_complexity',
+                            help='Use Flye low-complexity mode for targeting single MAGs')
+    parser.set_defaults(flye_mode='meta')
+
     args = parser.parse_args()
-    
+
     assembly = Assembly(
         config=args.config,
         slurm_config=args.slurm_config,
         max_workers=args.max_workers,
         threads=args.threads,
-        mode=args.mode
+        mode=args.mode,
+        seqtype=args.seqtype,
+        flye_mode=args.flye_mode
     )
     assembly.run()
 
