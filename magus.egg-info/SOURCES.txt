@@ -4,7 +4,7 @@ bin/akmer102
 bin/bestmag2
 bin/canolax5
 bin/fac
-bin/hmmsearch
+bin/hmmsearch-g
 bin/lingenome
 bin/magus_assembly_helper.sh
 bin/magus_qc_helper.sh
