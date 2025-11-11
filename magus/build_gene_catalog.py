@@ -25,13 +25,14 @@ logger = logging.getLogger(__name__)
 class GeneCatalogBuilder:
     def __init__(self, summary_file, faa_dir, output_dir, threads=1, 
                  evalue_cutoff=0.01, identity_threshold=0.3, coverage_threshold=0.8,
-                 identity_only=False, multi_sample_single_copy=False, tmpdir='./tmp/'):
+                 identity_thresholds=None, identity_only=False, multi_sample_single_copy=False, tmpdir='./tmp/'):
         self.summary_file = Path(summary_file) if summary_file else None
         self.faa_dir = Path(faa_dir)
         self.output_dir = Path(output_dir)
         self.threads = threads
         self.evalue_cutoff = evalue_cutoff
         self.identity_threshold = identity_threshold
+        self.identity_thresholds = identity_thresholds or []
         self.coverage_threshold = coverage_threshold
         self.identity_only = identity_only
         self.multi_sample_single_copy = multi_sample_single_copy
@@ -260,6 +261,7 @@ class GeneCatalogBuilder:
         
         # Parse cluster results - MMseqs2 creates genecat_cluster.tsv
         cluster_file = cluster_prefix.parent / f"{cluster_prefix.name}_cluster.tsv"
+        rep_fasta = cluster_prefix.parent / f"{cluster_prefix.name}_rep_seq.fasta"
         if not cluster_file.exists():
             logger.error("MMseqs2 failed to generate cluster file")
             logger.error(f"Expected cluster file: {cluster_file}")
@@ -291,6 +293,63 @@ class GeneCatalogBuilder:
         
         logger.info(f"Created {len(set(gene_clusters.values()))} clusters from unannotated genes")
         return gene_clusters
+
+    def _cluster_with_threshold(self, input_fasta, min_seq_id, tag):
+        """Run one round of clustering, return (member->rep mapping, rep_fasta_path)."""
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
+        cluster_prefix = self.output_dir / f"mmseqs_iter_{tag}"
+        cmd = [
+            'mmseqs', 'easy-cluster',
+            str(input_fasta),
+            str(cluster_prefix),
+            str(self.tmp_dir),
+            '--min-seq-id', str(min_seq_id),
+            '-c', str(self.coverage_threshold),
+            '--threads', str(self.threads)
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"MMseqs2 clustering failed at threshold {min_seq_id}: {e.stderr}")
+            raise
+        cluster_file = cluster_prefix.parent / f"{cluster_prefix.name}_cluster.tsv"
+        rep_fasta = cluster_prefix.parent / f"{cluster_prefix.name}_rep_seq.fasta"
+        if not cluster_file.exists() or not rep_fasta.exists():
+            raise RuntimeError(f"MMseqs2 outputs missing for tag {tag}")
+        mapping = {}
+        with open(cluster_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) >= 2:
+                    representative = parts[0]
+                    member = parts[1]
+                    mapping[member] = representative
+        return mapping, rep_fasta
+
+    def _iterative_cluster_chain(self, unannotated_fasta):
+        """Chain clustering across multiple thresholds."""
+        if not self.identity_thresholds:
+            return {}
+        current_fasta = unannotated_fasta
+        chain_maps = []
+        for idx, thr in enumerate(self.identity_thresholds, start=1):
+            tag = f"t{idx}_{str(thr).replace('.','p')}"
+            logger.info(f"Clustering at identity {thr}")
+            mapping, rep_fasta = self._cluster_with_threshold(current_fasta, thr, tag)
+            chain_maps.append(mapping)
+            current_fasta = rep_fasta
+        # Collapse chain: for each original member, find final representative
+        final_map = {}
+        # Build set of all members seen at first level
+        if not chain_maps:
+            return final_map
+        first_map = chain_maps[0]
+        for member in first_map.keys():
+            rep = member
+            for m in chain_maps:
+                rep = m.get(rep, rep)
+            final_map[member] = rep
+        return final_map
     
     def _create_gene_mappings(self, gene_annotations, annotated_genes, unannotated_genes, gene_clusters):
         """Create the final gene mapping files with proper frequency-based clustering."""
@@ -425,10 +484,11 @@ class GeneCatalogBuilder:
             # Create combined fasta file
             combined_fasta = self._combine_all_fasta_files()
             
-            # Cluster all sequences
-            gene_clusters = self._cluster_unannotated_genes(combined_fasta)
-            
-            # Create simple mappings for identity-only mode
+            # Cluster all sequences (iteratively if thresholds provided)
+            if self.identity_thresholds:
+                gene_clusters = self._iterative_cluster_chain(combined_fasta)
+            else:
+                gene_clusters = self._cluster_unannotated_genes(combined_fasta)
             cluster_mapping, singleton_mapping = self._create_identity_only_mappings(gene_clusters)
             
         else:
@@ -438,16 +498,33 @@ class GeneCatalogBuilder:
             # Create unannotated genes fasta
             unannotated_fasta = self._create_unannotated_fasta(unannotated_genes)
             
-            # Cluster unannotated genes
-            gene_clusters = self._cluster_unannotated_genes(unannotated_fasta)
+            # Cluster unannotated genes (iteratively if thresholds provided)
+            if self.identity_thresholds:
+                gene_clusters = self._iterative_cluster_chain(unannotated_fasta)
+            else:
+                gene_clusters = self._cluster_unannotated_genes(unannotated_fasta)
             
             # Create final mappings
             cluster_mapping, singleton_mapping, single_copy_mapping = self._create_gene_mappings(
                 gene_annotations, annotated_genes, unannotated_genes, gene_clusters
             )
         
+        # Write consolidated final mapping
+        final_catalog = self.output_dir / "gene_catalog.tsv"
+        with open(final_catalog, 'w') as out_f:
+            out_f.write("sampleid\tgene\tcluster_rep\n")
+            # Merge cluster and singleton mappings
+            def append_file(pth):
+                if pth and os.path.exists(pth):
+                    with open(pth, 'r') as f:
+                        next(f, None)
+                        for line in f:
+                            out_f.write(line)
+            append_file(self.output_dir / "gene_clusters.tsv")
+            append_file(self.output_dir / "gene_singletons.tsv")
+        
         logger.info("Gene catalog construction completed successfully")
-        return cluster_mapping, singleton_mapping
+        return final_catalog
 
 def main():
     parser = argparse.ArgumentParser(
@@ -492,6 +569,12 @@ def main():
         default=0.9,
         help='Identity threshold for MMseqs2 clustering (default: 0.9)'
     )
+    parser.add_argument(
+        '--identity-thresholds',
+        type=str,
+        default=None,
+        help='Comma-separated identity thresholds for iterative clustering, e.g., 0.9,0.3'
+    )
     
     parser.add_argument(
         '--coverage-threshold',
@@ -532,6 +615,7 @@ def main():
         threads=args.threads,
         evalue_cutoff=args.evalue_cutoff,
         identity_threshold=args.identity_threshold,
+        identity_thresholds=[float(x) for x in args.identity_thresholds.split(',')] if args.identity_thresholds else None,
         coverage_threshold=args.coverage_threshold,
         identity_only=args.identity_only,
         multi_sample_single_copy=args.multi_sample_single_copy,
