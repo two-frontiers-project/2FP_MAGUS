@@ -683,8 +683,6 @@ def create_comprehensive_summary(output_dir, hmmfile, suffix=None,
                                 
                                 # Get HMM data for this sequence
                                 hmm_row = hmm_data.get(sequence_id, {})
-
-                                print(hmm_row)
                                 
                                 # Step 3: Write to output file (drop target_name as it's redundant)
                                 row_data = [
