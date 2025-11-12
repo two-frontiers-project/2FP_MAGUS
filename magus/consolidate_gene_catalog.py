@@ -149,11 +149,6 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     annotations = load_annotations(annotation_file)
     logger.info(f"Loaded {len(annotations)} unique gene annotations")
     
-    # Debug: show first few annotation gene values
-    if annotations:
-        sample_genes = list(annotations.keys())[:5]
-        logger.info(f"Sample annotation gene values: {sample_genes}")
-    
     # Load additional gene metadata if provided
     gene_metadata = {}
     gene_metadata_header = []
@@ -209,13 +204,8 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     # Process catalog entries
     output_rows = []
     annotated_count = 0
-    sample_catalog_reps = []
     for key, catalog_row in catalog.items():
         sample, gene = key
-        
-        # Debug: collect sample merge column values
-        if len(sample_catalog_reps) < 5 and merge_col_idx < len(catalog_row):
-            sample_catalog_reps.append(catalog_row[merge_col_idx])
         
         # Create output row starting with catalog row
         output_row = list(catalog_row)  # Make sure it's a list copy
@@ -287,10 +277,6 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
                 insert_pos += 1
         
         output_rows.append(output_row)
-    
-    # Debug: show sample catalog merge column values
-    if sample_catalog_reps:
-        logger.info(f"Sample catalog merge column values (column '{catalog_header[merge_col_idx]}'): {sample_catalog_reps}")
     
     logger.info(f"Processed {len(output_rows)} catalog entries, {annotated_count} had annotations")
     
