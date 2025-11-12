@@ -25,27 +25,15 @@ def load_gene_catalog(catalog_file):
     return catalog, header
 
 def load_annotations(annotation_file):
-    """
-    Load annotations into memory, keyed by clustering rep extracted from gene name.
-    Gene names are like: GCF_050908935.1_ASM5090893v1_genomic-----NZ_CP184181.1_592-----...
-    We extract the clustering rep (NZ_CP184181.1_592) which is between the first two '-----'
-    """
+    """Load annotations into memory, keyed by gene column value (no modification)."""
     annotations = {}
     with open(annotation_file, 'r') as f:
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
             gene = row.get('gene', '')
             if gene:
-                # Extract clustering rep from gene name (between first two '-----')
-                # Format: sample-----clustering_rep-----rest
-                parts = gene.split('-----')
-                if len(parts) >= 2:
-                    clustering_rep = parts[1]
-                    # Key by clustering rep - if multiple annotations for same rep, last one wins
-                    annotations[clustering_rep] = row
-                else:
-                    # Fallback: use gene name as-is if format doesn't match
-                    annotations[gene] = row
+                # Key by gene value as-is - if multiple annotations for same gene, last one wins
+                annotations[gene] = row
     return annotations
 
 def load_gene_metadata(metadata_file, gene_column='gene'):
@@ -161,10 +149,10 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     annotations = load_annotations(annotation_file)
     logger.info(f"Loaded {len(annotations)} unique gene annotations")
     
-    # Debug: show first few annotation clustering reps
+    # Debug: show first few annotation gene values
     if annotations:
-        sample_reps = list(annotations.keys())[:5]
-        logger.info(f"Sample annotation clustering reps: {sample_reps}")
+        sample_genes = list(annotations.keys())[:5]
+        logger.info(f"Sample annotation gene values: {sample_genes}")
     
     # Load additional gene metadata if provided
     gene_metadata = {}
@@ -225,18 +213,18 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     for key, catalog_row in catalog.items():
         sample, gene = key
         
-        # Debug: collect sample clustering reps from merge column
+        # Debug: collect sample merge column values
         if len(sample_catalog_reps) < 5 and merge_col_idx < len(catalog_row):
             sample_catalog_reps.append(catalog_row[merge_col_idx])
         
         # Create output row starting with catalog row
         output_row = list(catalog_row)  # Make sure it's a list copy
         
-        # Get clustering rep from merge column (user-specified OR last column)
-        clustering_rep = catalog_row[merge_col_idx] if merge_col_idx < len(catalog_row) else ''
+        # Get value from merge column (user-specified OR last column)
+        merge_col_value = catalog_row[merge_col_idx] if merge_col_idx < len(catalog_row) else ''
         
-        # Get annotation if exists (left join on clustering rep from merge column)
-        annotation = annotations.get(clustering_rep, None)
+        # Get annotation if exists (left join: match annotation 'gene' column to merge column value)
+        annotation = annotations.get(merge_col_value, None)
         if annotation:
             annotated_count += 1
         
@@ -267,8 +255,8 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
         
         # Add harmonized column if requested (RIGHT AFTER annotations, before metadata)
         if harmonize:
-            # Get clustering rep from merge column
-            clustering_rep_val = catalog_row[merge_col_idx] if merge_col_idx < len(catalog_row) else ''
+            # Get value from merge column
+            merge_col_val = catalog_row[merge_col_idx] if merge_col_idx < len(catalog_row) else ''
             
             # Use annotation if available (treating it as even higher resolution)
             if annotation and annotation.get('label'):
@@ -276,7 +264,7 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
             elif annotation and annotation.get('product_name'):
                 harmonized_val = annotation.get('product_name')
             else:
-                harmonized_val = clustering_rep_val
+                harmonized_val = merge_col_val
             output_row.insert(insert_pos, harmonized_val)
             insert_pos += 1
         
@@ -300,9 +288,9 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
         
         output_rows.append(output_row)
     
-    # Debug: show sample catalog clustering reps
+    # Debug: show sample catalog merge column values
     if sample_catalog_reps:
-        logger.info(f"Sample catalog clustering reps (merge column '{catalog_header[merge_col_idx]}'): {sample_catalog_reps}")
+        logger.info(f"Sample catalog merge column values (column '{catalog_header[merge_col_idx]}'): {sample_catalog_reps}")
     
     logger.info(f"Processed {len(output_rows)} catalog entries, {annotated_count} had annotations")
     
