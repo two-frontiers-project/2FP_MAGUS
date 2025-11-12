@@ -25,15 +25,27 @@ def load_gene_catalog(catalog_file):
     return catalog, header
 
 def load_annotations(annotation_file):
-    """Load annotations into memory, keyed by gene only (sample column is ignored)."""
+    """
+    Load annotations into memory, keyed by clustering rep extracted from gene name.
+    Gene names are like: GCF_050908935.1_ASM5090893v1_genomic-----NZ_CP184181.1_592-----...
+    We extract the clustering rep (NZ_CP184181.1_592) which is between the first two '-----'
+    """
     annotations = {}
     with open(annotation_file, 'r') as f:
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
             gene = row.get('gene', '')
             if gene:
-                # Key by gene only - if multiple samples have same gene, last one wins
-                annotations[gene] = row
+                # Extract clustering rep from gene name (between first two '-----')
+                # Format: sample-----clustering_rep-----rest
+                parts = gene.split('-----')
+                if len(parts) >= 2:
+                    clustering_rep = parts[1]
+                    # Key by clustering rep - if multiple annotations for same rep, last one wins
+                    annotations[clustering_rep] = row
+                else:
+                    # Fallback: use gene name as-is if format doesn't match
+                    annotations[gene] = row
     return annotations
 
 def load_gene_metadata(metadata_file, gene_column='gene'):
@@ -149,10 +161,10 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     annotations = load_annotations(annotation_file)
     logger.info(f"Loaded {len(annotations)} unique gene annotations")
     
-    # Debug: show first few annotation gene names
+    # Debug: show first few annotation clustering reps
     if annotations:
-        sample_genes = list(annotations.keys())[:5]
-        logger.info(f"Sample annotation gene names: {sample_genes}")
+        sample_reps = list(annotations.keys())[:5]
+        logger.info(f"Sample annotation clustering reps: {sample_reps}")
     
     # Load additional gene metadata if provided
     gene_metadata = {}
@@ -209,19 +221,22 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     # Process catalog entries
     output_rows = []
     annotated_count = 0
-    sample_catalog_genes = []
+    sample_catalog_reps = []
     for key, catalog_row in catalog.items():
         sample, gene = key
         
-        # Debug: collect sample gene names
-        if len(sample_catalog_genes) < 5:
-            sample_catalog_genes.append(gene)
+        # Debug: collect sample clustering reps from last column
+        if len(sample_catalog_reps) < 5 and len(catalog_row) > 0:
+            sample_catalog_reps.append(catalog_row[-1])
         
         # Create output row starting with catalog row
         output_row = list(catalog_row)  # Make sure it's a list copy
         
-        # Get annotation if exists (lookup by gene only, ignoring sample)
-        annotation = annotations.get(gene, None)
+        # Get clustering rep from LAST COLUMN of catalog (this is what annotations are keyed by)
+        clustering_rep = catalog_row[-1] if len(catalog_row) > 0 else ''
+        
+        # Get annotation if exists (lookup by clustering rep from last column)
+        annotation = annotations.get(clustering_rep, None)
         if annotation:
             annotated_count += 1
         
@@ -292,9 +307,9 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
         
         output_rows.append(output_row)
     
-    # Debug: show sample catalog gene names
-    if sample_catalog_genes:
-        logger.info(f"Sample catalog gene names: {sample_catalog_genes}")
+    # Debug: show sample catalog clustering reps
+    if sample_catalog_reps:
+        logger.info(f"Sample catalog clustering reps (last column): {sample_catalog_reps}")
     
     logger.info(f"Processed {len(output_rows)} catalog entries, {annotated_count} had annotations")
     

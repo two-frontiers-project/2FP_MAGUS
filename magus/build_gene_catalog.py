@@ -139,27 +139,18 @@ class GeneCatalogBuilder:
             current_fasta = rep_fasta
         return all_mappings
     
-    def _extract_sample_gene(self, gene_id):
-        if '-----' in gene_id:
-            parts = gene_id.split('-----', 2)
-            sample = parts[0]
-            gene = parts[1] if len(parts) > 1 else gene_id
-        else:
-            sample = 'unknown'
-            gene = gene_id
-        return sample, gene
-    
     def _create_gene_catalog(self, clustering_result, input_files, is_iterative=False):
         all_genes = {}
         
+        # Map each gene_id to its source file (sample name = filename without extension)
         for faa_file in input_files:
+            sample = faa_file.stem  # Filename without extension
             with open(faa_file, 'r') as f:
                 for line in f:
                     if line.startswith('>'):
                         gene_id = line.strip()[1:].split()[0]
-                        sample, gene = self._extract_sample_gene(gene_id)
                         if gene_id not in all_genes:
-                            all_genes[gene_id] = (sample, gene)
+                            all_genes[gene_id] = (sample, gene_id)
         
         final_catalog = self.output_dir / "gene_catalog.tsv"
         
