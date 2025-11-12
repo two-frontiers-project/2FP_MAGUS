@@ -183,7 +183,12 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
         output_header.insert(insert_pos, col)
         insert_pos += 1
     
-    # Add gene metadata columns after annotations
+    # Add harmonized column if requested (RIGHT AFTER annotations, before metadata)
+    if harmonize:
+        output_header.insert(insert_pos, 'harmonized_identity')
+        insert_pos += 1
+    
+    # Add gene metadata columns after harmonized column
     if gene_metadata_header:
         for col in gene_metadata_header:
             output_header.insert(insert_pos, col)
@@ -194,10 +199,6 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
         for col in sample_metadata_header:
             output_header.insert(insert_pos, col)
             insert_pos += 1
-    
-    # Add harmonized column if requested
-    if harmonize:
-        output_header.append('harmonized_identity')
     
     # Process catalog entries
     output_rows = []
@@ -235,25 +236,7 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
             output_row.insert(insert_pos, val)
             insert_pos += 1
         
-        # Insert gene metadata values after annotations (left join on root gene column, column 1)
-        if gene_metadata_header:
-            root_gene = catalog_row[1] if len(catalog_row) > 1 else ''
-            metadata_row = gene_metadata.get(root_gene, {})
-            for col in gene_metadata_header:
-                metadata_val = metadata_row.get(col, '')
-                output_row.insert(insert_pos, metadata_val)
-                insert_pos += 1
-        
-        # Insert sample metadata values after gene metadata (left join on sample column, column 0)
-        if sample_metadata_header:
-            sample_name = catalog_row[0] if len(catalog_row) > 0 else ''
-            sample_metadata_row = sample_metadata.get(sample_name, {})
-            for col in sample_metadata_header:
-                metadata_val = sample_metadata_row.get(col, '')
-                output_row.insert(insert_pos, metadata_val)
-                insert_pos += 1
-        
-        # Add harmonized column if requested
+        # Add harmonized column if requested (RIGHT AFTER annotations, before metadata)
         if harmonize:
             # Find highest resolution clustering column (lowest threshold value)
             # Columns 0 and 1 are sample and gene, columns 2+ are clustering thresholds
@@ -272,7 +255,26 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
                 harmonized_val = annotation.get('product_name')
             else:
                 harmonized_val = highest_res_rep
-            output_row.append(harmonized_val)
+            output_row.insert(insert_pos, harmonized_val)
+            insert_pos += 1
+        
+        # Insert gene metadata values after harmonized column (left join on root gene column, column 1)
+        if gene_metadata_header:
+            root_gene = catalog_row[1] if len(catalog_row) > 1 else ''
+            metadata_row = gene_metadata.get(root_gene, {})
+            for col in gene_metadata_header:
+                metadata_val = metadata_row.get(col, '')
+                output_row.insert(insert_pos, metadata_val)
+                insert_pos += 1
+        
+        # Insert sample metadata values after gene metadata (left join on sample column, column 0)
+        if sample_metadata_header:
+            sample_name = catalog_row[0] if len(catalog_row) > 0 else ''
+            sample_metadata_row = sample_metadata.get(sample_name, {})
+            for col in sample_metadata_header:
+                metadata_val = sample_metadata_row.get(col, '')
+                output_row.insert(insert_pos, metadata_val)
+                insert_pos += 1
         
         output_rows.append(output_row)
     
