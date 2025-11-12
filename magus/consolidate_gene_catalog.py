@@ -25,15 +25,15 @@ def load_gene_catalog(catalog_file):
     return catalog, header
 
 def load_annotations(annotation_file):
-    """Load annotations into memory, keyed by (sample_id, gene)."""
+    """Load annotations into memory, keyed by gene only (sample column is ignored)."""
     annotations = {}
     with open(annotation_file, 'r') as f:
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
-            sample_id = row.get('sample_id', '')
             gene = row.get('gene', '')
-            key = (sample_id, gene)
-            annotations[key] = row
+            if gene:
+                # Key by gene only - if multiple samples have same gene, last one wins
+                annotations[gene] = row
     return annotations
 
 def load_gene_metadata(metadata_file, gene_column='gene'):
@@ -207,8 +207,8 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
         # Create output row starting with catalog row
         output_row = catalog_row.copy()
         
-        # Get annotation if exists
-        annotation = annotations.get(key, None)
+        # Get annotation if exists (lookup by gene only, ignoring sample)
+        annotation = annotations.get(gene, None)
         
         # Insert annotation columns at the right position
         if annotation:
