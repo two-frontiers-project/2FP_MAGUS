@@ -246,18 +246,24 @@ def merge_scours_with_mapping(scour_dir, mapping_tsv, output_file, file_type='pg
                 except ValueError:
                     continue
                 
-                seq_cutoff_str = meta.get('sequence_cutoff', '0')
-                dom_cutoff_str = meta.get('domain_cutoff', '0')
-                try:
-                    seq_cutoff = float(seq_cutoff_str) if seq_cutoff_str else 0
-                    dom_cutoff = float(dom_cutoff_str) if dom_cutoff_str else 0
-                except (ValueError, TypeError):
-                    seq_cutoff = 0
-                    dom_cutoff = 0
+                # Get cutoffs from mapping file
+                seq_cutoff_str = meta.get('sequence_cutoff', '')
+                dom_cutoff_str = meta.get('domain_cutoff', '')
                 
-                if seq_cutoff > 0 and seq_score < seq_cutoff:
+                # Filter out rows where cutoffs are missing (NA or empty) - protparse2.R line 411
+                # merged_dt = merged_dt[!is.na(sequence_cutoff) & !is.na(domain_cutoff) & !is.na(effective_id_for_aggregation)]
+                if not seq_cutoff_str or not dom_cutoff_str or seq_cutoff_str.strip() == '' or dom_cutoff_str.strip() == '':
                     continue
-                if dom_cutoff > 0 and domain_score < dom_cutoff:
+                
+                try:
+                    seq_cutoff = float(seq_cutoff_str)
+                    dom_cutoff = float(dom_cutoff_str)
+                except (ValueError, TypeError):
+                    continue
+                
+                # Apply thresholds: seq_score >= sequence_cutoff AND domain_score >= domain_cutoff
+                # protparse2.R line 415: filtered_hits_dt = merged_dt[seq_score >= sequence_cutoff & domain_score >= domain_cutoff]
+                if seq_score < seq_cutoff or domain_score < dom_cutoff:
                     continue
                 
                 row = [
@@ -271,6 +277,60 @@ def merge_scours_with_mapping(scour_dir, mapping_tsv, output_file, file_type='pg
                 outfile.write('\t'.join(str(x) for x in row) + '\n')
     
     logger.info(f"Wrote merged annotations to {output_file}")
+
+def merge_pgap_and_pfam(pgap_file, pfam_file, output_file):
+    """
+    Merge PGAP and Pfam annotations into a single file with deduplication.
+    Based on protparse2.R logic: remove Pfam entries that match PGAP on (gene, label) per sample.
+    """
+    pgap_keys = set()
+    pgap_entries = []
+    pfam_entries = []
+    
+    # Read PGAP annotations and build key set
+    if os.path.exists(pgap_file):
+        with open(pgap_file, 'r') as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                sample_id = row.get('sample_id', '')
+                gene = row.get('gene', '')
+                label = row.get('label', '')
+                key = (sample_id, gene, label)
+                pgap_keys.add(key)
+                pgap_entries.append(row)
+    
+    # Read Pfam annotations
+    if os.path.exists(pfam_file):
+        with open(pfam_file, 'r') as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                pfam_entries.append(row)
+    
+    # Deduplicate Pfam: remove entries that match PGAP on (sample_id, gene, label)
+    pfam_dedup = []
+    for pfam_row in pfam_entries:
+        sample_id = pfam_row.get('sample_id', '')
+        gene = pfam_row.get('gene', '')
+        label = pfam_row.get('label', '')
+        key = (sample_id, gene, label)
+        if key not in pgap_keys:
+            pfam_dedup.append(pfam_row)
+    
+    # Combine PGAP + deduplicated Pfam
+    all_entries = pgap_entries + pfam_dedup
+    
+    # Write merged file
+    if all_entries:
+        header = ['sample_id', 'gene', 'match', 'evalue', 'seq_score', 'domain_score',
+                  'label', 'gene_symbol', 'product_name', 'ec_numbers', 'go_terms',
+                  'for_AMRFinder', 'comment', 'annotation_source']
+        with open(output_file, 'w') as outfile:
+            outfile.write('\t'.join(header) + '\n')
+            for row in all_entries:
+                outfile.write('\t'.join(row.get(col, '') for col in header) + '\n')
+        logger.info(f"Wrote merged PGAP+Pfam annotations to {output_file}")
+    else:
+        logger.warning("No annotations to merge")
 
 def find_scour_for_sample(scour_dir, sample_id, suffix):
     """
@@ -447,6 +507,10 @@ def main():
             logger.info("Merging Pfam scours with mapping file")
             pfam_output = Path(out_root) / "pfam_annotations.tsv"
             merge_scours_with_mapping(str(scour_dir), args.pfam_tsv, str(pfam_output), file_type='pfam')
+            
+            logger.info("Merging PGAP and Pfam annotations into single file")
+            merged_output = Path(out_root) / "merged_annotations.tsv"
+            merge_pgap_and_pfam(str(pgap_output), str(pfam_output), str(merged_output))
         else:
             for domain in domains:
                 annot_dir, targets = list_targets(out_root, domain) if not args.faa_dir else (os.path.join(out_root, domain, 'annot'), [(Path(p).stem, str(Path(args.faa_dir) / p)) for p in os.listdir(args.faa_dir) if p.endswith('.faa')])
@@ -484,6 +548,10 @@ def main():
                 logger.info(f"Merging Pfam scours for {domain}")
                 pfam_output = Path(out_root) / domain / "pfam_annotations.tsv"
                 merge_scours_with_mapping(str(scour_dir), args.pfam_tsv, str(pfam_output), file_type='pfam')
+                
+                logger.info(f"Merging PGAP and Pfam annotations for {domain}")
+                merged_output = Path(out_root) / domain / "merged_annotations.tsv"
+                merge_pgap_and_pfam(str(pgap_output), str(pfam_output), str(merged_output))
 
     elif args.hmmdb:
         if not args.evalue_full and not args.evalue_dom:
