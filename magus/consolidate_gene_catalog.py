@@ -147,6 +147,7 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     
     logger.info(f"Loading annotations from {annotation_file}")
     annotations = load_annotations(annotation_file)
+    logger.info(f"Loaded {len(annotations)} unique gene annotations")
     
     # Load additional gene metadata if provided
     gene_metadata = {}
@@ -202,14 +203,17 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     
     # Process catalog entries
     output_rows = []
+    annotated_count = 0
     for key, catalog_row in catalog.items():
         sample, gene = key
         
         # Create output row starting with catalog row
-        output_row = catalog_row.copy()
+        output_row = list(catalog_row)  # Make sure it's a list copy
         
         # Get annotation if exists (lookup by gene only, ignoring sample)
         annotation = annotations.get(gene, None)
+        if annotation:
+            annotated_count += 1
         
         # Insert annotation columns at the right position
         if annotation:
@@ -277,6 +281,8 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
                 insert_pos += 1
         
         output_rows.append(output_row)
+    
+    logger.info(f"Processed {len(output_rows)} catalog entries, {annotated_count} had annotations")
     
     # Write output
     logger.info(f"Writing consolidated catalog to {output_file}")
