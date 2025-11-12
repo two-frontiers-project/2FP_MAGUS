@@ -225,17 +225,17 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     for key, catalog_row in catalog.items():
         sample, gene = key
         
-        # Debug: collect sample clustering reps from last column
-        if len(sample_catalog_reps) < 5 and len(catalog_row) > 0:
-            sample_catalog_reps.append(catalog_row[-1])
+        # Debug: collect sample clustering reps from merge column
+        if len(sample_catalog_reps) < 5 and merge_col_idx < len(catalog_row):
+            sample_catalog_reps.append(catalog_row[merge_col_idx])
         
         # Create output row starting with catalog row
         output_row = list(catalog_row)  # Make sure it's a list copy
         
-        # Get clustering rep from LAST COLUMN of catalog (this is what annotations are keyed by)
-        clustering_rep = catalog_row[-1] if len(catalog_row) > 0 else ''
+        # Get clustering rep from merge column (user-specified OR last column)
+        clustering_rep = catalog_row[merge_col_idx] if merge_col_idx < len(catalog_row) else ''
         
-        # Get annotation if exists (lookup by clustering rep from last column)
+        # Get annotation if exists (left join on clustering rep from merge column)
         annotation = annotations.get(clustering_rep, None)
         if annotation:
             annotated_count += 1
@@ -267,15 +267,8 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
         
         # Add harmonized column if requested (RIGHT AFTER annotations, before metadata)
         if harmonize:
-            # Find highest resolution clustering column (lowest threshold value)
-            # Columns 0 and 1 are sample and gene, columns 2+ are clustering thresholds
-            highest_res_rep = ''
-            if len(catalog_row) > 2:
-                # Start from the last column (highest resolution) and work backwards
-                for idx in range(len(catalog_row) - 1, 1, -1):
-                    if idx < len(catalog_row) and catalog_row[idx]:
-                        highest_res_rep = catalog_row[idx]
-                        break
+            # Get clustering rep from merge column
+            clustering_rep_val = catalog_row[merge_col_idx] if merge_col_idx < len(catalog_row) else ''
             
             # Use annotation if available (treating it as even higher resolution)
             if annotation and annotation.get('label'):
@@ -283,7 +276,7 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
             elif annotation and annotation.get('product_name'):
                 harmonized_val = annotation.get('product_name')
             else:
-                harmonized_val = highest_res_rep
+                harmonized_val = clustering_rep_val
             output_row.insert(insert_pos, harmonized_val)
             insert_pos += 1
         
@@ -309,7 +302,7 @@ def consolidate_catalog(catalog_file, annotation_file, output_file, merge_column
     
     # Debug: show sample catalog clustering reps
     if sample_catalog_reps:
-        logger.info(f"Sample catalog clustering reps (last column): {sample_catalog_reps}")
+        logger.info(f"Sample catalog clustering reps (merge column '{catalog_header[merge_col_idx]}'): {sample_catalog_reps}")
     
     logger.info(f"Processed {len(output_rows)} catalog entries, {annotated_count} had annotations")
     
