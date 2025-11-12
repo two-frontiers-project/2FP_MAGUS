@@ -30,6 +30,7 @@ def main():
         'call-orfs': 'call_orfs2.py',
         'annotate': 'annotate.py',
         'build-gene-catalog': 'build_gene_catalog.py',
+        'consolidate-gene-catalog': 'consolidate_gene_catalog.py',
         'filter-mags': 'filter_mags.py',
         'build-tree': 'build_tree.py'
   }
