@@ -5,297 +5,69 @@ import sys
 import argparse
 import logging
 import subprocess
-import tempfile
 from pathlib import Path
-from collections import defaultdict
 
-try:
-    from Bio import SeqIO
-    from Bio.SeqRecord import SeqRecord
-    from Bio.Seq import Seq
-except ImportError:
-    print("ERROR: Biopython is required but not installed.")
-    print("Please install it with: pip install biopython")
-    sys.exit(1)
-
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class GeneCatalogBuilder:
-    def __init__(self, summary_file, faa_dir, output_dir, threads=1, 
-                 evalue_cutoff=0.01, identity_threshold=0.3, coverage_threshold=0.8,
-                 identity_thresholds=None, identity_only=False, multi_sample_single_copy=False, tmpdir='./tmp/'):
-        self.summary_file = Path(summary_file) if summary_file else None
-        self.faa_dir = Path(faa_dir)
+    def __init__(self, sequence_dir=None, sequence_file=None, output_dir=None, threads=1, 
+                 identity_threshold=0.9, identity_thresholds=None, 
+                 coverage_threshold=0.8, extension='faa', tmpdir='./tmp/', split_singletons=False):
+        if sequence_dir and sequence_file:
+            logger.error("Cannot specify both --sequence-dir and --sequence-file")
+            sys.exit(1)
+        if not sequence_dir and not sequence_file:
+            logger.error("Must specify either --sequence-dir or --sequence-file")
+            sys.exit(1)
+        
+        self.sequence_dir = Path(sequence_dir) if sequence_dir else None
+        self.sequence_file = Path(sequence_file) if sequence_file else None
         self.output_dir = Path(output_dir)
         self.threads = threads
-        self.evalue_cutoff = evalue_cutoff
         self.identity_threshold = identity_threshold
         self.identity_thresholds = identity_thresholds or []
         self.coverage_threshold = coverage_threshold
-        self.identity_only = identity_only
-        self.multi_sample_single_copy = multi_sample_single_copy
+        self.extension = extension
         self.tmp_dir = Path(tmpdir)
+        self.split_singletons = split_singletons
         
-        # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Check if MMseqs2 is available
         self._check_mmseqs2()
     
     def _check_mmseqs2(self):
-        """Check if MMseqs2 is available in PATH."""
         try:
             subprocess.run(['mmseqs', 'version'], capture_output=True, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
             logger.error("MMseqs2 not found in PATH. Please install MMseqs2.")
             sys.exit(1)
     
-    def _parse_summary_file(self):
-        """Parse the call_orfs summary file to get annotated vs unannotated genes."""
-        logger.info(f"Parsing summary file: {self.summary_file}")
-        
-        annotated_genes = set()
-        unannotated_genes = set()
-        gene_annotations = {}
-        self.evalue_mapping = {}
-        
-        with open(self.summary_file, 'r') as f:
-            # Read header to determine format
-            header_line = f.readline().strip()
-            if not header_line:
-                logger.error("Empty summary file")
+    def _get_input_files(self):
+        if self.sequence_file:
+            if not self.sequence_file.is_file():
+                logger.error(f"Sequence file does not exist: {self.sequence_file}")
                 sys.exit(1)
-            
-            headers = header_line.split('\t')
-            
-            # Determine the format based on columns
-            if 'target_name' in headers and 'query_name' in headers:
-                # Eukaryotic format
-                for line_num, line in enumerate(f, start=2):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    parts = line.split('\t')
-                    # Pad with empty strings if line has fewer columns than headers
-                    while len(parts) < len(headers):
-                        parts.append('')
-                    
-                    row = dict(zip(headers, parts))
-                    sample_id = row['sample_id']
-                    gene_id = row['target_name']
-                    query_name = row.get('query_name', '')
-                    full_evalue = row.get('full_evalue', '')
-                    
-                    if query_name and query_name.strip():
-                        try:
-                            evalue = float(full_evalue)
-                            if evalue <= self.evalue_cutoff:
-                                full_gene_id = f"{sample_id}-----{gene_id}"
-                                gene_annotations[full_gene_id] = query_name
-                                annotated_genes.add(full_gene_id)
-                            else:
-                                full_gene_id = f"{sample_id}-----{gene_id}"
-                                unannotated_genes.add(full_gene_id)
-                        except (ValueError, TypeError):
-                            full_gene_id = f"{sample_id}-----{gene_id}"
-                            unannotated_genes.add(full_gene_id)
-                    else:
-                        full_gene_id = f"{sample_id}-----{gene_id}"
-                        unannotated_genes.add(full_gene_id)
-        
-            elif 'sequence_id' in headers and ('query_name' in headers or 'query_accession' in headers):
-                # Bacterial/viral format
-                query_col = 'query_name' if 'query_name' in headers else 'query_accession'
-                
-                for line_num, line in enumerate(f, start=2):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    parts = line.split('\t')
-                    # Pad with empty strings if line has fewer columns than headers
-                    while len(parts) < len(headers):
-                        parts.append('')
-                    
-                    row = dict(zip(headers, parts))
-                    sample_id = row['sample_id']
-                    gene_id = row['sequence_id']
-                    query_name = row.get(query_col, '')
-                    full_evalue = row.get('full_evalue', '')
-                    
-                    # Store E-value for efficient lookup (if available)
-                    if full_evalue and full_evalue.strip():
-                        try:
-                            evalue = float(full_evalue)
-                            self.evalue_mapping[(sample_id, gene_id)] = evalue
-                        except (ValueError, TypeError):
-                            self.evalue_mapping[(sample_id, gene_id)] = float('inf')
-                    else:
-                        self.evalue_mapping[(sample_id, gene_id)] = float('inf')
-                    
-                    if query_name and query_name.strip():
-                        try:
-                            evalue = float(full_evalue)
-                            if evalue <= self.evalue_cutoff:
-                                full_gene_id = f"{sample_id}-----{gene_id}"
-                                gene_annotations[full_gene_id] = query_name
-                                annotated_genes.add(full_gene_id)
-                            else:
-                                full_gene_id = f"{sample_id}-----{gene_id}"
-                                unannotated_genes.add(full_gene_id)
-                        except (ValueError, TypeError):
-                            full_gene_id = f"{sample_id}-----{gene_id}"
-                            unannotated_genes.add(full_gene_id)
-                    else:
-                        full_gene_id = f"{sample_id}-----{gene_id}"
-                        unannotated_genes.add(full_gene_id)
-        
-            else:
-                logger.error("Unrecognized summary file format")
+            return [self.sequence_file]
+        elif self.sequence_dir:
+            if not self.sequence_dir.is_dir():
+                logger.error(f"Sequence directory does not exist: {self.sequence_dir}")
                 sys.exit(1)
-        
-        logger.info(f"Found {len(annotated_genes)} annotated genes and {len(unannotated_genes)} unannotated genes")
-        return gene_annotations, annotated_genes, unannotated_genes
+            ext = f".{self.extension}" if not self.extension.startswith('.') else self.extension
+            files = list(self.sequence_dir.glob(f"*{ext}"))
+            if not files:
+                logger.error(f"No {ext} files found in {self.sequence_dir}")
+                sys.exit(1)
+            return files
     
-    def _create_unannotated_fasta(self, unannotated_genes):
-        """Create a fasta file containing only unannotated genes using Biopython."""
-        if self.identity_only:
-            # In identity-only mode, combine all FASTA files without filtering
-            logger.info("Identity-only mode: combining all FASTA files")
-            return self._combine_all_fasta_files()
-        
-        unannotated_fasta = self.output_dir / "unannotated_genes.faa"
-        
-        # Create a set for faster lookup
-        unannotated_set = set(unannotated_genes)
-        
-        # Get unique sample IDs from the summary file
-        sample_ids = set()
-        for gene_id in unannotated_genes:
-            sample_id = gene_id.split('-----')[0]
-            sample_ids.add(sample_id)
-        
-        with open(unannotated_fasta, 'w') as out_f:
-            for sample_id in sample_ids:
-                faa_file = self.faa_dir / f"{sample_id}.faa"
-                if not faa_file.exists():
-                    logger.warning(f"FASTA file not found for sample {sample_id}: {faa_file}")
-                    continue
-                    
-                try:
-                    # Parse FASTA file with Biopython
-                    for record in SeqIO.parse(faa_file, "fasta"):
-                        # Extract sample_id from filename (remove .faa extension)
-                        sample_id = faa_file.stem
-                        # The record.id already contains the full format, extract just the basic gene ID
-                        if '-----' in record.id:
-                            # Format: sample_id-----gene_id-----additional_info
-                            full_gene_id = record.id.split('-----', 2)[0] + '-----' + record.id.split('-----', 2)[1]
-                        else:
-                            # Fallback for basic format
-                            basic_gene_id = record.id.split()[0] if ' ' in record.id else record.id
-                            full_gene_id = f"{sample_id}-----{basic_gene_id}"
-                        
-                        # Check if this gene is unannotated
-                        if full_gene_id in unannotated_set:
-                            # Write the sequence to output
-                            SeqIO.write(record, out_f, "fasta")
-                            
-                except Exception as e:
-                    logger.error(f"Error processing {faa_file}: {e}")
-                    continue
-        return unannotated_fasta
-    
-    def _combine_all_fasta_files(self):
-        """Combine all FASTA files into one for identity-only mode."""
+    def _combine_fasta_files(self, input_files):
         combined_fasta = self.output_dir / "tocluster.faa"
-        
         with open(combined_fasta, 'w') as out_f:
-            for faa_file in self.faa_dir.glob("*.faa"):
-                try:
-                    # Parse and write all sequences from this file
-                    for record in SeqIO.parse(faa_file, "fasta"):
-                        SeqIO.write(record, out_f, "fasta")
-                    
-                except Exception as e:
-                    logger.error(f"Error processing {faa_file}: {e}")
-                    continue
+            for faa_file in input_files:
+                with open(faa_file, 'r') as in_f:
+                    out_f.write(in_f.read())
         return combined_fasta
     
-    def _cluster_unannotated_genes(self, unannotated_fasta):
-        """Cluster unannotated genes using MMseqs2 easy-cluster."""
-        if not unannotated_fasta.exists() or unannotated_fasta.stat().st_size == 0:
-            logger.info("No unannotated genes to cluster")
-            return {}
-        
-        logger.info("Clustering unannotated genes using MMseqs2")
-        
-        # Create tmp directory if it doesn't exist
-        self.tmp_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Run MMseqs2 easy-cluster - output goes to output dir
-        cluster_prefix = self.output_dir / "mmseqs_genecat"
-        cmd = [
-            'mmseqs', 'easy-cluster',
-            str(unannotated_fasta),
-            str(cluster_prefix),
-            str(self.tmp_dir),
-            '--min-seq-id', str(self.identity_threshold),
-            '-c', str(self.coverage_threshold),
-            '--threads', str(self.threads)
-        ]
-        
-        try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            print(f"MMseqs2 ERROR: {e}")
-            print(f"MMseqs2 STDERR: {e.stderr}")
-            print(f"MMseqs2 STDOUT: {e.stdout}")
-            logger.error(f"MMseqs2 clustering failed: {e}")
-            logger.error(f"MMseqs2 stderr: {e.stderr}")
-            logger.error(f"MMseqs2 stdout: {e.stdout}")
-            return {}
-        
-        # Parse cluster results - MMseqs2 creates genecat_cluster.tsv
-        cluster_file = cluster_prefix.parent / f"{cluster_prefix.name}_cluster.tsv"
-        rep_fasta = cluster_prefix.parent / f"{cluster_prefix.name}_rep_seq.fasta"
-        if not cluster_file.exists():
-            logger.error("MMseqs2 failed to generate cluster file")
-            logger.error(f"Expected cluster file: {cluster_file}")
-            logger.error("This is a critical failure - MMseqs2 clustering is required for the pipeline")
-            raise RuntimeError("MMseqs2 clustering failed - no cluster file generated")
-        
-        gene_clusters = {}
-        with open(cluster_file, 'r') as f:
-            for line in f:
-                parts = line.strip().split('\t')
-                if len(parts) >= 2:
-                    representative = parts[0]
-                    gene_id = parts[1]
-                    
-                    # Extract the basic gene ID from the full format
-                    if '-----' in gene_id:
-                        # Format: sample_id-----gene_id-----additional_info
-                        basic_gene_id = gene_id.split('-----', 2)[0] + '-----' + gene_id.split('-----', 2)[1]
-                    else:
-                        basic_gene_id = gene_id
-                    
-                    # Extract basic representative ID too
-                    if '-----' in representative:
-                        basic_representative = representative.split('-----', 2)[0] + '-----' + representative.split('-----', 2)[1]
-                    else:
-                        basic_representative = representative
-                    
-                    gene_clusters[basic_gene_id] = basic_representative
-        
-        logger.info(f"Created {len(set(gene_clusters.values()))} clusters from unannotated genes")
-        return gene_clusters
-
     def _cluster_with_threshold(self, input_fasta, min_seq_id, tag):
-        """Run one round of clustering, return (member->rep mapping, rep_fasta_path)."""
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         cluster_prefix = self.output_dir / f"mmseqs_iter_{tag}"
         cmd = [
@@ -325,222 +97,250 @@ class GeneCatalogBuilder:
                     member = parts[1]
                     mapping[member] = representative
         return mapping, rep_fasta
-
-    def _iterative_cluster_chain(self, unannotated_fasta):
-        """Chain clustering across multiple thresholds."""
-        if not self.identity_thresholds:
-            return {}
-        current_fasta = unannotated_fasta
-        chain_maps = []
+    
+    def _cluster_single_threshold(self, input_fasta):
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
+        cluster_prefix = self.output_dir / "mmseqs_genecat"
+        cmd = [
+            'mmseqs', 'easy-cluster',
+            str(input_fasta),
+            str(cluster_prefix),
+            str(self.tmp_dir),
+            '--min-seq-id', str(self.identity_threshold),
+            '-c', str(self.coverage_threshold),
+            '--threads', str(self.threads)
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"MMseqs2 clustering failed: {e.stderr}")
+            raise
+        cluster_file = cluster_prefix.parent / f"{cluster_prefix.name}_cluster.tsv"
+        if not cluster_file.exists():
+            raise RuntimeError("MMseqs2 clustering failed - no cluster file generated")
+        gene_clusters = {}
+        with open(cluster_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) >= 2:
+                    representative = parts[0]
+                    gene_id = parts[1]
+                    gene_clusters[gene_id] = representative
+        return gene_clusters
+    
+    def _iterative_cluster_chain(self, input_fasta):
+        current_fasta = input_fasta
+        all_mappings = []
         for idx, thr in enumerate(self.identity_thresholds, start=1):
             tag = f"t{idx}_{str(thr).replace('.','p')}"
             logger.info(f"Clustering at identity {thr}")
             mapping, rep_fasta = self._cluster_with_threshold(current_fasta, thr, tag)
-            chain_maps.append(mapping)
+            all_mappings.append((thr, mapping))
             current_fasta = rep_fasta
-        # Collapse chain: for each original member, find final representative
-        final_map = {}
-        # Build set of all members seen at first level
-        if not chain_maps:
-            return final_map
-        first_map = chain_maps[0]
-        for member in first_map.keys():
-            rep = member
-            for m in chain_maps:
-                rep = m.get(rep, rep)
-            final_map[member] = rep
-        return final_map
+        return all_mappings
     
-    def _create_gene_mappings(self, gene_annotations, annotated_genes, unannotated_genes, gene_clusters):
-        """Create the final gene mapping files with proper frequency-based clustering."""
-        # Main cluster mapping
-        cluster_mapping = self.output_dir / "gene_clusters.tsv"
-        singleton_mapping = self.output_dir / "gene_singletons.tsv"
-        single_copy_mapping = self.output_dir / "single_copy_genes.tsv"
+    def _extract_sample_gene(self, gene_id):
+        if '-----' in gene_id:
+            parts = gene_id.split('-----', 2)
+            sample = parts[0]
+            gene = parts[1] if len(parts) > 1 else gene_id
+        else:
+            sample = 'unknown'
+            gene = gene_id
+        return sample, gene
+    
+    def _create_gene_catalog(self, clustering_result, input_files, is_iterative=False):
+        all_genes = {}
         
-        # Count annotation frequencies across samples
-        annotation_frequency = defaultdict(int)
-        annotation_samples = defaultdict(set)
-        annotation_genes = defaultdict(list)
+        for faa_file in input_files:
+            with open(faa_file, 'r') as f:
+                for line in f:
+                    if line.startswith('>'):
+                        gene_id = line.strip()[1:].split()[0]
+                        sample, gene = self._extract_sample_gene(gene_id)
+                        if gene_id not in all_genes:
+                            all_genes[gene_id] = (sample, gene)
         
-        # Process annotated genes to count frequencies
-        for gene_id in annotated_genes:
-            if gene_id in gene_annotations:
-                sample_id, gene = gene_id.split('-----', 1)
-                annotation = gene_annotations[gene_id]
-                annotation_frequency[annotation] += 1
-                annotation_samples[annotation].add(sample_id)
-                annotation_genes[annotation].append(gene_id)
+        final_catalog = self.output_dir / "gene_catalog.tsv"
         
-        # Separate annotations into clusters vs singletons based on frequency
-        cluster_annotations = set()
-        singleton_annotations = set()
-        multi_sample_single_copy_annotations = set()
-        
-        for annotation, count in annotation_frequency.items():
-            if count > 1:
-                # Appears multiple times - goes to clusters
-                cluster_annotations.add(annotation)
-            else:
-                # Appears only once - check if multi-sample single-copy
-                if self.multi_sample_single_copy and len(annotation_samples[annotation]) > 1:
-                    # Appears once per sample but across multiple samples
-                    multi_sample_single_copy_annotations.add(annotation)
-                    cluster_annotations.add(annotation)  # Also goes to clusters
-                else:
-                    # True singleton - appears only once total
-                    singleton_annotations.add(annotation)
-        
-        with open(cluster_mapping, 'w') as cluster_f, open(singleton_mapping, 'w') as singleton_f, open(single_copy_mapping, 'w') as single_copy_f:
-            # Write headers - 3 columns only
-            cluster_f.write("sampleid\tgene\tcluster_rep\n")
-            singleton_f.write("sampleid\tgene\tcluster_rep\n")
-            single_copy_f.write("sampleid\tgene\tcluster_rep\n")
+        if is_iterative:
+            threshold_mappings = clustering_result
+            thresholds = [str(thr) for thr, _ in threshold_mappings]
+            header = "sample\tgene\t" + "\t".join(thresholds) + "\n"
             
-            # Process annotated genes
-            for gene_id in annotated_genes:
-                if gene_id in gene_annotations:
-                    sample_id, gene = gene_id.split('-----', 1)
-                    annotation = gene_annotations[gene_id]
-                    
-                    if annotation in cluster_annotations:
-                        # Non-singleton functional annotation - goes to clusters
-                        cluster_f.write(f"{sample_id}\t{gene}\t{annotation}\n")
-                        if annotation in multi_sample_single_copy_annotations:
-                            single_copy_f.write(f"{sample_id}\t{gene}\t{annotation}\n")
-                    elif annotation in singleton_annotations:
-                        # Singleton functional annotation - goes to singletons
-                        singleton_f.write(f"{sample_id}\t{gene}\t{annotation}\n")
+            with open(final_catalog, 'w') as out_f:
+                out_f.write(header)
+                for gene_id, (sample, gene) in all_genes.items():
+                    row = [sample, gene]
+                    current_id = gene_id
+                    for thr, mapping in threshold_mappings:
+                        if current_id in mapping:
+                            current_id = mapping[current_id]
+                        row.append(current_id)
+                    out_f.write("\t".join(row) + "\n")
+        else:
+            gene_clusters = clustering_result
+            header = f"sample\tgene\t{self.identity_threshold}\n"
             
-            # Process unannotated genes
-            for gene_id in unannotated_genes:
-                sample_id, gene = gene_id.split('-----', 1)
-                if gene_id in gene_clusters:
-                    # Non-singleton sequence cluster - goes to clusters
-                    cluster_rep = gene_clusters[gene_id]
-                    # Extract just the basic gene ID from the cluster representative
-                    if '-----' in cluster_rep:
-                        cluster_rep_basic = cluster_rep.split('-----', 2)[1]  # Get the middle part
+            with open(final_catalog, 'w') as out_f:
+                out_f.write(header)
+                for gene_id, (sample, gene) in all_genes.items():
+                    if gene_id in gene_clusters:
+                        rep = gene_clusters[gene_id]
                     else:
-                        cluster_rep_basic = cluster_rep
-                    cluster_f.write(f"{sample_id}\t{gene}\t{cluster_rep_basic}\n")
-                else:
-                    # Singleton sequence - goes to singletons
-                    singleton_f.write(f"{sample_id}\t{gene}\t{gene_id}\n")
+                        rep = gene_id
+                    out_f.write(f"{sample}\t{gene}\t{rep}\n")
         
-        logger.info(f"Created gene cluster mapping: {cluster_mapping}")
-        logger.info(f"Created gene singleton mapping: {singleton_mapping}")
-        if self.multi_sample_single_copy:
-            logger.info(f"Created single copy genes mapping: {single_copy_mapping}")
-        
-        return cluster_mapping, singleton_mapping, single_copy_mapping
+        return final_catalog
     
-    def _create_identity_only_mappings(self, gene_clusters):
-        """Create simple mappings for identity-only mode."""
-        cluster_mapping = self.output_dir / "gene_clusters.tsv"
-        singleton_mapping = self.output_dir / "gene_singletons.tsv"
+    def _split_singletons(self, catalog_file):
+        logger.info("Identifying and splitting singletons")
         
-        with open(cluster_mapping, 'w') as cluster_f, open(singleton_mapping, 'w') as singleton_f:
-            # Write headers
-            cluster_f.write("sampleid\tgene\tcluster_rep\n")
-            singleton_f.write("sampleid\tgene\tcluster_rep\n")
+        with open(catalog_file, 'r') as f:
+            header = f.readline().strip()
+            lines = [line.strip() for line in f]
+        
+        header_parts = header.split('\t')
+        if len(header_parts) < 3:
+            logger.error("Invalid catalog format")
+            return
+        
+        rep_columns = header_parts[2:]
+        
+        rep_counts = {}
+        gene_rows = []
+        
+        for line in lines:
+            parts = line.split('\t')
+            if len(parts) < len(header_parts):
+                continue
+            gene_rows.append(parts)
             
-            # Process all genes from FASTA files
-            for faa_file in self.faa_dir.glob("*.faa"):
-                sample_id = faa_file.stem
-                
-                try:
-                    for record in SeqIO.parse(faa_file, "fasta"):
-                        # Extract just the basic gene ID from the full format
-                        if '-----' in record.id:
-                            gene_id = record.id.split('-----', 2)[1]  # Get the middle part
-                            full_gene_id = record.id.split('-----', 2)[0] + '-----' + record.id.split('-----', 2)[1]
-                        else:
-                            gene_id = record.id
-                            full_gene_id = f"{sample_id}-----{gene_id}"
-                        
-                        if full_gene_id in gene_clusters:
-                            # Non-singleton sequence cluster
-                            cluster_rep = gene_clusters[full_gene_id]
-                            cluster_f.write(f"{sample_id}\t{gene_id}\t{cluster_rep}\n")
-                        else:
-                            # Singleton sequence
-                            singleton_f.write(f"{sample_id}\t{gene_id}\t{full_gene_id}\n")
-                            
-                except Exception as e:
-                    logger.error(f"Error processing {faa_file}: {e}")
-                    continue
+            for idx, rep_col in enumerate(rep_columns):
+                rep_val = parts[2 + idx]
+                if rep_val not in rep_counts:
+                    rep_counts[rep_val] = {}
+                if idx not in rep_counts[rep_val]:
+                    rep_counts[rep_val][idx] = 0
+                rep_counts[rep_val][idx] += 1
         
-        return cluster_mapping, singleton_mapping
+        singleton_genes = set()
+        for parts in gene_rows:
+            is_singleton = True
+            for idx in range(len(rep_columns)):
+                rep_val = parts[2 + idx]
+                if rep_counts[rep_val][idx] > 1:
+                    is_singleton = False
+                    break
+            if is_singleton:
+                gene_key = f"{parts[0]}\t{parts[1]}"
+                singleton_genes.add(gene_key)
+        
+        nonsingleton_file = self.output_dir / "gene_catalog_nonsingletons.tsv"
+        singleton_file = self.output_dir / "gene_catalog_singletons.tsv"
+        
+        with open(nonsingleton_file, 'w') as ns_f, open(singleton_file, 'w') as s_f:
+            ns_f.write(header + "\n")
+            s_f.write(header + "\n")
+            
+            for parts in gene_rows:
+                gene_key = f"{parts[0]}\t{parts[1]}"
+                line = "\t".join(parts) + "\n"
+                if gene_key in singleton_genes:
+                    s_f.write(line)
+                else:
+                    ns_f.write(line)
+        
+        logger.info(f"Split catalog: {len(singleton_genes)} singletons, {len(gene_rows) - len(singleton_genes)} non-singletons")
+        return nonsingleton_file, singleton_file
+    
+    def _track_singletons_per_threshold(self, catalog_file):
+        tracking_file = self.output_dir / "singleton_counts.tsv"
+        
+        with open(catalog_file, 'r') as f:
+            header = f.readline().strip()
+            lines = [line.strip() for line in f]
+        
+        header_parts = header.split('\t')
+        if len(header_parts) < 3:
+            return
+        
+        rep_columns = header_parts[2:]
+        thresholds = rep_columns
+        
+        rep_counts_per_threshold = []
+        for idx in range(len(thresholds)):
+            rep_counts = {}
+            for line in lines:
+                parts = line.split('\t')
+                if len(parts) < len(header_parts):
+                    continue
+                rep_val = parts[2 + idx]
+                rep_counts[rep_val] = rep_counts.get(rep_val, 0) + 1
+            rep_counts_per_threshold.append(rep_counts)
+        
+        singleton_counts = []
+        for idx, rep_counts in enumerate(rep_counts_per_threshold):
+            singleton_count = sum(1 for count in rep_counts.values() if count == 1)
+            singleton_counts.append(singleton_count)
+        
+        file_exists = tracking_file.exists()
+        with open(tracking_file, 'a') as f:
+            if not file_exists:
+                f.write("singleton_count\n")
+            for count in singleton_counts:
+                f.write(f"{count}\n")
+        
+        logger.info(f"Recorded singleton counts per threshold: {singleton_counts}")
     
     def build_catalog(self):
-        """Main method to build the gene catalog."""
         logger.info("Starting gene catalog construction")
         
-        if self.identity_only:
-            # In identity-only mode, skip annotation parsing and just cluster all sequences
-            logger.info("Running in identity-only mode - clustering all sequences")
-            
-            # Create combined fasta file
-            combined_fasta = self._combine_all_fasta_files()
-            
-            # Cluster all sequences (iteratively if thresholds provided)
-            if self.identity_thresholds:
-                gene_clusters = self._iterative_cluster_chain(combined_fasta)
-            else:
-                gene_clusters = self._cluster_unannotated_genes(combined_fasta)
-            cluster_mapping, singleton_mapping = self._create_identity_only_mappings(gene_clusters)
-            
+        input_files = self._get_input_files()
+        logger.info(f"Found {len(input_files)} input file(s)")
+        
+        combined_fasta = self._combine_fasta_files(input_files)
+        
+        if self.identity_thresholds:
+            logger.info(f"Iterative clustering at thresholds: {self.identity_thresholds}")
+            clustering_result = self._iterative_cluster_chain(combined_fasta)
+            final_catalog = self._create_gene_catalog(clustering_result, input_files, is_iterative=True)
         else:
-            # Parse summary file
-            gene_annotations, annotated_genes, unannotated_genes = self._parse_summary_file()
-            
-            # Create unannotated genes fasta
-            unannotated_fasta = self._create_unannotated_fasta(unannotated_genes)
-            
-            # Cluster unannotated genes (iteratively if thresholds provided)
-            if self.identity_thresholds:
-                gene_clusters = self._iterative_cluster_chain(unannotated_fasta)
-            else:
-                gene_clusters = self._cluster_unannotated_genes(unannotated_fasta)
-            
-            # Create final mappings
-            cluster_mapping, singleton_mapping, single_copy_mapping = self._create_gene_mappings(
-                gene_annotations, annotated_genes, unannotated_genes, gene_clusters
-            )
+            logger.info(f"Single-threshold clustering at identity {self.identity_threshold}")
+            clustering_result = self._cluster_single_threshold(combined_fasta)
+            final_catalog = self._create_gene_catalog(clustering_result, input_files, is_iterative=False)
         
-        # Write consolidated final mapping
-        final_catalog = self.output_dir / "gene_catalog.tsv"
-        with open(final_catalog, 'w') as out_f:
-            out_f.write("sampleid\tgene\tcluster_rep\n")
-            # Merge cluster and singleton mappings
-            def append_file(pth):
-                if pth and os.path.exists(pth):
-                    with open(pth, 'r') as f:
-                        next(f, None)
-                        for line in f:
-                            out_f.write(line)
-            append_file(self.output_dir / "gene_clusters.tsv")
-            append_file(self.output_dir / "gene_singletons.tsv")
+        self._track_singletons_per_threshold(final_catalog)
         
-        logger.info("Gene catalog construction completed successfully")
+        if self.split_singletons:
+            self._split_singletons(final_catalog)
+        
+        logger.info(f"Gene catalog construction completed: {final_catalog}")
         return final_catalog
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Build gene catalog by clustering genes based on annotations and sequence similarity"
+        description="Build gene catalog by clustering protein sequences with MMseqs2"
     )
     
     parser.add_argument(
-        '--summary-file',
-        required=False,
-        help='Path to call_orfs summary file with annotation data (not required for identity-only mode)'
+        '--sequence-dir',
+        dest='sequence_dir',
+        default=None,
+        help='Directory containing FASTA files'
     )
     
     parser.add_argument(
-        '--faa-dir',
-        required=True,
-        help='Directory containing .faa files where filenames match IDs in summary'
+        '--sequence-file',
+        dest='sequence_file',
+        default=None,
+        help='Single FASTA file to cluster'
+    )
+    
+    parser.add_argument(
+        '-x', '--extension',
+        default='faa',
+        help='File extension to match when using --sequence-dir (default: faa)'
     )
     
     parser.add_argument(
@@ -557,18 +357,12 @@ def main():
     )
     
     parser.add_argument(
-        '--evalue-cutoff',
-        type=float,
-        default=0.01,
-        help='E-value cutoff for HMM annotations (default: 0.01)'
-    )
-    
-    parser.add_argument(
         '--identity-threshold',
         type=float,
         default=0.9,
         help='Identity threshold for MMseqs2 clustering (default: 0.9)'
     )
+    
     parser.add_argument(
         '--identity-thresholds',
         type=str,
@@ -584,48 +378,42 @@ def main():
     )
     
     parser.add_argument(
-        '--identity-only',
-        action='store_true',
-        help='Skip functional annotation and only use MMseqs2 sequence clustering'
-    )
-    
-    parser.add_argument(
-        '--multi-sample-single-copy',
-        action='store_true',
-        help='Identify genes that appear once per sample but across multiple samples'
-    )
-    
-    parser.add_argument(
         '--tmpdir',
         default='./tmp/',
         help='Temporary directory for MMseqs2 (default: ./tmp/)'
     )
     
+    parser.add_argument(
+        '--split-singletons',
+        action='store_true',
+        help='Split singletons into separate file (gene_catalog_singletons.tsv)'
+    )
+    
     args = parser.parse_args()
     
-    # Validate arguments
-    if not args.identity_only and not args.summary_file:
-        parser.error("--summary-file is required when not using --identity-only mode")
+    identity_thresholds = None
+    if args.identity_thresholds:
+        identity_thresholds = [float(x.strip()) for x in args.identity_thresholds.split(',')]
     
-    # Create and run the gene catalog builder
     builder = GeneCatalogBuilder(
-        summary_file=args.summary_file,
-        faa_dir=args.faa_dir,
+        sequence_dir=args.sequence_dir,
+        sequence_file=args.sequence_file,
         output_dir=args.output_dir,
         threads=args.threads,
-        evalue_cutoff=args.evalue_cutoff,
         identity_threshold=args.identity_threshold,
-        identity_thresholds=[float(x) for x in args.identity_thresholds.split(',')] if args.identity_thresholds else None,
+        identity_thresholds=identity_thresholds,
         coverage_threshold=args.coverage_threshold,
-        identity_only=args.identity_only,
-        multi_sample_single_copy=args.multi_sample_single_copy,
-        tmpdir=args.tmpdir
+        extension=args.extension,
+        tmpdir=args.tmpdir,
+        split_singletons=args.split_singletons
     )
     
     try:
         builder.build_catalog()
     except Exception as e:
         logger.error(f"Gene catalog construction failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == '__main__':
