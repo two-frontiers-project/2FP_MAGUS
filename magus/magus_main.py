@@ -28,6 +28,7 @@ def main():
         'find-euks': 'find-euks.py',
         'finalize-bacterial-mags': 'finalize-bacterial-mags.py',
         'call-orfs': 'call_orfs2.py',
+        'annotate': 'annotate.py',
         'build-gene-catalog': 'build_gene_catalog.py',
         'filter-mags': 'filter_mags.py',
         'build-tree': 'build_tree.py'
