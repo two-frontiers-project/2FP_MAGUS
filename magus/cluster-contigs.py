@@ -108,7 +108,7 @@ class ContigClustering:
 		os.makedirs(f"{self.tmp_dir}/clus/", exist_ok=True)
 
 		# Cluster the contigs
-		cmd_spamw = f"spamw2 {distance_matrix} {cluster_output} 0 60 ALL NO2 WEIGHTED D2"
+		cmd_spamw = f"spamw2 {distance_matrix} {cluster_output} 0 60 ALL NO2 WEIGHTED D4"
 		print(f"Running spamw2 clustering on {distance_matrix}")
 		subprocess.run(cmd_spamw, shell=True)
 		
