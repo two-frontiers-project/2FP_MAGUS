@@ -1,15 +1,30 @@
-import subprocess
-import os
 import argparse
+import glob
+import os
+import subprocess
+
 import pandas as pd
 
 
 class ContigClustering:
-    def __init__(self, config, asmdir, magdir, tmpdir, contig_dir="contigs", combined_output="Contigs.fasta", threads=28, ksize=0, use_stat_cutoff=False):
+    def __init__(
+        self,
+        config,
+        asmdir,
+        magdir,
+        tmpdir,
+        contig_dir="contigs",
+        combined_output="Contigs.fasta",
+        threads=28,
+        ksize=0,
+        use_stat_cutoff=False,
+        stat_file=None,
+    ):
         self.config = self.load_config(config)
         self.threads = threads
         self.ksize = ksize
         self.use_stat_cutoff = use_stat_cutoff
+        self.stat_file = stat_file
         self.tmp_dir = tmpdir
         self.asmdir = asmdir
         self.magdir = magdir
@@ -103,26 +118,55 @@ class ContigClustering:
         return distance_matrix
 
     def run_clustering(self):
-        # Run spamw2 for clustering and bestmag for selecting best bins
+        # Run spamw2 for clustering and optionally bestmag for selecting representative clusters
         distance_matrix = self.run_akmer102()  # Generate the distance matrix
         cluster_output = f"{self.tmp_dir}/clus/S"
         coasm_output = f"{self.tmp_dir}/coasm.reps"
 
         os.makedirs(f"{self.tmp_dir}/clus/", exist_ok=True)
 
-        # Cluster the contigs
-        cmd_spamw = f"spamw2 {distance_matrix} {cluster_output} {self.ksize} 60 ALL NO2 WEIGHTED D4"
+        # Cluster the contigs. For manual K selection we run all iterations so each K has its own output.
+        if self.ksize > 0:
+            cmd_spamw = f"spamw2 {distance_matrix} {cluster_output} {self.ksize} {self.threads} WEIGHTED NO2 D4"
+        else:
+            cmd_spamw = f"spamw2 {distance_matrix} {cluster_output} 0 {self.threads} ALL NO2 WEIGHTED D4"
         print(f"Running spamw2 clustering on {distance_matrix}")
         subprocess.run(cmd_spamw, shell=True)
 
-        # Select best bins with bestmag
+        # Decide which spamw2 cluster file to pass along
+        cluster_txt = f"{cluster_output}.txt"
+        if self.ksize > 0:
+            k_pattern = f"{cluster_output}_K{self.ksize}-*.txt"
+            k_matches = glob.glob(k_pattern)
+            if not k_matches:
+                raise FileNotFoundError(
+                    f"Requested K={self.ksize}, but no spamw2 output matched pattern {k_pattern}. "
+                    "Check the spamw2 logs or rerun with K=0 to allow silhouette selection."
+                )
+
+            def _score_from_filename(path: str) -> float:
+                try:
+                    return float(os.path.splitext(path.rsplit("-", 1)[-1])[0])
+                except ValueError:
+                    return float("-inf")
+
+            cluster_txt = sorted(k_matches, key=_score_from_filename, reverse=True)[0]
+            print(f"Using spamw2 cluster assignments for K={self.ksize}: {os.path.basename(cluster_txt)}")
+
+        # Select best bins with bestmag, either using a stat cutoff or the default NOSTAT heuristics.
         if self.use_stat_cutoff:
-            stat_file = f"{cluster_output}.stat"
+            stat_file = self.stat_file or f"{cluster_output}.stat"
+            if not os.path.exists(stat_file):
+                raise FileNotFoundError(
+                    f"Stat cutoff requested but no stat file found at {stat_file}. "
+                    "Pass --stat_file to point to an existing spamw2 .stat file or rerun without --use_stat_cutoff."
+                )
+
             bestmag_txt = f"{cluster_output}.bestmag.txt"
-            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_output}.txt {stat_file} {bestmag_txt} REPS {coasm_output}"
+            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} {stat_file} {bestmag_txt} REPS {coasm_output}"
         else:
-            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_output}.txt NOSTAT REPS {coasm_output}"
-        print(f"Running bestmag to select best bins")
+            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} NOSTAT REPS {coasm_output}"
+        print(f"Running bestmag to select best bins before coassembly")
         subprocess.run(cmd_bestmag, shell=True)
 
         # Create the coassembly task list
@@ -148,6 +192,7 @@ def main():
     parser.add_argument('--tmpdir', type=str, default='tmp/cluster-contigs', help='Temp directory. Default tmp/cluster-contigs.')
     parser.add_argument('--ksize', type=int, default=0, help='Number of clusters to request from spamw2 (0 keeps silhouette mode).')
     parser.add_argument('--use_stat_cutoff', action='store_true', help='Use spamw2-generated .stat cutoff when running bestmag2 instead of NOSTAT mode.')
+    parser.add_argument('--stat_file', type=str, default=None, help='Path to a spamw2 .stat file to use with --use_stat_cutoff.')
 
     # Parse arguments
     args = parser.parse_args()
@@ -162,7 +207,8 @@ def main():
         threads=args.threads,
         tmpdir=args.tmpdir,
         ksize=args.ksize,
-        use_stat_cutoff=args.use_stat_cutoff
+        use_stat_cutoff=args.use_stat_cutoff,
+        stat_file=args.stat_file,
     )
     clustering.run()
 
