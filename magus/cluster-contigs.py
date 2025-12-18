@@ -1,5 +1,4 @@
 import argparse
-import glob
 import os
 import subprocess
 
@@ -125,7 +124,8 @@ class ContigClustering:
 
         os.makedirs(f"{self.tmp_dir}/clus/", exist_ok=True)
 
-        # Cluster the contigs. For manual K selection we run all iterations so each K has its own output.
+        # Cluster the contigs. For manual K, spamw2 is invoked directly for that K, which writes S.txt.
+        # Silhouette/auto mode still uses spamw2's ALL iteration to explore multiple Ks.
         if self.ksize > 0:
             cmd_spamw = f"spamw2 {distance_matrix} {cluster_output} {self.ksize} {self.threads} WEIGHTED NO2 D4"
         else:
@@ -136,24 +136,15 @@ class ContigClustering:
         # Decide which spamw2 cluster file to pass along
         cluster_txt = f"{cluster_output}.txt"
         if self.ksize > 0:
-            k_pattern = f"{cluster_output}_K{self.ksize}-*.txt"
-            k_matches = glob.glob(k_pattern)
-            if not k_matches:
+            if not os.path.exists(cluster_txt):
                 raise FileNotFoundError(
-                    f"Requested K={self.ksize}, but no spamw2 output matched pattern {k_pattern}. "
-                    "Check the spamw2 logs or rerun with K=0 to allow silhouette selection."
+                    f"Requested K={self.ksize}, but expected spamw2 output {cluster_txt} was not found. "
+                    "Check the spamw2 logs to confirm clustering finished successfully."
                 )
-
-            def _score_from_filename(path: str) -> float:
-                try:
-                    return float(os.path.splitext(path.rsplit("-", 1)[-1])[0])
-                except ValueError:
-                    return float("-inf")
-
-            cluster_txt = sorted(k_matches, key=_score_from_filename, reverse=True)[0]
             print(f"Using spamw2 cluster assignments for K={self.ksize}: {os.path.basename(cluster_txt)}")
-
+        
         # Select best bins with bestmag, either using a stat cutoff or the default NOSTAT heuristics.
+        bestmag_txt = f"{cluster_output}.bestmag.txt"
         if self.use_stat_cutoff:
             stat_file = self.stat_file or f"{cluster_output}.stat"
             if not os.path.exists(stat_file):
@@ -162,10 +153,9 @@ class ContigClustering:
                     "Pass --stat_file to point to an existing spamw2 .stat file or rerun without --use_stat_cutoff."
                 )
 
-            bestmag_txt = f"{cluster_output}.bestmag.txt"
             cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} {stat_file} {bestmag_txt} REPS {coasm_output}"
         else:
-            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} NOSTAT REPS {coasm_output}"
+            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} NOSTAT {bestmag_txt} REPS {coasm_output}"
         print(f"Running bestmag to select best bins before coassembly")
         subprocess.run(cmd_bestmag, shell=True)
 
