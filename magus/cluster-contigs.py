@@ -18,6 +18,7 @@ class ContigClustering:
         ksize=0,
         use_stat_cutoff=False,
         stat_file=None,
+        assemblies_only=False,
     ):
         self.config = self.load_config(config)
         self.threads = threads
@@ -27,6 +28,7 @@ class ContigClustering:
         self.tmp_dir = tmpdir
         self.asmdir = asmdir
         self.magdir = magdir
+        self.assemblies_only = assemblies_only
         self.contig_dir = self.tmp_dir + '/' + contig_dir
         self.combined_output = self.tmp_dir + '/' + combined_output
         # Create the directory for storing the contigs
@@ -41,27 +43,30 @@ class ContigClustering:
     def collect_filtered_contigs(self):
         MAX_BASES = 1_000_000_000
         large_mag_contigs = {}  # Dictionary to store large MAG contigs
-        print('Getting genome bin sizes')
-        # Step 1: Scan self.magdir for large MAGs and store contigs in dictionary
-        for mag_file in os.listdir(self.magdir):
-            mag_path = os.path.join(self.magdir, mag_file)
+        if not self.assemblies_only:
+            print('Getting genome bin sizes')
+            # Step 1: Scan self.magdir for large MAGs and store contigs in dictionary
+            for mag_file in os.listdir(self.magdir):
+                mag_path = os.path.join(self.magdir, mag_file)
 
-            # Use Bash to count bases in the MAG
-            count_cmd = f"grep -v '^>' {mag_path} | tr -d '\\n' | wc -c"
-            base_count = int(subprocess.check_output(count_cmd, shell=True).strip())
+                # Use Bash to count bases in the MAG
+                count_cmd = f"grep -v '^>' {mag_path} | tr -d '\\n' | wc -c"
+                base_count = int(subprocess.check_output(count_cmd, shell=True).strip())
 
-            if base_count > MAX_BASES:
-                # Extract the sample name (everything including & after the last underscore in the filename)
-                sample_name = mag_file.rsplit("_", 1)[-1].rsplit(".", 1)[0]  # Removes file extension too
+                if base_count > MAX_BASES:
+                    # Extract the sample name (everything including & after the last underscore in the filename)
+                    sample_name = mag_file.rsplit("_", 1)[-1].rsplit(".", 1)[0]  # Removes file extension too
 
-                # Extract contig IDs from the MAG
-                contig_ids_cmd = f"grep '^>' {mag_path} | sed 's/^>//'"
-                contig_ids = set(subprocess.check_output(contig_ids_cmd, shell=True).decode().splitlines())
+                    # Extract contig IDs from the MAG
+                    contig_ids_cmd = f"grep '^>' {mag_path} | sed 's/^>//'"
+                    contig_ids = set(subprocess.check_output(contig_ids_cmd, shell=True).decode().splitlines())
 
-                # Store in dictionary
-                if sample_name not in large_mag_contigs:
-                    large_mag_contigs[sample_name] = set()
-                large_mag_contigs[sample_name].update(contig_ids)
+                    # Store in dictionary
+                    if sample_name not in large_mag_contigs:
+                        large_mag_contigs[sample_name] = set()
+                    large_mag_contigs[sample_name].update(contig_ids)
+        else:
+            print('Assemblies-only mode: skipping MAG size scan and filtering')
 
         # Step 2: Process each sample's final contigs
         for sample in self.config:
@@ -74,7 +79,7 @@ class ContigClustering:
                 cmd = f"ln -s {final_contig_path} {output_contig_file}"
                 subprocess.run(cmd, shell=True)
                 # Step 3: Filter out contigs from large MAGs before applying base limit filter
-                if sample_name in large_mag_contigs:
+                if not self.assemblies_only and sample_name in large_mag_contigs:
                     print(f"Filtering out large MAG contigs from {sample_name}...")
                     filtered_output = f"{output_contig_file}.filtered"
 
@@ -125,7 +130,8 @@ class ContigClustering:
         os.makedirs(f"{self.tmp_dir}/clus/", exist_ok=True)
 
         # Cluster the contigs. For manual K, spamw2 is invoked directly for that K, which writes S.txt.
-        # Silhouette/auto mode still uses spamw2's ALL iteration to explore multiple Ks.
+        # Silhouette/auto mode still uses spamw2's ALL iteration to explore multiple Ks and pick the
+        # K that maximizes the silhouette score.
         if self.ksize > 0:
             cmd_spamw = f"spamw2 {distance_matrix} {cluster_output} {self.ksize} {self.threads} WEIGHTED NO2 D4"
         else:
@@ -183,6 +189,7 @@ def main():
     parser.add_argument('--ksize', type=int, default=0, help='Number of clusters to request from spamw2 (0 keeps silhouette mode).')
     parser.add_argument('--use_stat_cutoff', action='store_true', help='Use spamw2-generated .stat cutoff when running bestmag2 instead of NOSTAT mode.')
     parser.add_argument('--stat_file', type=str, default=None, help='Path to a spamw2 .stat file to use with --use_stat_cutoff.')
+    parser.add_argument('--assemblies_only', action='store_true', help='Skip MAG filtering and cluster the final.contigs.fa files directly.')
 
     # Parse arguments
     args = parser.parse_args()
@@ -199,6 +206,7 @@ def main():
         ksize=args.ksize,
         use_stat_cutoff=args.use_stat_cutoff,
         stat_file=args.stat_file,
+        assemblies_only=args.assemblies_only,
     )
     clustering.run()
 
