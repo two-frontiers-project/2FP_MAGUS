@@ -247,7 +247,6 @@ dependencies:
       - eukrep==0.6.6
       - future==1.0.0
       - kpal==2.1.1
-      - magus==0.2.0
       - ncbi-genome-download==0.3.3
       - psutil==6.0.0
       - scikit-learn==1.0.2
