@@ -16,15 +16,11 @@ class ContigClustering:
         combined_output="Contigs.fasta",
         threads=28,
         ksize=0,
-        use_stat_cutoff=False,
-        stat_file=None,
         assemblies_only=False,
     ):
         self.config = self.load_config(config)
         self.threads = threads
         self.ksize = ksize
-        self.use_stat_cutoff = use_stat_cutoff
-        self.stat_file = stat_file
         self.tmp_dir = tmpdir
         self.asmdir = asmdir
         self.magdir = magdir
@@ -149,19 +145,9 @@ class ContigClustering:
                 )
             print(f"Using spamw2 cluster assignments for K={self.ksize}: {os.path.basename(cluster_txt)}")
         
-        # Select best bins with bestmag, either using a stat cutoff or the default NOSTAT heuristics.
+        # Select best bins with bestmag using the default NOSTAT heuristics.
         bestmag_txt = f"{cluster_output}.bestmag.txt"
-        if self.use_stat_cutoff:
-            stat_file = self.stat_file or f"{cluster_output}.stat"
-            if not os.path.exists(stat_file):
-                raise FileNotFoundError(
-                    f"Stat cutoff requested but no stat file found at {stat_file}. "
-                    "Pass --stat_file to point to an existing spamw2 .stat file or rerun without --use_stat_cutoff."
-                )
-
-            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} {stat_file} {bestmag_txt} REPS {coasm_output}"
-        else:
-            cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} NOSTAT {bestmag_txt} REPS {coasm_output}"
+        cmd_bestmag = f"bestmag2 {distance_matrix} {cluster_txt} NOSTAT {bestmag_txt} REPS {coasm_output}"
         print(f"Running bestmag to select best bins before coassembly")
         subprocess.run(cmd_bestmag, shell=True)
 
@@ -187,8 +173,6 @@ def main():
     parser.add_argument('--magdir', type=str, default='asm/mags/', help='Directory with single assembled MAGs. Default is ./asm/mags')
     parser.add_argument('--tmpdir', type=str, default='tmp/cluster-contigs', help='Temp directory. Default tmp/cluster-contigs.')
     parser.add_argument('--ksize', type=int, default=0, help='Number of clusters to request from spamw2 (0 keeps silhouette mode).')
-    parser.add_argument('--use_stat_cutoff', action='store_true', help='Use spamw2-generated .stat cutoff when running bestmag2 instead of NOSTAT mode.')
-    parser.add_argument('--stat_file', type=str, default=None, help='Path to a spamw2 .stat file to use with --use_stat_cutoff.')
     parser.add_argument('--assemblies_only', action='store_true', help='Skip MAG filtering and cluster the final.contigs.fa files directly.')
 
     # Parse arguments
@@ -204,8 +188,6 @@ def main():
         threads=args.threads,
         tmpdir=args.tmpdir,
         ksize=args.ksize,
-        use_stat_cutoff=args.use_stat_cutoff,
-        stat_file=args.stat_file,
         assemblies_only=args.assemblies_only,
     )
     clustering.run()
