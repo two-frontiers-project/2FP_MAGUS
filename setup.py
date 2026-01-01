@@ -18,6 +18,7 @@ setup(
             'bin/shi7_trimmer',
             'bin/minigzip',
             'bin/akmer102',
+            'bin/xtree',
             'bin/lingenome',
             'bin/metabat2',
             'bin/fac',
