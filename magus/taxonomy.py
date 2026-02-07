@@ -88,7 +88,7 @@ def merge_abundance_matrix(output_dir, tax_file=None, coverage_cutoff=0.05, skip
         sample_name = os.path.splitext(os.path.basename(file))[0]
         df['sample'] = sample_name
         df['min_coverage'] = df[[
-            'Adamantium_covered',
+            'Adamantium_prop',
             'Unique_proportion_covered',
             'Proportion_covered']].min(axis=1)
         df['RA'] = df['Coverage_est'] / df['Coverage_est'].sum()
