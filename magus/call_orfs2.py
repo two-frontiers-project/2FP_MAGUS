@@ -227,7 +227,7 @@ def process_genomes(orf_caller, genomes_data, max_workers=1):
 
 def main():
     parser = argparse.ArgumentParser(description='Call ORFs for bacterial, viral, eukaryotic, and/or metagenomic genomes.')
-    parser.add_argument('--config', type=str, default=None, help='Tab-delimited: sample_id<TAB>genome_path<TAB>domain')
+    parser.add_argument('--config', type=str, default=None, help='Config file with 2 or 3 columns: sample_id genome_path [domain]. Supports tab or whitespace delimiters.')
     parser.add_argument('-m', '--mag_dir', type=str, default=None, help='Path or glob to genome files (e.g. asm/*/bins).')
     parser.add_argument('-w', '--wildcard', type=str, default='', help='Pattern to match anywhere in genome file path (pipe-separated for multiple).')
     parser.add_argument('--domain', type=str, choices=['bacterial', 'viral', 'eukaryotic', 'metagenomic'], help='Domain type when using directory mode.')
@@ -255,11 +255,27 @@ def main():
     if args.config:
         logger.info(f"Using config file: {args.config}")
         with open(args.config, 'r') as f:
-            reader = csv.reader(f, delimiter='\t')
-            for row in reader:
-                if not row or row[0].startswith('#') or len(row) < 3:
+            for line_number, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
+                if not line or line.startswith('#'):
                     continue
-                sample_id, genome_path, domain = row[0], row[1], row[2]
+
+                # Prefer tab-delimited parsing, but gracefully support whitespace-delimited files.
+                row = line.split('\t') if '\t' in line else line.split()
+                if len(row) < 2:
+                    logger.warning(f"Skipping malformed config line {line_number}: {raw_line.rstrip()}")
+                    continue
+
+                sample_id, genome_path = row[0], row[1]
+                if len(row) >= 3 and row[2].strip():
+                    domain = row[2].strip()
+                elif args.domain:
+                    domain = args.domain
+                else:
+                    raise ValueError(
+                        f"Config line {line_number} has no domain column and --domain was not provided: {raw_line.rstrip()}"
+                    )
+
                 genomes_data.append((sample_id, genome_path, domain))
     else:
         logger.info(f"Using directory mode: {args.mag_dir}")
@@ -288,10 +304,14 @@ def main():
                 sample_id = sample_id[:-len(extension)]
             genomes_data.append((sample_id, str(genome_path), args.domain))
 
+    if not genomes_data:
+        raise RuntimeError(
+            "No genomes were loaded from the provided inputs. Check config formatting or input paths."
+        )
+
     process_genomes(orf_caller, genomes_data, args.max_workers)
     logger.info("ORF calling (no annotation) completed.")
 
 if __name__ == '__main__':
     main()
-
 
