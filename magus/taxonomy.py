@@ -123,10 +123,10 @@ def load_samples(config_path):
 def parse_args():
     parser = argparse.ArgumentParser(description="Run XTree to get taxonomic classification on SE/PE reads using parallel processing.")
     parser.add_argument("--config", required=True, help="Path to TSV config file with columns: filename, pe1, pe2 (pe2 can just be empty for se files)")
-    parser.add_argument("--output", default='magus/xtree_output', help="Directory to store output files (default magus/xtree_output)")
+    parser.add_argument("--output", default='magus_output', help="Directory to store output files (default magus_output)")
     parser.add_argument("--db", required=True, help="Path to relevant xtree database")
     parser.add_argument("--threads", type=int, default=4, help="Number of threads to use for each xtree run (default 4)")
-    parser.add_argument("--max_workers", type=int, default=1, help="Max number of samples to process in parallel (default 1)")
+    parser.add_argument("--max-workers", "--max_workers", dest="max_workers", type=int, default=1, help="Max number of samples to process in parallel (default 1)")
     parser.add_argument("--taxmap", help="Path to GTDB taxonomy file; if not provided, taxonomy names will not be merged")
     parser.add_argument("--coverage-cutoff", type=float, default=0.05, help="Coverage cutoff for filtering alignments (default 0.05)")
     parser.add_argument("--skip-perq", action='store_true', help="Skip generation of .perq files")

@@ -232,8 +232,8 @@ def main():
     parser.add_argument('-w', '--wildcard', type=str, default='', help='Pattern to match anywhere in genome file path (pipe-separated for multiple).')
     parser.add_argument('--domain', type=str, choices=['bacterial', 'viral', 'eukaryotic', 'metagenomic'], help='Domain type when using directory mode.')
 
-    parser.add_argument('--output_directory', type=str, default='magus_output/orf_calling', help='Directory to store ORF outputs.')
-    parser.add_argument('--max_workers', type=int, default=1, help='Parallel ORF calling jobs.')
+    parser.add_argument('--output-directory', '--output_directory', dest='output_directory', type=str, default='magus_output/orf_calling', help='Directory to store ORF outputs.')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=1, help='Parallel ORF calling jobs.')
     parser.add_argument('--threads', type=int, default=4, help='Threads for tools.')
     parser.add_argument('--extension', type=str, default='fa', help='Extension of genome files.')
     parser.add_argument('--force', action='store_true', help='Force rewriting of existing outputs.')

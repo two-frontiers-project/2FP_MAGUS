@@ -431,7 +431,7 @@ def write_annotation_summary_euk_from_scours(output_dir, suffix, scour_dir):
 
 def main():
     parser = argparse.ArgumentParser(description='Annotate proteins with hmmsearch-g and merge results.')
-    parser.add_argument('--output_directory', type=str, default='magus_output/orf_calling', help='Root ORF output directory produced by call_orfs.')
+    parser.add_argument('--output-directory', '--output_directory', dest='output_directory', type=str, default='magus_output/orf_calling', help='Root ORF output directory produced by call_orfs.')
     parser.add_argument('--faa_dir', type=str, default=None, help='Optional: directory containing .faa files to annotate (overrides discovery).')
     parser.add_argument('--sequence-dir', type=str, default=None, dest='sequence_dir', help='Directory containing FASTA files to annotate.')
     parser.add_argument('--sequence-file', type=str, default=None, dest='sequence_file', help='Single FASTA file to annotate.')
@@ -439,7 +439,7 @@ def main():
     parser.add_argument('-x', '--extension', type=str, default='faa', help='File extension when using --sequence-dir (default: faa).')
     parser.add_argument('--domains', type=str, default='bacteria,viruses,metagenomes,eukaryotes', help='Comma-separated domains to process.')
     parser.add_argument('--threads', type=int, default=8, help='Threads per hmmsearch-g job.')
-    parser.add_argument('--max_workers', type=int, default=4, help='Parallel samples.')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=4, help='Parallel samples.')
     
     parser.add_argument('--pfam_tsv', type=str, default=None, help='Path to Pfam mapping TSV file (database lookup).')
     parser.add_argument('--pgap_tsv', type=str, default=None, help='Path to PGAP mapping TSV file (database lookup).')
