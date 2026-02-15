@@ -104,45 +104,45 @@ Key options for each command are summarised below (see `magus <command> --help` 
 
 - **qc** (`magus qc`)
   - `--config`: TSV describing raw reads.
-  - `--slurm_config`: Slurm settings TSV (optional).
-  - `--max_workers`: Parallel samples to process at once (default: 1).
+  - `--slurm-config`: Slurm settings TSV (optional).
+  - `--max-workers`: Parallel samples to process at once (default: 1).
   - `--mode`: `local` or `slurm` execution mode (default: local).
   - `--seqtype`: `short` or `long` reads (default: short).
   - `--outdir`: Output directory for QC results (default: qc).
 - **assemble-hosts** (`magus assemble-hosts`)
   - `--config`: TSV of reads to subsample for host assembly.
-  - `--max_workers`: Parallel samples (default: 1).
+  - `--max-workers`: Parallel samples (default: 1).
   - `--threads`: Threads for preprocessing (default: 14).
   - `--ksize`: Number of clusters to seek (default: 0, auto via silhouette).
-  - `--output_config`: Destination for the host-filtering config (default: configs/host_assembly_config).
+  - `--output-config`: Destination for the host-filtering config (default: configs/host_assembly_config).
   - `--tmpdir`: Working directory for intermediate host files (default: tmp).
 - **subsample-reads** (`magus subsample-reads`)
   - `--config`: Input sequencing config.
   - `--outdir`: Directory for subsampled reads (default: subsampled_reads).
-  - `--out_config`: Path for the updated config file (default: configs/subsampled_reads_config).
+  - `--out-config`: Path for the updated config file (default: configs/subsampled_reads_config).
   - `--depth`: Target read count per sample (default: 100000000).
   - `--threads`: Parallel threads (default: 4).
-  - `--max_workers`: Concurrent workers (default: 4).
+  - `--max-workers`: Concurrent workers (default: 4).
 - **filter-reads** (`magus filter-reads`)
   - `--config`: Sequencing config aligning filenames to read pairs.
-  - `--perq_dir`: Directory containing xtree `.perq` files.
-  - `--output_dir`: Where filtered reads are written (default: filtered_reads).
+  - `--perq-dir`: Directory containing xtree `.perq` files.
+  - `--output-dir`: Where filtered reads are written (default: filtered_reads).
   - `--min_kmers`: Minimum k-mer evidence retained per read (default: 10).
-  - `--max_workers`: Parallel samples (default: 1).
+  - `--max-workers`: Parallel samples (default: 1).
   - `--threads`: Threads for seqkit (default: 1).
 - **taxonomy** (`magus taxonomy`)
   - `--config`: TSV mapping sample IDs to read locations.
-  - `--output`: Output directory for alignments and summaries (default: magus/xtree_output).
+  - `--output`: Output directory for alignments and summaries (default: magus_output).
   - `--db`: xtree database to query.
   - `--threads`: Threads per xtree run (default: 4).
-  - `--max_workers`: Parallel samples (default: 1).
+  - `--max-workers`: Parallel samples (default: 1).
   - `--taxmap`: GTDB taxonomy file (optional).
   - `--coverage-cutoff`: Coverage cutoff for merged abundance matrix (default: 0.05).
   - `--skip-perq`, `--skip-cov`, `--skip-ref`: Skip selected xtree outputs.
 - **single-assembly** (`magus single-assembly`)
   - `--config`: QC'd read configuration.
-  - `--slurm_config`: Slurm settings TSV (optional).
-  - `--max_workers`: Number of samples assembled in parallel (default: 1).
+  - `--slurm-config`: Slurm settings TSV (optional).
+  - `--max-workers`: Number of samples assembled in parallel (default: 1).
   - `--threads`: Threads for assembly (default: 14).
   - `--mode`: `local` or `slurm` execution mode (default: local).
   - `--seqtype`: `short` or `long` reads (default: short).
@@ -153,7 +153,7 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--asmdir`: Location of assemblies to bin (default: asm).
   - `--tmpdir`: Scratch directory for binning intermediates (default: tmp/binning).
   - `--threads`: Threads for MetaBAT2 and CheckM2 (default: 14).
-  - `--max_workers`: Parallel samples (default: 4).
+  - `--max-workers`: Parallel samples (default: 4).
   - `--checkm_db`: Optional CheckM database override.
   - `--test_mode`: Relax filters and generate fallback bins.
   - `--completeness`: Completeness threshold override.
@@ -184,7 +184,7 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--coasm_outdir`: Root of co-assembly outputs to process (default: coasm).
   - `--tmpdir`: Scratch directory for binning (default: tmp/coassembly-binning).
   - `--threads`: Threads (default: 28).
-  - `--max_workers`: Parallel co-assemblies (default: 4).
+  - `--max-workers`: Parallel co-assemblies (default: 4).
   - `--checkm_db`: Optional CheckM database override.
   - `--test_mode`: Relax filtering thresholds and generate fallback bins.
   - `--restart`: Restart at `binning`, `checkm`, or `filtering`.
@@ -209,9 +209,9 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--bin_dirs`: Pipe-delimited directories to search for bins (required).
   - `--wildcards`: Pipe-delimited patterns to match bins (default: empty string).
   - `--size_threshold`: Minimum bin size (default: 10000000).
-  - `--euk_binning_outputdir`: Output directory (default: magus_output/magus_euks).
+  - `--euk-binning-outputdir`: Output directory (default: magus_output/magus_euks).
   - `--dblocs`: Mapping file for database paths (expects `eukccdb`, required).
-  - `--max_workers`: Parallel bins (default: 1).
+  - `--max-workers`: Parallel bins (default: 1).
   - `--threads`: Threads for EukCC (default: 8).
   - `--skip_eukrep`: Skip EukRep.
   - `--skip_eukcc`: Skip EukCC.
@@ -231,8 +231,8 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `-m`, `--mag_dir`: Path or glob to genome files.
   - `-w`, `--wildcard`: Pipe-delimited path filters.
   - `--domain`: Domain when using `--mag_dir` (`bacterial`, `viral`, `eukaryotic`, `metagenomic`).
-  - `--output_directory`: Output directory (default: magus_output/orf_calling).
-  - `--max_workers`: Parallel ORF jobs (default: 1).
+  - `--output-directory`: Output directory (default: magus_output/orf_calling).
+  - `--max-workers`: Parallel ORF jobs (default: 1).
   - `--threads`: Threads per tool (default: 4).
   - `--extension`: Genome file extension (default: fa).
   - `--force`: Overwrite existing outputs.
@@ -246,7 +246,7 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `-x`, `--extension`: Extension for `--sequence-dir` (default: faa).
   - `--domains`: Comma-separated domains to process (default: bacteria,viruses,metagenomes,eukaryotes).
   - `--threads`: Threads per hmmsearch-g job (default: 8).
-  - `--max_workers`: Parallel samples (default: 4).
+  - `--max-workers`: Parallel samples (default: 4).
   - `--pfam_tsv`, `--pgap_tsv`, `--pfam_db`, `--pgap_db`: Required for default Pfam/PGAP mode.
   - `--Z_pfam`, `--Z_pgap`: Database sizes for Pfam/PGAP (defaults: 25545/18057).
   - `--hmmdb`: Custom HMM database (user mode; requires `--evalue_full` or `--evalue_dom`).

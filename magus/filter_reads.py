@@ -75,10 +75,10 @@ def process_file(filename: str, pe1: str, pe2: str, perq_dir: str, output_dir: s
 def main():
     parser = argparse.ArgumentParser(description='Filter reads based on perq output files.')
     parser.add_argument('--config', required=True, help='Input config file (filename, pe1, pe2)')
-    parser.add_argument('--perq_dir', required=True, help='Directory containing perq output files')
-    parser.add_argument('--output_dir', default='filtered_reads', help='Output directory for filtered reads')
+    parser.add_argument('--perq-dir', '--perq_dir', dest='perq_dir', required=True, help='Directory containing perq output files')
+    parser.add_argument('--output-dir', '--output_dir', dest='output_dir', default='filtered_reads', help='Output directory for filtered reads')
     parser.add_argument('--min_kmers', type=int, default=10, help='Minimum number of kmers to keep a read')
-    parser.add_argument('--max_workers', type=int, default=1, help='Maximum number of parallel workers')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=1, help='Maximum number of parallel workers')
     parser.add_argument('--threads', type=int, default=1, help='Number of threads for seqkit')
     args = parser.parse_args()
 

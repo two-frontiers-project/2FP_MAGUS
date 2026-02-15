@@ -448,7 +448,7 @@ def main():
     parser.add_argument('-x', '--extension', type=str, default='faa', help='File extension when using --sequence-dir (default: faa).')
     parser.add_argument('--domains', type=str, default='bacteria,viruses,metagenomes,eukaryotes', help='Comma-separated domains to process.')
     parser.add_argument('--threads', type=int, default=8, help='Threads per hmmsearch-g job.')
-    parser.add_argument('--max_workers', type=int, default=4, help='Parallel samples.')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=4, help='Parallel samples.')
     
     parser.add_argument('--pfam_tsv', type=str, default=None, help='Path to Pfam mapping TSV file (database lookup).')
     parser.add_argument('--pgap_tsv', type=str, default=None, help='Path to PGAP mapping TSV file (database lookup).')

@@ -115,8 +115,8 @@ class QualityControl:
 def main():
     parser = argparse.ArgumentParser(description="Perform quality control on sequencing data.")
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
-    parser.add_argument('--slurm_config', type=str, help='Path to the Slurm configuration TSV file')
-    parser.add_argument('--max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
+    parser.add_argument('--slurm-config', '--slurm_config', dest='slurm_config', type=str, help='Path to the Slurm configuration TSV file')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
     parser.add_argument('--mode', type=str, default="local", help="Execution mode: local or slurm (default: local)")
     parser.add_argument('--seqtype', type=str, choices=['long', 'short'], default='short',
                         help='Sequencing data type: long or short reads (default: short)')
