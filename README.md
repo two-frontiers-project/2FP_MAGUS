@@ -239,7 +239,7 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--eukdb`: MetaEuk UniRef90 DB path (default: data/uniref90).
 - **annotate** (`magus annotate`)
   - `--output_directory`: Root ORF output directory (default: magus_output/orf_calling).
-  - `--faa_dir`: Directory containing .faa files to annotate (overrides discovery).
+  - `--faa_dir`: Directory containing .faa files to annotate (overrides discovery and processes only those files; ignores `--domains`).
   - `--sequence-dir`: Directory containing FASTA files to annotate.
   - `--sequence-file`: Single FASTA file to annotate.
   - `--split-file-size`: Sequences per split file when using `--sequence-file` (default: 100000).

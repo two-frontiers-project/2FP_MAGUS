@@ -48,6 +48,15 @@ def get_input_files(sequence_dir=None, sequence_file=None, extension='faa'):
             raise ValueError(f"No {ext} files found in {sequence_dir}")
         return files
 
+def get_faa_targets(faa_dir):
+    faa_path = Path(faa_dir)
+    if not faa_path.is_dir():
+        raise ValueError(f"FAA directory does not exist: {faa_dir}")
+    files = sorted(p for p in faa_path.iterdir() if p.is_file() and p.suffix == '.faa')
+    if not files:
+        raise ValueError(f"No .faa files found in {faa_dir}")
+    return [(f.stem, str(f)) for f in files]
+
 def split_fasta_file(input_file, output_dir, sequences_per_file=100000):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -432,7 +441,7 @@ def write_annotation_summary_euk_from_scours(output_dir, suffix, scour_dir):
 def main():
     parser = argparse.ArgumentParser(description='Annotate proteins with hmmsearch-g and merge results.')
     parser.add_argument('--output_directory', type=str, default='magus_output/orf_calling', help='Root ORF output directory produced by call_orfs.')
-    parser.add_argument('--faa_dir', type=str, default=None, help='Optional: directory containing .faa files to annotate (overrides discovery).')
+    parser.add_argument('--faa_dir', type=str, default=None, help='Optional: directory containing .faa files to annotate (overrides discovery and ignores --domains).')
     parser.add_argument('--sequence-dir', type=str, default=None, dest='sequence_dir', help='Directory containing FASTA files to annotate.')
     parser.add_argument('--sequence-file', type=str, default=None, dest='sequence_file', help='Single FASTA file to annotate.')
     parser.add_argument('--split-file-size', type=int, default=100000, help='Number of sequences per split file when splitting a single FASTA (default: 100000).')
@@ -512,13 +521,24 @@ def main():
             merged_output = Path(out_root) / "merged_annotations.tsv"
             merge_pgap_and_pfam(str(pgap_output), str(pfam_output), str(merged_output))
         else:
-            for domain in domains:
-                annot_dir, targets = list_targets(out_root, domain) if not args.faa_dir else (os.path.join(out_root, domain, 'annot'), [(Path(p).stem, str(Path(args.faa_dir) / p)) for p in os.listdir(args.faa_dir) if p.endswith('.faa')])
+            if args.faa_dir:
+                domains_to_process = ['custom_inputs']
+                custom_targets = get_faa_targets(args.faa_dir)
+            else:
+                domains_to_process = domains
+                custom_targets = None
+
+            for domain in domains_to_process:
+                if custom_targets is not None:
+                    annot_dir = os.path.join(out_root, 'annot')
+                    targets = custom_targets
+                else:
+                    annot_dir, targets = list_targets(out_root, domain)
                 os.makedirs(annot_dir, exist_ok=True)
                 if not targets:
                     continue
                 
-                scour_dir = Path(out_root) / domain / "scours"
+                scour_dir = Path(out_root) / "scours" if custom_targets is not None else Path(out_root) / domain / "scours"
                 scour_dir.mkdir(parents=True, exist_ok=True)
                 
                 def run_pfam_hmmsearch(t):
@@ -533,24 +553,25 @@ def main():
                     scour_path = scour_dir / f"{sid}.search"
                     parse_tblout_to_scour(tblout_path, str(scour_path))
                 
-                logger.info(f"Running hmmsearch-g on {len(targets)} {domain} samples with Pfam database")
+                domain_label = 'custom input' if custom_targets is not None else domain
+                logger.info(f"Running hmmsearch-g on {len(targets)} {domain_label} samples with Pfam database")
                 with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
                     list(ex.map(run_pfam_hmmsearch, targets))
                 
-                logger.info(f"Running hmmsearch-g on {len(targets)} {domain} samples with PGAP database")
+                logger.info(f"Running hmmsearch-g on {len(targets)} {domain_label} samples with PGAP database")
                 with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
                     list(ex.map(run_pgap_hmmsearch, targets))
                 
-                logger.info(f"Merging PGAP scours for {domain}")
-                pgap_output = Path(out_root) / domain / "pgap_annotations.tsv"
+                logger.info(f"Merging PGAP scours for {domain_label}")
+                pgap_output = Path(out_root) / "pgap_annotations.tsv" if custom_targets is not None else Path(out_root) / domain / "pgap_annotations.tsv"
                 merge_scours_with_mapping(str(scour_dir), args.pgap_tsv, str(pgap_output), file_type='pgap')
                 
-                logger.info(f"Merging Pfam scours for {domain}")
-                pfam_output = Path(out_root) / domain / "pfam_annotations.tsv"
+                logger.info(f"Merging Pfam scours for {domain_label}")
+                pfam_output = Path(out_root) / "pfam_annotations.tsv" if custom_targets is not None else Path(out_root) / domain / "pfam_annotations.tsv"
                 merge_scours_with_mapping(str(scour_dir), args.pfam_tsv, str(pfam_output), file_type='pfam')
                 
-                logger.info(f"Merging PGAP and Pfam annotations for {domain}")
-                merged_output = Path(out_root) / domain / "merged_annotations.tsv"
+                logger.info(f"Merging PGAP and Pfam annotations for {domain_label}")
+                merged_output = Path(out_root) / "merged_annotations.tsv" if custom_targets is not None else Path(out_root) / domain / "merged_annotations.tsv"
                 merge_pgap_and_pfam(str(pgap_output), str(pfam_output), str(merged_output))
 
     elif args.hmmdb:
@@ -594,18 +615,42 @@ def main():
                         out_f.write('\t'.join(str(x) for x in row_data) + '\n')
             logger.info(f"Wrote annotation summary: {summary_file}")
         else:
-            for domain in domains:
-                annot_dir, targets = list_targets(out_root, domain) if not args.faa_dir else (os.path.join(out_root, domain, 'annot'), [(Path(p).stem, str(Path(args.faa_dir) / p)) for p in os.listdir(args.faa_dir) if p.endswith('.faa')])
+            if args.faa_dir:
+                domains_to_process = ['custom_inputs']
+                custom_targets = get_faa_targets(args.faa_dir)
+            else:
+                domains_to_process = domains
+                custom_targets = None
+
+            for domain in domains_to_process:
+                if custom_targets is not None:
+                    annot_dir = os.path.join(out_root, 'annot')
+                    targets = custom_targets
+                else:
+                    annot_dir, targets = list_targets(out_root, domain)
                 os.makedirs(annot_dir, exist_ok=True)
                 if not targets:
                     continue
-                logger.info(f"Annotating {len(targets)} {domain} samples with {args.hmmdb}")
+                domain_label = 'custom input' if custom_targets is not None else domain
+                logger.info(f"Annotating {len(targets)} {domain_label} samples with {args.hmmdb}")
                 def task_user(t):
                     sid, p = t
                     return run_hmmsearch(sid, p, annot_dir, args.hmmdb, args.threads, suffix=suffix, Z=args.Z, use_ga=not args.no_cut_ga)
                 with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
                     list(ex.map(task_user, targets))
-                if domain == 'eukaryotes':
+                if custom_targets is not None:
+                    summary_file = Path(out_root) / f"annotations_{suffix}.tsv"
+                    with open(summary_file, 'w') as f:
+                        f.write('\t'.join(['sample_id', 'target_name', 'query_name', 'full_evalue', 'full_score', 'dom_evalue', 'dom_score']) + '\n')
+                    for sid, p in targets:
+                        hmm_tbl = Path(annot_dir) / f"{sid}.hmm.{suffix}.tsv"
+                        hmm_rows = parse_tblout_lines(str(hmm_tbl), evalue_full_cutoff=args.evalue_full, evalue_dom_cutoff=args.evalue_dom)
+                        for target_name, hmm in hmm_rows.items():
+                            row_data = [sid, target_name, hmm.get('query_name', ''), hmm.get('full_evalue', ''), hmm.get('full_score', ''), hmm.get('dom_evalue', ''), hmm.get('dom_score', '')]
+                            with open(summary_file, 'a') as out_f:
+                                out_f.write('\t'.join(str(x) for x in row_data) + '\n')
+                    logger.info(f"Wrote annotation summary: {summary_file}")
+                elif domain == 'eukaryotes':
                     write_annotation_summary_euk_from_tblouts(out_root, suffix, evalue_full_cutoff=args.evalue_full, evalue_dom_cutoff=args.evalue_dom)
                 else:
                     write_annotation_summary_bvm_from_tblouts(out_root, domain, suffix, evalue_full_cutoff=args.evalue_full, evalue_dom_cutoff=args.evalue_dom)
@@ -614,5 +659,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
