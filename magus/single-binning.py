@@ -323,7 +323,7 @@ def main():
     parser.add_argument('--threads', type=int, default=14, help='Number of threads for tools (default: 14)')
     parser.add_argument('--checkm_db', type=str, default=None, help='Path to custom CheckM database')
     parser.add_argument('--asmdir', type=str, default="asm", help='Output directory for assembly (default: asm)')
-    parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
     parser.add_argument('--tmpdir', type=str, default='tmp/binning', help='Temp directory. Default tmp/binning.')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode with relaxed filtering criteria')
     parser.add_argument('--completeness', type=float, default=None, help='Completeness threshold for filtering bins')

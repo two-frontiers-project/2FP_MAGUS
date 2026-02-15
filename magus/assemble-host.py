@@ -85,10 +85,10 @@ class AssembleHost:
 def main():
     parser = argparse.ArgumentParser(description="Assemble host/large genomes")
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
-    parser.add_argument('--max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
     parser.add_argument('--threads', type=int, default=14, help='Number of threads for processing (default: 14)')
     parser.add_argument('--ksize', type=int, default=0, help='Number of clusters to seek (default 0, so let MAGUS decide based on silhouette score).')
-    parser.add_argument('--output_config', type=str, default="configs/host_assembly_config", help='Path to the output configuration file')
+    parser.add_argument('--output-config', '--output_config', dest='output_config', type=str, default="configs/host_assembly_config", help='Path to the output configuration file')
     parser.add_argument('--tmpdir', type=str, default="tmp", help='Directory where temp files should be written (default: ./tmp)')
     args = parser.parse_args()
 

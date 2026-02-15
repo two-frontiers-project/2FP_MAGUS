@@ -121,7 +121,7 @@ def main():
     parser.add_argument('--bacarc_file', type=str, default="magus_output/magus_bacteria_archaea/magus_consolidated_bac_arc_mags.fasta", help='Path to the bacterial/archaeal MAG file')
     parser.add_argument('--outdir', type=str, default="magus_output", help='Output directory for the results')
     parser.add_argument('--threads', type=int, default=28, help='Number of threads for xtree')
-    parser.add_argument('--max_workers', type=int, default=1, help='Maximum number of parallel workers')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=1, help='Maximum number of parallel workers')
     parser.add_argument('--bintypes', nargs='+', choices=['bacarc', 'viral', 'euk'], default=['bacarc', 'viral', 'euk'], help='Bintypes to align')
     parser.add_argument("--dblocs", type=str, default='configs/db_locs', help="Path to the dblocs configuration file")
     parser.add_argument("--taxonomy_db", type=str, default='databases/xtree_taxonomy_db', help="Path to the taxonomy database")

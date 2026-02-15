@@ -158,7 +158,7 @@ def main():
     parser.add_argument('--tmpdir', default = 'tmp/coassembly-binning',type=str, help='Temporary directory (default: tmp/coassembly-binning)')
     parser.add_argument('--threads', type=int, default=28, help='Number of threads (default: 48)')
     parser.add_argument('--checkm_db', type=str, help='Path to a custom CheckM database')
-    parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
+    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=4, help='Maximum number of parallel workers (default: 4)')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode to allow all bins regardless of quality (and generate spoof bins in the case of none being found)')
     parser.add_argument('--restart', choices=['binning','checkm','filtering'], default=None,
                         help='Resume pipeline from the specified step')

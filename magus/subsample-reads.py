@@ -90,10 +90,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Subsample sequencing reads using seqtk.")
     parser.add_argument("--config", required=True, help="Path to the input config file.")
     parser.add_argument("--outdir", default="subsampled_reads", help="Directory to store subsampled reads.")
-    parser.add_argument("--out_config", default="configs/subsampled_reads_config", help="Path to the output config file.")
+    parser.add_argument("--out-config", "--out_config", dest="out_config", default="configs/subsampled_reads_config", help="Path to the output config file.")
     parser.add_argument("--depth", type=int, default=100000000, help="Number of reads to subsample to (default = 200000000).")
     parser.add_argument("--threads", type=int, default=4, help="Number of parallel threads.")
-    parser.add_argument("--max_workers", type=int, default=4, help="Maximum number of concurrent workers.")
+    parser.add_argument("--max-workers", "--max_workers", dest="max_workers", type=int, default=4, help="Maximum number of concurrent workers.")
 
     args = parser.parse_args()
 
