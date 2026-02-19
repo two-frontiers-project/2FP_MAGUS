@@ -5,6 +5,7 @@ import sys
 import argparse
 import logging
 import subprocess
+import shutil
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -33,10 +34,15 @@ class GeneCatalogBuilder:
         self.split_singletons = split_singletons
         
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Gene catalog backend: MMseqs2 easy-cluster (script: {Path(__file__).resolve()})")
         self._check_mmseqs2()
     
     def _check_mmseqs2(self):
         try:
+            mmseqs_path = shutil.which('mmseqs')
+            if mmseqs_path is None:
+                raise FileNotFoundError('mmseqs')
+            logger.info(f"Using mmseqs executable: {mmseqs_path}")
             subprocess.run(['mmseqs', 'version'], capture_output=True, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
             logger.error("MMseqs2 not found in PATH. Please install MMseqs2.")
@@ -379,12 +385,21 @@ def main():
         action='store_true',
         help='Split singletons into separate file (gene_catalog_singletons.tsv)'
     )
+
+    parser.add_argument(
+        '--create-hierarchy',
+        action='store_true',
+        help='Deprecated compatibility flag. Hierarchy is created when --identity-thresholds is provided.'
+    )
     
     args = parser.parse_args()
     
     identity_thresholds = None
     if args.identity_thresholds:
         identity_thresholds = [float(x.strip()) for x in args.identity_thresholds.split(',')]
+
+    if args.create_hierarchy and not identity_thresholds:
+        logger.warning('--create-hierarchy specified without --identity-thresholds; no hierarchy levels requested, proceeding with single-threshold clustering')
     
     builder = GeneCatalogBuilder(
         sequence_dir=args.sequence_dir,

@@ -46,7 +46,9 @@ def main():
     script_path = os.path.join(os.path.dirname(__file__), script)
 
     # Run the appropriate script
-    subprocess.run(['python', script_path] + args)
+    if command == 'build-gene-catalog':
+        print(f"MAGUS dispatch: executable={sys.executable} script={script_path}", file=sys.stderr)
+    subprocess.run([sys.executable, script_path] + args, check=False)
 
 
 
