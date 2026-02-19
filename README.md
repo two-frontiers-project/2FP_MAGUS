@@ -265,7 +265,9 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--coverage-threshold`: Coverage threshold for clustering (default: 0.8).
   - `--tmpdir`: Temporary directory for MMseqs2 (default: ./tmp/).
   - `--split-singletons`: Write singleton/non-singleton catalog files.
+  - `--create-hierarchy`: Deprecated compatibility flag; hierarchy output is controlled by `--identity-thresholds`.
   - Troubleshooting: this command calls `mmseqs easy-cluster` in current releases. If you see an error about missing `rmcl`, you are likely running an older installed `magus/build_gene_catalog.py` from a stale environment; reinstall/upgrade MAGUS in the active environment and verify `which magus` and `python -c "import magus, inspect; import magus.build_gene_catalog as bgc; print(inspect.getsourcefile(bgc))"` point to the expected install.
+  - If reinstalling from source, force a local reinstall to avoid cached wheels: `pip uninstall -y magus && pip install --no-cache-dir --force-reinstall .`
 - **consolidate-gene-catalog** (`magus consolidate-gene-catalog`)
   - `--gene-catalog`: Gene catalog TSV from build-gene-catalog (required).
   - `--annotations`: Merged annotations TSV from annotate (required).
