@@ -15,7 +15,9 @@ class ReadSubsampler:
         self.seqtk_path = "seqtk"
 
         os.makedirs(self.outdir, exist_ok=True)
-        os.makedirs(os.path.dirname(self.out_config), exist_ok=True)
+        out_config_dir = os.path.dirname(self.out_config)
+        if out_config_dir:
+            os.makedirs(out_config_dir, exist_ok=True)
 
     def load_config(self, config_file):
         """Load the sample configuration file into a DataFrame."""
