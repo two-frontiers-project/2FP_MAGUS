@@ -119,10 +119,10 @@ class QualityControl:
         return f"{single_file}.gz"
 
     def write_output_config(self):
-        output_dir = os.path.dirname(self.config_path)
+        output_dir = os.path.dirname(os.path.abspath(self.config_path))
         os.makedirs(output_dir, exist_ok=True)
         df = pd.DataFrame(self.qc_results)
-        df.to_csv(output_dir + '/post_qc_config', sep='\t', index=False)    
+        df.to_csv(os.path.join(output_dir, 'post_qc_config'), sep='\t', index=False)
 
     def run(self):
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
