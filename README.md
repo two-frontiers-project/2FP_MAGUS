@@ -109,6 +109,9 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--mode`: `local` or `slurm` execution mode (default: local).
   - `--seqtype`: `short` or `long` reads (default: short).
   - `--outdir`: Output directory for QC results (default: qc).
+  - `--adapters`: Optional custom adapter sequence(s) for `shi7_trimmer`, separated by `|` (example: `GGTGGTGGATCCAATCAACGTGTGAAAGCCGC|GGTGGTCTGCAGGGCATAGGAATAAAGGTCGC`).
+    - MAGUS forwards these as repeated `ADAP` tokens (no leading dashes), e.g. `ADAP <adapter1> ADAP <adapter2>`.
+    - Quote the full value in shell so `|` is treated as text, e.g. `--adapters "A|B"`.
 - **assemble-hosts** (`magus assemble-hosts`)
   - `--config`: TSV of reads to subsample for host assembly.
   - `--max-workers`: Parallel samples (default: 1).
