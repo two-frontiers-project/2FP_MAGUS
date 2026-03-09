@@ -2,11 +2,12 @@ import subprocess
 import os
 import argparse
 import re
+import shlex
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
 class QualityControl:
-    def __init__(self, config, qc_dir="qc", max_workers=1, mode="local", slurm_config=None, seqtype="short"):
+    def __init__(self, config, qc_dir="qc", max_workers=1, mode="local", slurm_config=None, seqtype="short", adapters=None):
         self.config_path = config
         self.config = self.load_config(config)
         self.qc_dir = qc_dir
@@ -14,8 +15,21 @@ class QualityControl:
         self.mode = mode
         self.slurm_config = self.load_slurm_config(slurm_config) if slurm_config else None
         self.seqtype = seqtype
+        self.adapters = self.parse_adapters(adapters)
         self.qc_results = []
         os.makedirs(self.qc_dir, exist_ok=True)
+
+    def parse_adapters(self, adapters):
+        if not adapters:
+            return []
+
+        return [adapter.strip() for adapter in adapters.split('|') if adapter.strip()]
+
+    def adapter_args(self):
+        if not self.adapters:
+            return "ADAP2 CTGTCTCTTATACA"
+
+        return " ".join(f"ADAP {shlex.quote(adapter)}" for adapter in self.adapters[:5])
 
     def load_config(self, config_path):
         config_df = pd.read_csv(config_path, sep='\t')
@@ -31,7 +45,8 @@ class QualityControl:
 
         if self.seqtype == "long":
             output_prefix = self.long_read_output_prefix(sample)
-            cmd = f"shi7_trimmer {r1} {output_prefix} 500 10 FLOOR 4 ASS_QUALITY 13"
+            adapter_args = self.adapter_args()
+            cmd = f"shi7_trimmer {shlex.quote(r1)} {shlex.quote(output_prefix)} 500 10 FLOOR 4 ASS_QUALITY 13 {adapter_args}"
             print(f"Running shi7_trimmer in long-read mode on {sample_name}")
             subprocess.run(cmd, shell=True)
             compressed = self.compress_long_output(output_prefix)
@@ -39,14 +54,16 @@ class QualityControl:
             return
 
         if pd.isna(r2) or r2 is None:
-            cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP ADAP2 CTGTCTCTTATACA OUTFASTA"
+            adapter_args = self.adapter_args()
+            cmd = f"shi7_trimmer {shlex.quote(r1)} {shlex.quote(self.qc_dir + '/' + sample_name)} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP {adapter_args} OUTFASTA"
             print(f"Running shi7_trimmer in single-end mode on {sample_name}")
             subprocess.run(cmd, shell=True)
             compressed = self.compress_short_output(sample_name, has_r2=False)
             self.qc_results.append({'filename': sample_name, 'pe1': compressed, 'pe2': None})
 
         else:
-            cmd = f"shi7_trimmer {r1} {self.qc_dir}/{sample_name} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP ADAP2 CTGTCTCTTATACA R2 {r2} OUTFASTA"
+            adapter_args = self.adapter_args()
+            cmd = f"shi7_trimmer {shlex.quote(r1)} {shlex.quote(self.qc_dir + '/' + sample_name)} 75 12 FLOOR 4 ASS_QUALITY 20 CASTN 0 STRIP {adapter_args} R2 {shlex.quote(r2)} OUTFASTA"
             print(f"Running shi7_trimmer in paired-end mode on {sample_name}")
             subprocess.run(cmd, shell=True)
             r1_compressed, r2_compressed = self.compress_short_output(sample_name, has_r2=True)
@@ -122,6 +139,8 @@ def main():
                         help='Sequencing data type: long or short reads (default: short)')
     parser.add_argument('--outdir', dest='qc_dir', type=str, default='qc',
                         help='Directory where QC outputs are written (default: qc)')
+    parser.add_argument('--adapters', type=str,
+                        help='Adapter sequences for shi7_trimmer, separated by | and quoted in shell. Rendered as ADAP <seq1> ADAP <seq2> (no leading --).')
     
     args = parser.parse_args()
     
@@ -131,7 +150,8 @@ def main():
         mode=args.mode,
         slurm_config=args.slurm_config,
         seqtype=args.seqtype,
-        qc_dir=args.qc_dir
+        qc_dir=args.qc_dir,
+        adapters=args.adapters
     )
     qc.run()
 
