@@ -45,7 +45,8 @@ class QualityControl:
 
         if self.seqtype == "long":
             output_prefix = self.long_read_output_prefix(sample)
-            cmd = f"shi7_trimmer {shlex.quote(r1)} {shlex.quote(output_prefix)} 500 10 FLOOR 4 ASS_QUALITY 13"
+            adapter_args = self.adapter_args()
+            cmd = f"shi7_trimmer {shlex.quote(r1)} {shlex.quote(output_prefix)} 500 10 FLOOR 4 ASS_QUALITY 13 {adapter_args}"
             print(f"Running shi7_trimmer in long-read mode on {sample_name}")
             subprocess.run(cmd, shell=True)
             compressed = self.compress_long_output(output_prefix)
