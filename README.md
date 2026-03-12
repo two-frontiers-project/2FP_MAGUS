@@ -214,7 +214,7 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--wildcards`: Pipe-delimited patterns to match bins (default: empty string).
   - `--size_threshold`: Minimum bin size (default: 10000000).
   - `--euk-binning-outputdir`: Output directory (default: magus_output/magus_euks).
-  - `--dblocs`: Mapping file for database paths (expects `eukccdb`, required).
+  - `--dblocs`: Mapping file for database paths (expects `eukccdb`; required only when `--run-eukcc` is used).
   - `--max-workers`: Parallel bins (default: 1).
   - `--threads`: Threads for EukCC (default: 8).
   - `--run-eukrep`: Run EukRep (disabled by default).

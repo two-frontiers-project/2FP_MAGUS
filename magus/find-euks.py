@@ -10,13 +10,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class EukRepRunner:
-    def __init__(self, bin_dirs, asmdir, wildcards, size_threshold, euk_binning_outputdir, dblocs, max_workers=4, threads=8, run_eukrep=False, run_eukcc=False, eukrepenv="eukrep-env", checkm2_file=None):
+    def __init__(self, bin_dirs, asmdir, wildcards, size_threshold, euk_binning_outputdir, dblocs=None, max_workers=4, threads=8, run_eukrep=False, run_eukcc=False, eukrepenv="eukrep-env", checkm2_file=None):
         self.bin_dirs = bin_dirs
         self.asmdir = asmdir
         self.wildcards = wildcards
         self.size_threshold = size_threshold
         self.euk_binning_outputdir = euk_binning_outputdir
-        self.eukcc_db = self.get_db_location(dblocs, 'eukccdb')
+        self.dblocs = dblocs
+        self.eukcc_db = None
         self.max_workers = max_workers
         self.threads = threads
         self.run_eukrep_flag = run_eukrep
@@ -382,6 +383,11 @@ class EukRepRunner:
         logging.info(f"Summary table saved to {output_file}")
 
     def run(self):
+        if self.run_eukcc_flag:
+            if not self.dblocs:
+                raise ValueError("--dblocs is required when --run-eukcc is used")
+            self.eukcc_db = self.get_db_location(self.dblocs, 'eukccdb')
+
         self.find_bins()
         self.create_bin_name_mapping()
         self.load_checkm2_data()
@@ -398,7 +404,7 @@ if __name__ == "__main__":
     parser.add_argument("--wildcards", type=str, default = "", required=False, help="Pipe-separated list of patterns for bin files, quoted. Use 'bins' to search in subdirectories named 'bins', or file patterns like '.fa|.fasta'")
     parser.add_argument("--size_threshold", type=int, default=10000000)
     parser.add_argument("--euk-binning-outputdir", "--euk_binning_outputdir", dest="euk_binning_outputdir", type=str, default="magus_output/magus_euks")
-    parser.add_argument("--dblocs", type=str, required=True)
+    parser.add_argument("--dblocs", type=str, required=False, default=None, help="Path to database locations file (required when --run-eukcc is used)")
     parser.add_argument("--max-workers", "--max_workers", dest="max_workers", type=int, default=1)
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--run-eukrep", dest="run_eukrep", action='store_true', help="Run EukRep step (disabled by default)")
