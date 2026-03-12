@@ -209,16 +209,17 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--checkv_db`: CheckV database location (required).
   - `--restart cleanup`: Resume downstream processing after CheckV completes.
 - **find-euks** (`magus find-euks`)
-  - `--bin_dirs`: Pipe-delimited directories to search for bins (required).
+  - `--asmdir`: Assembly directory to auto-discover bins from `<asmdir>/*/bins/*.fa` (default: `asm`).
+  - `--bin_dirs`: Pipe-delimited directories to search for bins (optional override for custom layouts).
   - `--wildcards`: Pipe-delimited patterns to match bins (default: empty string).
   - `--size_threshold`: Minimum bin size (default: 10000000).
   - `--euk-binning-outputdir`: Output directory (default: magus_output/magus_euks).
   - `--dblocs`: Mapping file for database paths (expects `eukccdb`, required).
   - `--max-workers`: Parallel bins (default: 1).
   - `--threads`: Threads for EukCC (default: 8).
-  - `--skip_eukrep`: Skip EukRep.
-  - `--skip_eukcc`: Skip EukCC.
-  - `--eukrep_env`: Conda environment name for EukRep.
+  - `--run-eukrep`: Run EukRep (disabled by default).
+  - `--run-eukcc`: Run EukCC (disabled by default).
+  - `--eukrep_env`: Conda environment name for EukRep (default: `eukrep-env`).
   - `--checkm2_file`: Optional CheckM2 quality report file.
 - **dereplicate** (`magus dereplicate`)
   - `-m`, `--mag_dir`: Path or glob to MAGs (required).
