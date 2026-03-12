@@ -10,20 +10,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class EukRepRunner:
-    def __init__(self, bin_dirs, wildcards, size_threshold, euk_binning_outputdir, dblocs, max_workers=4, threads=8, skip_eukrep=False, skip_eukcc=False, eukrepenv=None, checkm2_file=None):
+    def __init__(self, bin_dirs, asmdir, wildcards, size_threshold, euk_binning_outputdir, dblocs=None, max_workers=4, threads=8, run_eukrep=False, run_eukcc=False, eukrepenv="eukrep-env", checkm2_file=None):
         self.bin_dirs = bin_dirs
+        self.asmdir = asmdir
         self.wildcards = wildcards
         self.size_threshold = size_threshold
         self.euk_binning_outputdir = euk_binning_outputdir
-        self.eukcc_db = self.get_db_location(dblocs, 'eukccdb')
+        self.dblocs = dblocs
+        self.eukcc_db = None
         self.max_workers = max_workers
         self.threads = threads
-        self.skip_eukrep = skip_eukrep
-        self.skip_eukcc = skip_eukcc
+        self.run_eukrep_flag = run_eukrep
+        self.run_eukcc_flag = run_eukcc
         self.eukrepenv = eukrepenv
         self.checkm2_file = checkm2_file
 
-        self.input_bins_dir = os.path.join(self.euk_binning_outputdir, "input_bins")
+        self.input_bins_dir = os.path.join(self.euk_binning_outputdir, "tmp_input_bins")
         os.makedirs(self.input_bins_dir, exist_ok=True)
         self.bin_sizes = {}
         self.bin_contigs = {}
@@ -34,75 +36,94 @@ class EukRepRunner:
         db_df = pd.read_csv(dblocs, header=None, index_col=0)
         return db_df.loc[db_name, 1]
 
+    def discover_default_bins_from_asmdir(self):
+        """Discover bins from single-assembly output directory structure: <asmdir>/*/bins/*.fa."""
+        if not self.asmdir:
+            return []
+
+        pattern = os.path.join(self.asmdir, "*", "bins", "*.fa")
+        discovered_bins = glob.glob(pattern)
+        logging.info(f"Discovered {len(discovered_bins)} bins from asmdir pattern: {pattern}")
+        return discovered_bins
+
     def find_bins(self):
         self.bin_paths = []
-        # First expand any glob patterns in bin_dirs to get actual directory paths
-        expanded_dirs = []
-        for directory in self.bin_dirs:
-            if '*' in directory:
-                # Expand glob pattern to get actual directories
-                expanded_dirs.extend(glob.glob(directory))
-            else:
-                expanded_dirs.append(directory)
-        
-        logging.info(f"Expanded directories: {expanded_dirs}")
-        
-        # Process each expanded directory
-        for directory in expanded_dirs:
-            logging.info(f"Searching in directory: {directory}")
-            if not os.path.exists(directory):
-                logging.warning(f"Directory does not exist: {directory}")
-                continue
-                
-            for pattern in self.wildcards:
-                original_pattern = pattern
-                logging.info(f"Processing wildcard: {original_pattern}")
-                
-                # Check if pattern looks like a directory name (no file extension)
-                if '.' not in pattern and pattern in ['bins', 'bin']:
-                    # Special case: look for files within directories named 'bins'
-                    bins_dirs = glob.glob(os.path.join(directory, "*", pattern), recursive=False)
-                    logging.info(f"Found {len(bins_dirs)} 'bins' directories under {directory}")
-                    
-                    for bins_dir in bins_dirs:
-                        logging.info(f"Searching for files in bins directory: {bins_dir}")
-                        # Look for common genome file extensions in bins directory
-                        for ext in ['*.fa', '*.fasta', '*.fna', '*.fas']:
-                            files = glob.glob(os.path.join(bins_dir, ext))
-                            logging.info(f"  Found {len(files)} files matching {ext}")
-                            for f in files:
-                                logging.info(f"    File: {f}")
-                            self.bin_paths.extend(files)
+
+        # Default workflow for MAGUS users after single-assembly binning.
+        if self.bin_dirs is None:
+            self.bin_paths = self.discover_default_bins_from_asmdir()
+            logging.info(f"Using asmdir-based bin discovery from: {self.asmdir}")
+        else:
+            self.bin_paths = []
+        # Explicit bin_dirs workflow (legacy mode)
+        if self.bin_dirs is not None:
+            # First expand any glob patterns in bin_dirs to get actual directory paths
+            expanded_dirs = []
+            for directory in self.bin_dirs:
+                if '*' in directory:
+                    # Expand glob pattern to get actual directories
+                    expanded_dirs.extend(glob.glob(directory))
                 else:
-                    # Regular file pattern matching
-                    pattern="*" + pattern +"*"
-                    logging.info(f"Looking for file pattern: {pattern}")
-                    
-                    # First try direct pattern match
-                    direct_pattern = os.path.join(directory, pattern)
-                    logging.info(f"Direct search pattern: {direct_pattern}")
-                    direct_matches = glob.glob(direct_pattern)
-                    logging.info(f"Direct matches found: {len(direct_matches)}")
-                    for match in direct_matches:
-                        logging.info(f"  Direct match: {match}")
-                    self.bin_paths.extend(direct_matches)
-                    
-                    # Also try recursive search for nested directories
-                    recursive_pattern = os.path.join(directory, "**", pattern)
-                    logging.info(f"Recursive search pattern: {recursive_pattern}")
-                    recursive_matches = glob.glob(recursive_pattern, recursive=True)
-                    logging.info(f"Recursive matches found: {len(recursive_matches)}")
-                    for match in recursive_matches:
-                        logging.info(f"  Recursive match: {match}")
-                    self.bin_paths.extend(recursive_matches)
+                    expanded_dirs.append(directory)
+
+            logging.info(f"Expanded directories: {expanded_dirs}")
+
+            # Process each expanded directory
+            for directory in expanded_dirs:
+                logging.info(f"Searching in directory: {directory}")
+                if not os.path.exists(directory):
+                    logging.warning(f"Directory does not exist: {directory}")
+                    continue
+
+                for pattern in self.wildcards:
+                    original_pattern = pattern
+                    logging.info(f"Processing wildcard: {original_pattern}")
+
+                    # Check if pattern looks like a directory name (no file extension)
+                    if '.' not in pattern and pattern in ['bins', 'bin']:
+                        # Special case: look for files within directories named 'bins'
+                        bins_dirs = glob.glob(os.path.join(directory, "*", pattern), recursive=False)
+                        logging.info(f"Found {len(bins_dirs)} 'bins' directories under {directory}")
+
+                        for bins_dir in bins_dirs:
+                            logging.info(f"Searching for files in bins directory: {bins_dir}")
+                            # Look for common genome file extensions in bins directory
+                            for ext in ['*.fa', '*.fasta', '*.fna', '*.fas']:
+                                files = glob.glob(os.path.join(bins_dir, ext))
+                                logging.info(f"  Found {len(files)} files matching {ext}")
+                                for f in files:
+                                    logging.info(f"    File: {f}")
+                                self.bin_paths.extend(files)
+                    else:
+                        # Regular file pattern matching
+                        pattern = "*" + pattern + "*"
+                        logging.info(f"Looking for file pattern: {pattern}")
+
+                        # First try direct pattern match
+                        direct_pattern = os.path.join(directory, pattern)
+                        logging.info(f"Direct search pattern: {direct_pattern}")
+                        direct_matches = glob.glob(direct_pattern)
+                        logging.info(f"Direct matches found: {len(direct_matches)}")
+                        for match in direct_matches:
+                            logging.info(f"  Direct match: {match}")
+                        self.bin_paths.extend(direct_matches)
+
+                        # Also try recursive search for nested directories
+                        recursive_pattern = os.path.join(directory, "**", pattern)
+                        logging.info(f"Recursive search pattern: {recursive_pattern}")
+                        recursive_matches = glob.glob(recursive_pattern, recursive=True)
+                        logging.info(f"Recursive matches found: {len(recursive_matches)}")
+                        for match in recursive_matches:
+                            logging.info(f"  Recursive match: {match}")
+                        self.bin_paths.extend(recursive_matches)
         
         logging.info(f"Total bin paths found: {len(self.bin_paths)}")
-        
+
         # Remove duplicates
         self.bin_paths = list(set(self.bin_paths))
-        
+
         for bin_path in self.bin_paths:
-            unique_name = os.path.relpath(bin_path).rsplit('.', 1)[0].replace('/', '-')
+            unique_name = self.create_unique_bin_name(bin_path)
             is_large, bin_size, contig_count = self.is_bin_large(bin_path)
             
             # Only process bins that meet the size threshold
@@ -118,6 +139,17 @@ class EukRepRunner:
                     logging.info(f"Symlink already exists for {bin_path}")
             else:
                 logging.info(f"Skipping {bin_path} - size {bin_size:,} bp below threshold {self.size_threshold:,} bp")
+
+    def create_unique_bin_name(self, bin_path):
+        """Create a stable, non-hidden bin name for symlinks and downstream merges."""
+        if self.bin_dirs is None and self.asmdir:
+            asmdir_base = os.path.basename(os.path.normpath(self.asmdir)) or "asm"
+            rel = os.path.relpath(bin_path, start=self.asmdir).rsplit('.', 1)[0]
+            unique_name = f"{asmdir_base}-{rel.replace('/', '-')}"
+        else:
+            unique_name = os.path.relpath(bin_path).rsplit('.', 1)[0].replace('/', '-')
+
+        return unique_name.lstrip('.-')
 
     def is_bin_large(self, bin_path):
         bin_size = 0
@@ -177,13 +209,20 @@ class EukRepRunner:
     def find_checkm2_outputs(self):
         """Find CheckM2 quality report files in bin directories."""
         checkm2_files = []
-        # Use the same expanded directories logic as find_bins
-        expanded_dirs = []
-        for directory in self.bin_dirs:
-            if '*' in directory:
-                expanded_dirs.extend(glob.glob(directory))
-            else:
-                expanded_dirs.append(directory)
+        # If user provides a direct file, we should not auto-discover.
+        if self.checkm2_file:
+            return []
+
+        if self.bin_dirs is None:
+            expanded_dirs = [self.asmdir]
+        else:
+            # Use the same expanded directories logic as find_bins
+            expanded_dirs = []
+            for directory in self.bin_dirs:
+                if '*' in directory:
+                    expanded_dirs.extend(glob.glob(directory))
+                else:
+                    expanded_dirs.append(directory)
         
         for directory in expanded_dirs:
             # Run find command in each bin directory
@@ -243,8 +282,13 @@ class EukRepRunner:
                 # Load the file
                 df = pd.read_csv(file, sep='\t')
                 
-                # Format the directory name
-                dir_name = root_dir.replace('/', '-')
+                # Format the directory name to match symlink naming scheme
+                if self.bin_dirs is None and self.asmdir:
+                    asmdir_base = os.path.basename(os.path.normpath(self.asmdir)) or "asm"
+                    rel_root = os.path.relpath(root_dir, start=self.asmdir)
+                    dir_name = f"{asmdir_base}-{rel_root.replace('/', '-')}"
+                else:
+                    dir_name = root_dir.replace('/', '-')
                 logging.info(f"Formatted directory name: {dir_name}")
                 
                 # Show original bin names
@@ -339,43 +383,50 @@ class EukRepRunner:
         logging.info(f"Summary table saved to {output_file}")
 
     def run(self):
+        if self.run_eukcc_flag:
+            if not self.dblocs:
+                raise ValueError("--dblocs is required when --run-eukcc is used")
+            self.eukcc_db = self.get_db_location(self.dblocs, 'eukccdb')
+
         self.find_bins()
         self.create_bin_name_mapping()
         self.load_checkm2_data()
-        if not self.skip_eukrep:
+        if self.run_eukrep_flag:
             self.run_eukrep()
-        if not self.skip_eukcc:
+        if self.run_eukcc_flag:
             self.run_eukcc()
         self.process_output()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bin_dirs", type=str, required=True, help="Pipe-separated list of directories containing bins, quoted")
+    parser.add_argument("--bin_dirs", type=str, required=False, default=None, help="Pipe-separated list of directories containing bins, quoted. If omitted, MAGUS discovers bins from --asmdir.")
+    parser.add_argument("--asmdir", type=str, default="asm", help="Assembly directory for default bin discovery (expects <asmdir>/*/bins/*.fa).")
     parser.add_argument("--wildcards", type=str, default = "", required=False, help="Pipe-separated list of patterns for bin files, quoted. Use 'bins' to search in subdirectories named 'bins', or file patterns like '.fa|.fasta'")
     parser.add_argument("--size_threshold", type=int, default=10000000)
     parser.add_argument("--euk-binning-outputdir", "--euk_binning_outputdir", dest="euk_binning_outputdir", type=str, default="magus_output/magus_euks")
-    parser.add_argument("--dblocs", type=str, required=True)
+    parser.add_argument("--dblocs", type=str, required=False, default=None, help="Path to database locations file (required when --run-eukcc is used)")
     parser.add_argument("--max-workers", "--max_workers", dest="max_workers", type=int, default=1)
     parser.add_argument("--threads", type=int, default=8)
-    parser.add_argument("--skip_eukrep", action='store_true', help="Skip EukRep step")
-    parser.add_argument("--skip_eukcc", action='store_true', help="Skip EukCC step")
-    parser.add_argument("--eukrep_env", type=str, default=None)
+    parser.add_argument("--run-eukrep", dest="run_eukrep", action='store_true', help="Run EukRep step (disabled by default)")
+    parser.add_argument("--run-eukcc", dest="run_eukcc", action='store_true', help="Run EukCC step (disabled by default)")
+    parser.add_argument("--eukrep_env", type=str, default="eukrep-env")
     parser.add_argument("--checkm2_file", type=str, help="Optional: Direct path to CheckM2 quality report file")
     args = parser.parse_args()
 
-    bin_dirs = args.bin_dirs.split('|')
+    bin_dirs = args.bin_dirs.split('|') if args.bin_dirs else None
     wildcards = args.wildcards.split('|')
 
     runner = EukRepRunner(
         bin_dirs=bin_dirs,
+        asmdir=args.asmdir,
         wildcards=wildcards,
         size_threshold=args.size_threshold,
         euk_binning_outputdir=args.euk_binning_outputdir,
         dblocs=args.dblocs,
         max_workers=args.max_workers,
         threads=args.threads,
-        skip_eukrep=args.skip_eukrep,
-        skip_eukcc=args.skip_eukcc,
+        run_eukrep=args.run_eukrep,
+        run_eukcc=args.run_eukcc,
         eukrepenv=args.eukrep_env,
         checkm2_file=args.checkm2_file
     )
