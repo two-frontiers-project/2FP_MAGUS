@@ -22,6 +22,7 @@ class Dereplicator:
 		self.linearized_fa = self.derep_tmp / "lin.fa"
 		self.output_reps = f"{self.derep_out}/reps.fa"
 		self.output_log = f"{self.derep_out}/clus.tsv"
+		self.output_mapping = f"{self.derep_out}/input_to_representative_mapping.tsv"
 		self.individual_reps_dir = f"{self.derep_out}/genome_representatives"
 
 		# Store original file mapping for individual reps
@@ -141,6 +142,21 @@ class Dereplicator:
 		env["OMP_NUM_THREADS"] = str(self.threads)
 		subprocess.run(cmd, check=True, env=env)
 
+	def map_input_to_representatives(self):
+		"""Map all input genomes to dereplicated representatives using canolax5."""
+		cmd = [
+			"canolax5",
+			"-k", str(self.kmer_size),
+			"-db", str(self.output_reps),
+			"-q", str(self.linearized_fa),
+			"-local",
+			"-min2",
+			"-o", str(self.output_mapping)
+		]
+		env = os.environ.copy()
+		env["OMP_NUM_THREADS"] = str(self.threads)
+		subprocess.run(cmd, check=True, env=env)
+
 	def create_individual_representatives(self):
 		"""Parse canolax5 output and copy individual representative genome files."""
 		if not os.path.exists(self.output_log):
@@ -213,8 +229,8 @@ def main():
 	runner.run_lingenome()
 	runner.trim_large_contigs() # Added this line
 	runner.run_canolax5()
+	runner.map_input_to_representatives()
 	runner.create_individual_representatives()
 
 if __name__ == "__main__":
 	main()
-
