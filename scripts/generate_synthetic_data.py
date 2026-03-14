@@ -125,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument('output_dir', type=str, help='Directory to store synthetic reads.')
     parser.add_argument('num_samples', type=int, help='Number of samples to generate.')
     parser.add_argument('actual_coverage_output', type=str, help='File path to store the actual coverage CSV output.')
-    parser.add_argument('--max_workers', type=int, default=4, help='Maximum number of parallel workers.')
+    parser.add_argument('--max-workers', type=int, default=4, help='Maximum number of parallel workers.')
 
     args = parser.parse_args()
     main(args.config_file, args.output_dir, args.num_samples, args.actual_coverage_output, max_workers=args.max_workers)

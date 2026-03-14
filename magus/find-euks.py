@@ -405,7 +405,7 @@ if __name__ == "__main__":
     parser.add_argument("--size_threshold", type=int, default=10000000)
     parser.add_argument("--euk-binning-outputdir", "--euk_binning_outputdir", dest="euk_binning_outputdir", type=str, default="magus_output/magus_euks")
     parser.add_argument("--dblocs", type=str, required=False, default=None, help="Path to database locations file (required when --run-eukcc is used)")
-    parser.add_argument("--max-workers", "--max_workers", dest="max_workers", type=int, default=1)
+    parser.add_argument("--max-workers", dest="max_workers", type=int, default=1)
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--run-eukrep", dest="run_eukrep", action='store_true', help="Run EukRep step (disabled by default)")
     parser.add_argument("--run-eukcc", dest="run_eukcc", action='store_true', help="Run EukCC step (disabled by default)")
