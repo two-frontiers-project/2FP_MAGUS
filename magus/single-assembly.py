@@ -114,7 +114,7 @@ class Assembly:
         subprocess.run(mv_cmd, shell=True, check=True)
 
         filter_cmd = (
-            f"grep -A1 --no-group-separator 'multi=1\.[5-9]\|multi=[2-9]\|multi=[0-9][0-9]' {contig_file} "
+            f"grep -A1 --no-group-separator 'multi=1\\.[5-9]\\|multi=[2-9]\\|multi=[0-9][0-9]' {contig_file} "
             f"| awk '{{if (0==(NR % 2) && length >= 1000) {{print x; print $0}}; x=$0}}' > {filtered_contig_file}"
         )
         subprocess.run(filter_cmd, shell=True, check=True)
@@ -185,7 +185,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run assembly with megahit on genomic data.")
     parser.add_argument('--config', type=str, required=True, help='Path to the configuration TSV file')
     parser.add_argument('--slurm-config', '--slurm_config', dest='slurm_config', type=str, help='Path to the Slurm configuration TSV file')
-    parser.add_argument('--max-workers', '--max_workers', dest='max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
+    parser.add_argument('--max-workers', dest='max_workers', type=int, default=1, help='Number of parallel workers (default: 1)')
     parser.add_argument('--threads', type=int, default=14, help='Number of threads for assembly (default: 14)')
     parser.add_argument('--mode', type=str, default="local", help="Execution mode: local or slurm (default: local)")
     parser.add_argument('--seqtype', type=str, choices=['short', 'long'], default='short',
