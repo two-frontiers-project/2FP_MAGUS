@@ -270,8 +270,43 @@ class Binning:
             subprocess.run(cmd, shell=True)
             print(f"Copied final bin {z} for {sample_name} to {mags_dir}")
         checks_file = f"{mags_dir}/checks_single_assembly.txt"
-        cmd_append = f"tail -n+2 {bestmags_txt} | sed 's/^/{sample_name}_/' >> {checks_file}; mv {self.tmpdir}/{sample_name}/* {self.asmdir}/{sample_name}"
+        cmd_append = f"tail -n+2 {bestmags_txt} | sed 's/^/{sample_name}_/' >> {checks_file}"
         subprocess.run(cmd_append, shell=True)
+        self.move_tmp_outputs_to_assembly(sample_name)
+
+    def merge_directories(self, source_dir, dest_dir):
+        """Merge source_dir into dest_dir recursively, overwriting file conflicts."""
+        os.makedirs(dest_dir, exist_ok=True)
+
+        for entry in os.listdir(source_dir):
+            src_path = os.path.join(source_dir, entry)
+            dst_path = os.path.join(dest_dir, entry)
+
+            if os.path.isdir(src_path) and not os.path.islink(src_path):
+                self.merge_directories(src_path, dst_path)
+                os.rmdir(src_path)
+            else:
+                if os.path.exists(dst_path) or os.path.islink(dst_path):
+                    if os.path.isdir(dst_path) and not os.path.islink(dst_path):
+                        shutil.rmtree(dst_path)
+                    else:
+                        os.unlink(dst_path)
+                shutil.move(src_path, dst_path)
+
+    def move_tmp_outputs_to_assembly(self, sample_name):
+        """
+        Move per-sample tmp outputs into assembly directory with merge semantics.
+        This keeps reruns idempotent and avoids losing new outputs when paths already exist.
+        """
+        source_root = f"{self.tmpdir}/{sample_name}"
+        dest_root = f"{self.asmdir}/{sample_name}"
+
+        if not os.path.exists(source_root):
+            print(f"No tmp outputs found to move for {sample_name} at {source_root}")
+            return
+
+        os.makedirs(dest_root, exist_ok=True)
+        self.merge_directories(source_root, dest_root)
 
     def run_sample(self, sample_name):
         """Run the pipeline for one sample starting from the chosen step."""
