@@ -233,8 +233,10 @@ Key options for each command are summarised below (see `magus <command> --help` 
 - **call-orfs** (`magus call-orfs`)
   - `--config`: Tab-delimited config file (sample_id, genome_path, domain).
   - `-m`, `--mag_dir`: Path or glob to genome files.
+  - `--asm-dir`: Path or glob to assembly folders/files; discovers `final.contigs.fa` recursively and uses each parent folder name as `sample_id`.
   - `-w`, `--wildcard`: Pipe-delimited path filters.
   - `--domain`: Domain when using `--mag_dir` (`bacterial`, `viral`, `eukaryotic`, `metagenomic`).
+    - Optional with `--asm-dir`; defaults to `metagenomic` if omitted.
   - `--output-directory`: Output directory (default: magus_output/orf_calling).
   - `--max-workers`: Parallel ORF jobs (default: 1).
   - `--threads`: Threads per tool (default: 4).
