@@ -194,6 +194,43 @@ def find_genome_files(mag_dir, extension, wildcard):
         raise RuntimeError("No matching genome files found.")
     return all_matches
 
+def find_assembly_contig_files(asm_dir):
+    """Find assembly outputs named final.contigs.fa and map sample IDs to parent folder names."""
+    path_patterns = asm_dir.split('|') if '|' in asm_dir else [asm_dir]
+    contig_entries = []
+
+    for path_pattern in path_patterns:
+        path_pattern = path_pattern.strip()
+        if not path_pattern:
+            continue
+
+        expanded_paths = glob.glob(path_pattern, recursive=True)
+        if not expanded_paths:
+            expanded_paths = [path_pattern]
+
+        for expanded_path in expanded_paths:
+            base_path = Path(expanded_path).resolve()
+            if base_path.is_file() and base_path.name == "final.contigs.fa":
+                contig_entries.append((base_path.parent.name, str(base_path)))
+                continue
+            if not base_path.is_dir():
+                continue
+            for contig_file in base_path.rglob("final.contigs.fa"):
+                contig_entries.append((contig_file.parent.name, str(contig_file.resolve())))
+
+    if not contig_entries:
+        raise RuntimeError("No final.contigs.fa files found in --asm-dir paths.")
+
+    # Preserve order while removing duplicate contig paths.
+    deduped_entries = []
+    seen_paths = set()
+    for sample_id, contig_path in contig_entries:
+        if contig_path in seen_paths:
+            continue
+        seen_paths.add(contig_path)
+        deduped_entries.append((sample_id, contig_path))
+    return deduped_entries
+
 def process_genomes(orf_caller, genomes_data, max_workers=1):
     def process_single_genome(genome_data):
         sample_id, genome_path, domain = genome_data
@@ -229,6 +266,7 @@ def main():
     parser = argparse.ArgumentParser(description='Call ORFs for bacterial, viral, eukaryotic, and/or metagenomic genomes.')
     parser.add_argument('--config', type=str, default=None, help='Config file with 2 or 3 columns: sample_id genome_path [domain]. Supports tab or whitespace delimiters.')
     parser.add_argument('-m', '--mag_dir', type=str, default=None, help='Path or glob to genome files (e.g. asm/*/bins).')
+    parser.add_argument('--asm-dir', dest='asm_dir', type=str, default=None, help='Path or glob to assembly folders/files; discovers final.contigs.fa recursively and uses each parent folder name as sample_id.')
     parser.add_argument('-w', '--wildcard', type=str, default='', help='Pattern to match anywhere in genome file path (pipe-separated for multiple).')
     parser.add_argument('--domain', type=str, choices=['bacterial', 'viral', 'eukaryotic', 'metagenomic'], help='Domain type when using directory mode.')
 
@@ -241,10 +279,11 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.config and not args.mag_dir:
-        parser.error("Either --config or --mag_dir must be provided.")
-    if args.config and args.mag_dir:
-        parser.error("Cannot use both --config and --mag_dir.")
+    input_modes_used = sum(bool(mode) for mode in [args.config, args.mag_dir, args.asm_dir])
+    if input_modes_used == 0:
+        parser.error("One of --config, --mag_dir, or --asm-dir must be provided.")
+    if input_modes_used > 1:
+        parser.error("Use only one input mode at a time: --config, --mag_dir, or --asm-dir.")
     if args.mag_dir and not args.domain:
         parser.error("--domain must be specified when using --mag_dir.")
 
@@ -277,7 +316,7 @@ def main():
                     )
 
                 genomes_data.append((sample_id, genome_path, domain))
-    else:
+    elif args.mag_dir:
         logger.info(f"Using directory mode: {args.mag_dir}")
         wildcards = args.wildcard.split('|') if args.wildcard else ['']
         all_genome_files = []
@@ -303,6 +342,13 @@ def main():
             if sample_id.endswith(extension):
                 sample_id = sample_id[:-len(extension)]
             genomes_data.append((sample_id, str(genome_path), args.domain))
+    else:
+        logger.info(f"Using assembly directory mode: {args.asm_dir}")
+        domain = args.domain if args.domain else 'metagenomic'
+        if not args.domain:
+            logger.info("No --domain provided with --asm-dir; defaulting to 'metagenomic'.")
+        for sample_id, contig_path in find_assembly_contig_files(args.asm_dir):
+            genomes_data.append((sample_id, contig_path, domain))
 
     if not genomes_data:
         raise RuntimeError(
@@ -314,4 +360,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
