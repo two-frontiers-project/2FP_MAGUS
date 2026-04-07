@@ -32,7 +32,8 @@ def main():
         'build-gene-catalog': 'build_gene_catalog.py',
         'consolidate-gene-catalog': 'consolidate_gene_catalog.py',
         'filter-mags': 'filter_mags.py',
-        'build-tree': 'build_tree.py'
+        'build-tree': 'build_tree.py',
+        'merge-alignments': 'merge_alignments.py',
   }
 
     # Check for valid command

@@ -103,8 +103,8 @@ def merge_abundance_matrix(output_dir, tax_file=None, coverage_cutoff=0.05, skip
 
     if tax_file:
         taxonomy_df = pd.read_csv(tax_file, sep='\t', header=None, names=['Reference', 'taxonomy'])
-        taxonomy_df['Reference'] = taxonomy_df['Reference'].str.replace('RS_', '', regex=False).str.replace('GB_', '', regex=False)
-        merged_df = pd.merge(merged_df, taxonomy_df, on='Reference', how='inner')
+        taxonomy_df['Reference'] = taxonomy_df['Reference'].str.replace(r'^(RS_|GB_)', '', regex=True)
+        merged_df = pd.merge(merged_df, taxonomy_df, on='Reference', how='left')
 
     abundance_matrix = merged_df.pivot_table(index='Reference', columns='sample', values='RA', fill_value=0)
     abundance_matrix.to_csv(os.path.join(output_dir, "merged_xtree.csv"))

@@ -16,6 +16,7 @@ bin/prodigal
 bin/shi7_trimmer
 bin/sorenson-g
 bin/spamw2
+bin/xtree
 magus/__init__.py
 magus/annotate.py
 magus/assemble-host.py
@@ -34,6 +35,7 @@ magus/finalize-bacterial-mags.py
 magus/find-euks.py
 magus/find-viruses.py
 magus/magus_main.py
+magus/merge_alignments.py
 magus/qc.py
 magus/single-assembly.py
 magus/single-binning.py
