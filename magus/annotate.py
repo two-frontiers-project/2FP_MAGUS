@@ -11,8 +11,8 @@ import csv
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Use hmmsearch-g from PATH
-HMMSEARCH_BIN = 'hmmsearch-g'
+# Use hmmsearch-g2 from PATH
+HMMSEARCH_BIN = 'hmmsearch-g2'
 
 def list_targets(output_dir, domain):
     if domain == 'eukaryotes':
