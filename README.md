@@ -244,22 +244,24 @@ Key options for each command are summarised below (see `magus <command> --help` 
   - `--force`: Overwrite existing outputs.
   - `--eukdb`: MetaEuk UniRef90 DB path (default: data/uniref90).
 - **annotate** (`magus annotate`)
-  - `--output_directory`: Root ORF output directory (default: magus_output/orf_calling).
-  - `--faa_dir`: Directory containing .faa files to annotate (overrides discovery and processes only those files; ignores `--domains`).
-  - `--sequence-dir`: Directory containing FASTA files to annotate.
-  - `--sequence-file`: Single FASTA file to annotate.
-  - `--split-file-size`: Sequences per split file when using `--sequence-file` (default: 100000).
-  - `-x`, `--extension`: Extension for `--sequence-dir` (default: faa).
-  - `--domains`: Comma-separated domains to process (default: bacteria,viruses,metagenomes,eukaryotes).
+  - Input selection (pick one style):
+    - MAGUS-discovered ORFs: use `--output_directory` + `--domains`.
+    - Precalled proteins: use `--faa_dir` (flat directory of `.faa`; ignores `--domains`).
+    - Direct FASTA/FAA inputs: use `--sequence-dir` or `--sequence-file`.
+  - `--domains`: Comma-separated MAGUS output domains to process. Valid values: `bacteria`, `viruses`, `metagenomes`, `eukaryotes`.
   - `--threads`: Threads per hmmsearch-g job (default: 8).
   - `--max-workers`: Parallel samples (default: 4).
-  - `--pfam_tsv`, `--pgap_tsv`, `--pfam_db`, `--pgap_db`: Required for default Pfam/PGAP mode.
-  - `--Z_pfam`, `--Z_pgap`: Database sizes for Pfam/PGAP (defaults: 25545/18057).
-  - `--hmmdb`: Custom HMM database (user mode; requires `--evalue_full` or `--evalue_dom`).
-  - `--suffix`: Output suffix tag for user mode (default: custom).
-  - `--evalue_full`, `--evalue_dom`: E-value cutoffs for user mode.
-  - `--no_cut_ga`: Disable `--cut_ga`.
-  - `--Z`: Database size for user mode.
+  - Default Pfam/PGAP mode:
+    - Use `--db-config <json>` for a single config file, or provide `--pfam_tsv`, `--pgap_tsv`, `--pfam_db`, `--pgap_db` on CLI.
+    - `--Z_pfam`, `--Z_pgap`: Database sizes for Pfam/PGAP (defaults: 25545/18057).
+  - User HMM mode:
+    - `--hmmdb`: Custom HMM database (requires `--evalue_full` or `--evalue_dom`).
+    - `--suffix`: Output suffix tag (default: custom).
+    - `--evalue_full`, `--evalue_dom`: E-value cutoffs.
+    - `--no_cut_ga`: Disable `--cut_ga`.
+    - `--Z`: Database size.
+  - Example with config file:
+    - `magus annotate --sequence-dir metagenomes/manicure --db-config configs/annotate_db_config.example.json --threads 7 --max-workers 4`
 - **build-gene-catalog** (`magus build-gene-catalog`)
   - `--sequence-dir`: Directory containing FASTA files.
   - `--sequence-file`: Single FASTA file to cluster.

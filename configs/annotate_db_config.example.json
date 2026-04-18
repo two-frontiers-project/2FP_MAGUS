@@ -1,0 +1,8 @@
+{
+  "pfam_tsv": "/mnt/b/db/pfam_database/Pfam-A-380.annot.tsv",
+  "pgap_tsv": "/mnt/b/db/pgap_hmm/hmm_PGAP.tsv",
+  "pfam_db": "/mnt/b/db/hmm/Pfam-A.hmm",
+  "pgap_db": "/mnt/b/db/pgap_hmm/PGAP_R18.hmm",
+  "Z_pfam": 25545,
+  "Z_pgap": 18057
+}
