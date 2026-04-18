@@ -7,12 +7,49 @@ import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import csv
+import json
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Use hmmsearch-g from PATH
 HMMSEARCH_BIN = 'hmmsearch-g'
+AVAILABLE_DOMAINS = ('bacteria', 'viruses', 'metagenomes', 'eukaryotes')
+
+
+def load_db_config(config_path):
+    """Load DB paths from a JSON config file."""
+    with open(config_path, 'r') as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"DB config must be a JSON object: {config_path}")
+    return data
+
+
+def resolve_default_mode_args(args, parser):
+    """Resolve Pfam/PGAP db arguments from --db-config and CLI flags."""
+    config = {}
+    if args.db_config:
+        try:
+            config = load_db_config(args.db_config)
+        except Exception as exc:
+            parser.error(f"Could not read --db-config file {args.db_config}: {exc}")
+
+    required_keys = ('pfam_db', 'pgap_db', 'pfam_tsv', 'pgap_tsv')
+    optional_keys = ('Z_pfam', 'Z_pgap')
+
+    for key in required_keys + optional_keys:
+        current = getattr(args, key, None)
+        if current is None and key in config:
+            setattr(args, key, config[key])
+
+    missing = [k for k in required_keys if getattr(args, k, None) is None]
+    if missing:
+        parser.error(
+            "Default mode requires Pfam/PGAP database pointers. Missing: "
+            + ', '.join(f'--{k}' for k in missing)
+            + ". Provide them via CLI flags or --db-config."
+        )
 
 def list_targets(output_dir, domain):
     if domain == 'eukaryotes':
@@ -441,21 +478,22 @@ def write_annotation_summary_euk_from_scours(output_dir, suffix, scour_dir):
 def main():
     parser = argparse.ArgumentParser(description='Annotate proteins with hmmsearch-g and merge results.')
     parser.add_argument('--output_directory', type=str, default='magus_output/orf_calling', help='Root ORF output directory produced by call_orfs.')
-    parser.add_argument('--faa_dir', type=str, default=None, help='Optional: directory containing .faa files to annotate (overrides discovery and ignores --domains).')
-    parser.add_argument('--sequence-dir', type=str, default=None, dest='sequence_dir', help='Directory containing FASTA files to annotate.')
+    parser.add_argument('--faa_dir', type=str, default=None, help='Directory with .faa files to annotate directly (flat input). Use this when you already have protein calls and do not want MAGUS domain folder discovery.')
+    parser.add_argument('--sequence-dir', type=str, default=None, dest='sequence_dir', help='Directory of input FASTA/FAA files for direct annotation mode.')
     parser.add_argument('--sequence-file', type=str, default=None, dest='sequence_file', help='Single FASTA file to annotate.')
     parser.add_argument('--split-file-size', type=int, default=100000, help='Number of sequences per split file when splitting a single FASTA (default: 100000).')
     parser.add_argument('-x', '--extension', type=str, default='faa', help='File extension when using --sequence-dir (default: faa).')
-    parser.add_argument('--domains', type=str, default='bacteria,viruses,metagenomes,eukaryotes', help='Comma-separated domains to process.')
+    parser.add_argument('--domains', type=str, default='bacteria,viruses,metagenomes,eukaryotes', help='Comma-separated MAGUS output domains to process. Choices: bacteria, viruses, metagenomes, eukaryotes.')
     parser.add_argument('--threads', type=int, default=8, help='Threads per hmmsearch-g job.')
     parser.add_argument('--max-workers', dest='max_workers', type=int, default=4, help='Parallel samples.')
     
+    parser.add_argument('--db-config', type=str, default=None, help='JSON file containing Pfam/PGAP paths (pfam_db, pgap_db, pfam_tsv, pgap_tsv; optional Z_pfam/Z_pgap). CLI flags still work and override config values.')
     parser.add_argument('--pfam_tsv', type=str, default=None, help='Path to Pfam mapping TSV file (database lookup).')
     parser.add_argument('--pgap_tsv', type=str, default=None, help='Path to PGAP mapping TSV file (database lookup).')
     parser.add_argument('--pfam_db', type=str, default=None, help='Path to Pfam-A HMM database (.hmm file).')
     parser.add_argument('--pgap_db', type=str, default=None, help='Path to PGAP HMM database (.hmm file).')
-    parser.add_argument('--Z_pfam', type=int, default=25545, help='Pfam database size for -Z.')
-    parser.add_argument('--Z_pgap', type=int, default=18057, help='PGAP database size for -Z.')
+    parser.add_argument('--Z_pfam', type=int, default=None, help='Pfam database size for -Z (default: 25545).')
+    parser.add_argument('--Z_pgap', type=int, default=None, help='PGAP database size for -Z (default: 18057).')
     
     parser.add_argument('--hmmdb', type=str, default=None, help='Path to HMM database (user-specified mode).')
     parser.add_argument('--suffix', type=str, default='custom', help='Suffix tag for outputs.')
@@ -466,12 +504,22 @@ def main():
 
     args = parser.parse_args()
 
+    if args.Z_pfam is None:
+        args.Z_pfam = 25545
+    if args.Z_pgap is None:
+        args.Z_pgap = 18057
+
     domains = [d.strip() for d in args.domains.split(',') if d.strip()]
+    invalid_domains = [d for d in domains if d not in AVAILABLE_DOMAINS]
+    if invalid_domains:
+        parser.error(
+            f"Unknown domain(s): {', '.join(invalid_domains)}. "
+            f"Valid choices: {', '.join(AVAILABLE_DOMAINS)}"
+        )
     out_root = args.output_directory
 
-    if args.pfam_db or args.pgap_db or args.pfam_tsv or args.pgap_tsv:
-        if not all([args.pfam_db, args.pgap_db, args.pfam_tsv, args.pgap_tsv]):
-            parser.error("Default mode requires all four arguments: --pfam_db, --pgap_db, --pfam_tsv, --pgap_tsv")
+    if args.db_config or args.pfam_db or args.pgap_db or args.pfam_tsv or args.pgap_tsv:
+        resolve_default_mode_args(args, parser)
         
         if args.sequence_dir or args.sequence_file:
             input_files = get_input_files(sequence_dir=args.sequence_dir, sequence_file=args.sequence_file, extension=args.extension)
