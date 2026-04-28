@@ -4,7 +4,7 @@ import argparse
 import csv
 import logging
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -309,9 +309,15 @@ def main():
         scour_path = scour_dir / f'{sample_id}.search'
         parse_tblout_to_scour(tblout_path, scour_path)
 
-    logger.info(f'Running {HMMSEARCH_BIN} on {len(targets)} sequence files')
+    total_targets = len(targets)
+    logger.info(f'Running {HMMSEARCH_BIN} on {total_targets} sequence files')
     with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        list(executor.map(task, targets))
+        future_to_target = {executor.submit(task, target): target for target in targets}
+        for idx, future in enumerate(as_completed(future_to_target), start=1):
+            sample_id, _ = future_to_target[future]
+            future.result()
+            pct_complete = (idx / total_targets) * 100
+            logger.info(f'Annotation progress: {idx}/{total_targets} files ({pct_complete:.1f}%) complete - {sample_id}')
 
     merged_output = Path(args.output_directory) / 'merged_annotations.tsv'
     merge_scours_with_mapping(scour_dir, args.annotation_tsv, merged_output)
