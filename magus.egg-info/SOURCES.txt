@@ -5,6 +5,7 @@ bin/bestmag2
 bin/canolax5
 bin/fac
 bin/hmmsearch-g
+bin/hmmsearch-g2
 bin/lingenome
 bin/magus_assembly_helper.sh
 bin/magus_qc_helper.sh
